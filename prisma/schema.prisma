@@ -24,6 +24,7 @@ enum ReviewSource {
   IMDB
   REDDIT
   CRITIC_BLOG
+  LETTERBOXD
 }
 
 model User {

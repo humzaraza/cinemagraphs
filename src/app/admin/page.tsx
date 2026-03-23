@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import AdminFilmImport from '@/components/AdminFilmImport'
+import AdminAnalyze from '@/components/AdminAnalyze'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,14 +14,14 @@ export default async function AdminPage() {
     redirect('/auth/signin')
   }
 
-  const [filmCount, reviewCount] = await Promise.all([
+  const [filmCount, reviewCount, graphCount] = await Promise.all([
     prisma.film.count(),
     prisma.review.count(),
+    prisma.sentimentGraph.count(),
   ])
 
-  const recentFilms = await prisma.film.findMany({
-    orderBy: { createdAt: 'desc' },
-    take: 10,
+  const allFilms = await prisma.film.findMany({
+    orderBy: { title: 'asc' },
     select: {
       id: true,
       title: true,
@@ -28,8 +29,24 @@ export default async function AdminPage() {
       status: true,
       isFeatured: true,
       createdAt: true,
+      sentimentGraph: {
+        select: { generatedAt: true },
+      },
+      _count: {
+        select: { reviews: true },
+      },
     },
   })
+
+  const filmsForAnalyze = allFilms.map((film) => ({
+    id: film.id,
+    title: film.title,
+    hasGraph: !!film.sentimentGraph,
+    reviewCount: film._count.reviews,
+    graphDate: film.sentimentGraph?.generatedAt
+      ? film.sentimentGraph.generatedAt.toLocaleDateString()
+      : null,
+  }))
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-10">
@@ -38,7 +55,7 @@ export default async function AdminPage() {
       </h1>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-10">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
         <div className="bg-cinema-card border border-cinema-border rounded-lg p-4">
           <p className="text-sm text-cinema-muted">Total Films</p>
           <p className="font-[family-name:var(--font-bebas)] text-3xl text-cinema-teal">
@@ -51,6 +68,18 @@ export default async function AdminPage() {
             {reviewCount}
           </p>
         </div>
+        <div className="bg-cinema-card border border-cinema-border rounded-lg p-4">
+          <p className="text-sm text-cinema-muted">Sentiment Graphs</p>
+          <p className="font-[family-name:var(--font-bebas)] text-3xl text-cinema-gold">
+            {graphCount}
+          </p>
+        </div>
+        <div className="bg-cinema-card border border-cinema-border rounded-lg p-4">
+          <p className="text-sm text-cinema-muted">Pending Analysis</p>
+          <p className="font-[family-name:var(--font-bebas)] text-3xl text-red-400">
+            {filmCount - graphCount}
+          </p>
+        </div>
       </div>
 
       {/* Import Section */}
@@ -61,53 +90,12 @@ export default async function AdminPage() {
         <AdminFilmImport />
       </section>
 
-      {/* Recent Films */}
-      <section>
+      {/* Sentiment Analysis Section */}
+      <section className="mb-10">
         <h2 className="font-[family-name:var(--font-playfair)] text-xl font-bold mb-4">
-          Recent Films
+          Sentiment Analysis
         </h2>
-        {recentFilms.length === 0 ? (
-          <p className="text-cinema-muted">No films imported yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-cinema-border text-left text-cinema-muted">
-                  <th className="py-2 pr-4">Title</th>
-                  <th className="py-2 pr-4">TMDB ID</th>
-                  <th className="py-2 pr-4">Status</th>
-                  <th className="py-2 pr-4">Featured</th>
-                  <th className="py-2">Added</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentFilms.map((film) => (
-                  <tr key={film.id} className="border-b border-cinema-border/50">
-                    <td className="py-2 pr-4 text-cinema-cream">{film.title}</td>
-                    <td className="py-2 pr-4 text-cinema-muted">{film.tmdbId}</td>
-                    <td className="py-2 pr-4">
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded ${
-                          film.status === 'ACTIVE'
-                            ? 'bg-cinema-teal/10 text-cinema-teal'
-                            : 'bg-cinema-muted/10 text-cinema-muted'
-                        }`}
-                      >
-                        {film.status}
-                      </span>
-                    </td>
-                    <td className="py-2 pr-4 text-cinema-muted">
-                      {film.isFeatured ? 'Yes' : 'No'}
-                    </td>
-                    <td className="py-2 text-cinema-muted">
-                      {film.createdAt.toLocaleDateString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <AdminAnalyze films={filmsForAnalyze} />
       </section>
     </div>
   )

@@ -127,22 +127,20 @@ export default async function FilmPage({
         </div>
 
         {/* Sentiment Graph */}
-        {film.sentimentGraph && (
-          <div className="mt-10">
-            <SentimentGraph
-              dataPoints={film.sentimentGraph.dataPoints as { position: number; sentiment: number; label?: string }[]}
-              overallScore={film.sentimentGraph.overallScore}
-              peakMoment={film.sentimentGraph.peakMoment as { position: number; sentiment: number; label?: string } | null}
-              lowestMoment={film.sentimentGraph.lowestMoment as { position: number; sentiment: number; label?: string } | null}
-              runtime={film.runtime}
-            />
-            {film.sentimentGraph.summary && (
-              <p className="mt-4 text-sm text-cinema-muted italic">
-                {film.sentimentGraph.summary}
-              </p>
-            )}
-          </div>
-        )}
+        <div className="mt-10">
+          <SentimentGraph
+            dataPoints={(film.sentimentGraph?.dataPoints ?? []) as any[]}
+            overallScore={film.sentimentGraph?.overallScore ?? 0}
+            anchoredFrom={film.sentimentGraph?.anchoredFrom}
+            peakMoment={film.sentimentGraph?.peakMoment as { label: string; score: number; time: number } | null}
+            lowestMoment={film.sentimentGraph?.lowestMoment as { label: string; score: number; time: number } | null}
+            biggestSwing={film.sentimentGraph?.biggestSwing}
+            summary={film.sentimentGraph?.summary}
+            sourcesUsed={film.sentimentGraph?.sourcesUsed}
+            reviewCount={film.sentimentGraph?.reviewCount}
+            runtime={film.runtime}
+          />
+        </div>
 
         {/* Cast */}
         {cast.length > 0 && (
