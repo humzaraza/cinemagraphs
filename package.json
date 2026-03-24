@@ -16,6 +16,7 @@
     "@prisma/client": "^7.5.0",
     "cheerio": "^1.2.0",
     "dotenv": "^17.3.1",
+    "nanoid": "^5.1.7",
     "next": "16.2.1",
     "next-auth": "^4.24.13",
     "prisma": "^7.5.0",

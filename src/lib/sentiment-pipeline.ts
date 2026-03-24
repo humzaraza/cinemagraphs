@@ -79,8 +79,8 @@ export async function generateSentimentGraph(filmId: string): Promise<void> {
     orderBy: { fetchedAt: 'desc' },
   })
 
-  if (reviews.length < 3) {
-    throw new Error(`Insufficient reviews for "${film.title}": only ${reviews.length} found (minimum 3 required)`)
+  if (reviews.length < 2) {
+    throw new Error(`Insufficient reviews for "${film.title}": only ${reviews.length} found (minimum 2 required)`)
   }
 
   console.log(`[Pipeline] ${reviews.length} reviews available for analysis`)

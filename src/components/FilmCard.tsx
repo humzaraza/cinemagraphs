@@ -1,6 +1,12 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { tmdbImageUrl, formatYear } from '@/lib/utils'
+import { FilmCardMiniGraph } from './FilmCardMiniGraph'
+
+interface DataPoint {
+  timeMidpoint: number
+  score: number
+}
 
 interface FilmCardProps {
   id: string
@@ -9,6 +15,7 @@ interface FilmCardProps {
   releaseDate: string | null
   genres: string[]
   sentimentScore?: number | null
+  graphDataPoints?: DataPoint[] | null
 }
 
 export default function FilmCard({
@@ -18,6 +25,7 @@ export default function FilmCard({
   releaseDate,
   genres,
   sentimentScore,
+  graphDataPoints,
 }: FilmCardProps) {
   return (
     <Link href={`/films/${id}`} className="group block">
@@ -45,6 +53,11 @@ export default function FilmCard({
         )}
 
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-cinema-dark via-cinema-dark/80 to-transparent p-3 pt-8">
+          {graphDataPoints && graphDataPoints.length > 0 && (
+            <div className="mb-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
+              <FilmCardMiniGraph dataPoints={graphDataPoints} />
+            </div>
+          )}
           <h3 className="font-[family-name:var(--font-playfair)] text-sm font-semibold leading-tight text-white">
             {title}
           </h3>

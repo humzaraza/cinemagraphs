@@ -25,6 +25,7 @@ enum ReviewSource {
   REDDIT
   CRITIC_BLOG
   LETTERBOXD
+  GUARDIAN
 }
 
 model User {

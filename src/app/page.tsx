@@ -8,13 +8,13 @@ export default async function HomePage() {
   const [featuredFilms, recentFilms] = await Promise.all([
     prisma.film.findMany({
       where: { status: 'ACTIVE', isFeatured: true },
-      include: { sentimentGraph: { select: { overallScore: true } } },
+      include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
       take: 6,
       orderBy: { createdAt: 'desc' },
     }),
     prisma.film.findMany({
       where: { status: 'ACTIVE' },
-      include: { sentimentGraph: { select: { overallScore: true } } },
+      include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
       take: 12,
       orderBy: { createdAt: 'desc' },
     }),
@@ -57,6 +57,7 @@ export default async function HomePage() {
                 releaseDate={film.releaseDate?.toISOString() ?? null}
                 genres={film.genres}
                 sentimentScore={film.sentimentGraph?.overallScore}
+                graphDataPoints={film.sentimentGraph?.dataPoints as { timeMidpoint: number; score: number }[] | null}
               />
             ))}
           </div>
@@ -87,6 +88,7 @@ export default async function HomePage() {
                 releaseDate={film.releaseDate?.toISOString() ?? null}
                 genres={film.genres}
                 sentimentScore={film.sentimentGraph?.overallScore}
+                graphDataPoints={film.sentimentGraph?.dataPoints as { timeMidpoint: number; score: number }[] | null}
               />
             ))}
           </div>

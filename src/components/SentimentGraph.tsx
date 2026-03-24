@@ -94,6 +94,40 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: any[] 
   )
 }
 
+// ── Mini Graph for Film Cards ──
+
+export function MiniSentimentGraph({ dataPoints }: { dataPoints: DataPoint[] }) {
+  if (!dataPoints || dataPoints.length === 0) return null
+
+  return (
+    <div className="w-full h-12">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={dataPoints} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
+          <defs>
+            <linearGradient id="miniGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#C8A951" stopOpacity={0.4} />
+              <stop offset="95%" stopColor="#C8A951" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <Area
+            type="monotone"
+            dataKey="score"
+            stroke="#C8A951"
+            strokeWidth={1.5}
+            fill="url(#miniGradient)"
+            dot={false}
+            isAnimationActive={false}
+          />
+          <YAxis domain={[1, 10]} hide />
+          <XAxis dataKey="timeMidpoint" hide />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+// ── Main Graph ──
+
 export default function SentimentGraph({
   dataPoints,
   overallScore,
@@ -115,9 +149,10 @@ export default function SentimentGraph({
     )
   }
 
-  // Map data for the chart
+  // Map data for the chart — compute timeMidpoint if missing
   const chartData = dataPoints.map((dp) => ({
     ...dp,
+    timeMidpoint: dp.timeMidpoint ?? Math.round((dp.timeStart + dp.timeEnd) / 2),
     fill: scoreColor(dp.score),
   }))
 
@@ -149,7 +184,7 @@ export default function SentimentGraph({
         )}
 
         <ResponsiveContainer width="100%" height={320}>
-          <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 30 }}>
+          <AreaChart data={chartData} margin={{ top: 10, right: 35, left: 10, bottom: 30 }}>
             <defs>
               <linearGradient id="sentimentGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#C8A951" stopOpacity={0.3} />
@@ -165,6 +200,7 @@ export default function SentimentGraph({
               fontSize={11}
               label={{ value: runtime ? `Runtime: ${formatTime(runtime)}` : '', position: 'bottom', offset: 10, fill: '#666', fontSize: 11 }}
             />
+            {/* Left Y-axis (default) */}
             <YAxis
               domain={[1, 10]}
               ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
@@ -172,10 +208,31 @@ export default function SentimentGraph({
               fontSize={11}
               width={30}
             />
+            {/* Right Y-axis (mirror) */}
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              domain={[1, 10]}
+              ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
+              stroke="#666"
+              fontSize={11}
+              width={30}
+            />
+            {/* Invisible area to bind right Y-axis */}
+            <Area
+              yAxisId="right"
+              type="monotone"
+              dataKey="score"
+              stroke="none"
+              fill="none"
+              dot={false}
+              activeDot={false}
+              isAnimationActive={false}
+            />
             <Tooltip content={<CustomTooltip />} />
 
             {/* Neutral reference line */}
-            <ReferenceLine y={5} stroke="#666" strokeDasharray="6 4" label={{ value: 'NEUTRAL', fill: '#666', fontSize: 10, position: 'right' }} />
+            <ReferenceLine y={5} stroke="#666" strokeDasharray="6 4" />
 
             {/* IMDb anchor line */}
             {imdbAnchor && (
@@ -184,7 +241,7 @@ export default function SentimentGraph({
                 stroke="#C8A951"
                 strokeDasharray="4 4"
                 strokeOpacity={0.6}
-                label={{ value: `IMDb ${imdbAnchor}`, fill: '#C8A951', fontSize: 10, position: 'right' }}
+                label={{ value: `IMDb ${imdbAnchor}`, fill: '#C8A951', fontSize: 10, position: 'insideTopLeft' }}
               />
             )}
 
@@ -194,8 +251,10 @@ export default function SentimentGraph({
               stroke="#C8A951"
               strokeWidth={2.5}
               fill="url(#sentimentGradient)"
+              isAnimationActive={false}
               dot={(props: any) => {
                 const { cx, cy, payload } = props
+                if (cx == null || cy == null) return <circle r={0} />
                 const r = confidenceRadius(payload.confidence)
                 return (
                   <circle
@@ -240,7 +299,7 @@ export default function SentimentGraph({
         </ResponsiveContainer>
 
         {/* Scale labels */}
-        <div className="flex justify-between text-[10px] text-cinema-muted/60 mt-1 px-6">
+        <div className="flex justify-between text-[10px] text-cinema-muted/60 mt-1 px-8">
           <span>1 — Hated it</span>
           <span>5 — Neutral</span>
           <span>10 — Masterpiece</span>
