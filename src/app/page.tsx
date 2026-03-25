@@ -8,9 +8,12 @@ export const dynamic = 'force-dynamic'
 
 export default async function HomePage() {
   const [featuredFilms, recentFilms, allGraphFilms] = await Promise.all([
+    // First try admin-selected featured films
     prisma.film.findMany({
-      where: { status: 'ACTIVE', isFeatured: true },
-      include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
+      where: { status: 'ACTIVE', isFeatured: true, sentimentGraph: { isNot: null } },
+      include: {
+        sentimentGraph: { select: { overallScore: true, dataPoints: true } },
+      },
       take: 6,
       orderBy: { createdAt: 'desc' },
     }),
@@ -20,14 +23,28 @@ export default async function HomePage() {
       take: 12,
       orderBy: { createdAt: 'desc' },
     }),
-    // For ticker: get films with graphs
+    // For ticker: all films with graphs
     prisma.film.findMany({
       where: { status: 'ACTIVE', sentimentGraph: { isNot: null } },
-      include: { sentimentGraph: { select: { overallScore: true, previousScore: true, dataPoints: true } } },
+      include: {
+        sentimentGraph: { select: { overallScore: true, previousScore: true, dataPoints: true } },
+      },
       take: 20,
       orderBy: { updatedAt: 'desc' },
     }),
   ])
+
+  // If no admin-selected featured films, use top-scored films with graphs
+  const heroSourceFilms = featuredFilms.length > 0
+    ? featuredFilms
+    : await prisma.film.findMany({
+        where: { status: 'ACTIVE', sentimentGraph: { isNot: null } },
+        include: {
+          sentimentGraph: { select: { overallScore: true, dataPoints: true } },
+        },
+        take: 5,
+        orderBy: { sentimentGraph: { overallScore: 'desc' } },
+      })
 
   // Build ticker data
   const tickerFilms = allGraphFilms
@@ -35,22 +52,22 @@ export default async function HomePage() {
     .map((f) => {
       const current = f.sentimentGraph!.overallScore
       const previous = f.sentimentGraph!.previousScore
-      const delta = previous != null ? current - previous : 0 // default green (>= 0) when no previous
+      const delta = previous != null ? current - previous : 0
       return {
         id: f.id,
         title: f.title,
         score: current,
         delta,
-        dataPoints: (f.sentimentGraph!.dataPoints as any[]).map((dp: any) => ({
-        timeMidpoint: dp.timeMidpoint ?? Math.round(((dp.timeStart ?? 0) + (dp.timeEnd ?? 0)) / 2),
-        score: dp.score,
-      })),
+        dataPoints: (f.sentimentGraph!.dataPoints as unknown as any[]).map((dp: any) => ({
+          timeMidpoint: dp.timeMidpoint ?? Math.round(((dp.timeStart ?? 0) + (dp.timeEnd ?? 0)) / 2),
+          score: dp.score,
+        })),
       }
     })
 
-  // Build hero data from featured films that have graphs
-  const heroFilms = featuredFilms
-    .filter((f) => f.sentimentGraph && (f.sentimentGraph.dataPoints as any[])?.length > 0)
+  // Build hero data
+  const heroFilms = heroSourceFilms
+    .filter((f) => f.sentimentGraph && (f.sentimentGraph.dataPoints as unknown as any[])?.length > 0)
     .map((f) => ({
       id: f.id,
       title: f.title,
@@ -62,7 +79,7 @@ export default async function HomePage() {
       backdropUrl: f.backdropUrl,
       tmdbId: f.tmdbId,
       sentimentScore: f.sentimentGraph!.overallScore,
-      dataPoints: (f.sentimentGraph!.dataPoints as any[]).map((dp: any) => ({
+      dataPoints: (f.sentimentGraph!.dataPoints as unknown as any[]).map((dp: any) => ({
         timeMidpoint: dp.timeMidpoint ?? Math.round(((dp.timeStart ?? 0) + (dp.timeEnd ?? 0)) / 2),
         timeStart: dp.timeStart ?? 0,
         timeEnd: dp.timeEnd ?? 0,
@@ -78,27 +95,7 @@ export default async function HomePage() {
       <MovieTicker films={tickerFilms} />
 
       {/* Hero Section — Featured Film Spotlight */}
-      {heroFilms.length > 0 ? (
-        <HeroSection films={heroFilms} />
-      ) : (
-        <section className="relative py-20 px-4 text-center bg-gradient-to-b from-cinema-darker to-cinema-dark">
-          <div className="max-w-3xl mx-auto">
-            <h1 className="font-[family-name:var(--font-playfair)] text-5xl md:text-6xl font-bold mb-4">
-              Feel the <span className="text-cinema-gold">Story</span> Unfold
-            </h1>
-            <p className="text-lg text-cinema-cream/70 mb-8 max-w-xl mx-auto">
-              Cinemagraphs visualizes how audience sentiment shifts across a
-              film&apos;s runtime — peaks, dips, and the moments that divide viewers.
-            </p>
-            <Link
-              href="/films/browse"
-              className="inline-block bg-cinema-gold text-cinema-dark font-semibold px-8 py-3 rounded-lg hover:bg-cinema-gold/90 transition-colors"
-            >
-              Browse Films
-            </Link>
-          </div>
-        </section>
-      )}
+      <HeroSection films={heroFilms} />
 
       {/* Recently Added */}
       <section className="max-w-7xl mx-auto px-4 py-12">
@@ -124,7 +121,7 @@ export default async function HomePage() {
                 releaseDate={film.releaseDate?.toISOString() ?? null}
                 genres={film.genres}
                 sentimentScore={film.sentimentGraph?.overallScore}
-                graphDataPoints={film.sentimentGraph?.dataPoints as { timeMidpoint: number; score: number }[] | null}
+                graphDataPoints={film.sentimentGraph?.dataPoints as unknown as { timeMidpoint: number; score: number }[] | null}
               />
             ))}
           </div>

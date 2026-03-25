@@ -8,7 +8,7 @@ interface TickerFilm {
   id: string
   title: string
   score: number
-  delta: number // positive = trending up, negative = trending down, 0 = no change
+  delta: number
   dataPoints: { timeMidpoint: number; score: number }[]
 }
 
@@ -52,12 +52,12 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
     <div className="border-b border-cinema-border bg-cinema-darker/90 backdrop-blur-sm">
       <div className="flex items-center">
         {/* Static label */}
-        <div className="flex-shrink-0 flex items-center gap-2.5 px-5 py-3 border-r border-cinema-border bg-cinema-darker z-10">
-          <span className="relative flex h-2.5 w-2.5">
+        <div className="flex-shrink-0 flex items-center gap-3 px-6 py-4 border-r border-cinema-border bg-cinema-darker z-10">
+          <span className="relative flex h-3 w-3">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cinema-gold opacity-75" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cinema-gold" />
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-cinema-gold" />
           </span>
-          <span className="font-[family-name:var(--font-bebas)] text-base tracking-wider text-cinema-gold whitespace-nowrap">
+          <span className="font-[family-name:var(--font-bebas)] text-lg tracking-wider text-cinema-gold whitespace-nowrap">
             MOVIE MARKET
           </span>
         </div>
@@ -78,13 +78,13 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
                 <Link
                   key={`${film.id}-${i}`}
                   href={`/films/${film.id}`}
-                  className="flex-shrink-0 flex items-center gap-3 px-5 py-3 border-r border-cinema-border/50 hover:bg-cinema-card/50 transition-colors"
+                  className="flex-shrink-0 flex items-center gap-3 px-4 py-4 border-r border-cinema-border/50 hover:bg-cinema-card/50 transition-colors"
                 >
-                  <span className="text-sm text-cinema-cream whitespace-nowrap max-w-[140px] truncate">
+                  <span className="text-sm font-medium text-cinema-cream whitespace-nowrap max-w-[140px] truncate">
                     {film.title}
                   </span>
                   {/* Mini sparkline with midline */}
-                  <div className="w-20 h-8">
+                  <div className="w-24 h-10">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={film.dataPoints} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
                         <defs>
@@ -94,7 +94,6 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
                           </linearGradient>
                         </defs>
                         <YAxis domain={[1, 10]} hide />
-                        {/* Dashed midline at 5.5 */}
                         <ReferenceLine y={5.5} stroke="#888" strokeDasharray="3 3" strokeWidth={0.5} />
                         <Area
                           type="monotone"
@@ -109,7 +108,7 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
                     </ResponsiveContainer>
                   </div>
                   <span
-                    className="font-[family-name:var(--font-bebas)] text-base"
+                    className="font-[family-name:var(--font-bebas)] text-lg"
                     style={{ color }}
                   >
                     {film.score.toFixed(1)}
