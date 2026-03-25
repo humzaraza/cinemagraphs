@@ -75,6 +75,7 @@ export default async function HomePage() {
       runtime: f.runtime,
       director: f.director,
       genres: f.genres,
+      synopsis: f.synopsis ?? null,
       posterUrl: f.posterUrl,
       backdropUrl: f.backdropUrl,
       tmdbId: f.tmdbId,

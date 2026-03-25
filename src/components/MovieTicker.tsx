@@ -52,12 +52,12 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
     <div className="border-b border-cinema-border bg-cinema-darker/90 backdrop-blur-sm">
       <div className="flex items-center">
         {/* Static label */}
-        <div className="flex-shrink-0 flex items-center gap-3 px-6 py-4 border-r border-cinema-border bg-cinema-darker z-10">
-          <span className="relative flex h-3 w-3">
+        <div className="flex-shrink-0 flex items-center gap-3 px-8 py-5 border-r border-cinema-border bg-cinema-darker z-10">
+          <span className="relative flex h-3.5 w-3.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cinema-gold opacity-75" />
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-cinema-gold" />
+            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-cinema-gold" />
           </span>
-          <span className="font-[family-name:var(--font-bebas)] text-lg tracking-wider text-cinema-gold whitespace-nowrap">
+          <span className="font-[family-name:var(--font-bebas)] text-xl tracking-wider text-cinema-gold whitespace-nowrap">
             MOVIE MARKET
           </span>
         </div>
@@ -78,13 +78,13 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
                 <Link
                   key={`${film.id}-${i}`}
                   href={`/films/${film.id}`}
-                  className="flex-shrink-0 flex items-center gap-3 px-4 py-4 border-r border-cinema-border/50 hover:bg-cinema-card/50 transition-colors"
+                  className="flex-shrink-0 flex items-center gap-4 px-5 py-5 border-r border-cinema-border/50 hover:bg-cinema-card/50 transition-colors"
                 >
-                  <span className="text-sm font-medium text-cinema-cream whitespace-nowrap max-w-[140px] truncate">
+                  <span className="text-base font-medium text-cinema-cream whitespace-nowrap max-w-[160px] truncate">
                     {film.title}
                   </span>
                   {/* Mini sparkline with midline */}
-                  <div className="w-24 h-10">
+                  <div className="w-28 h-12">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={film.dataPoints} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
                         <defs>
@@ -108,13 +108,13 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
                     </ResponsiveContainer>
                   </div>
                   <span
-                    className="font-[family-name:var(--font-bebas)] text-lg"
+                    className="font-[family-name:var(--font-bebas)] text-xl"
                     style={{ color }}
                   >
                     {film.score.toFixed(1)}
                   </span>
-                  <span className="text-xs" style={{ color }}>
-                    {arrow}
+                  <span className="text-sm font-medium" style={{ color }}>
+                    {arrow} {isUp ? '+' : ''}{film.delta.toFixed(1)}
                   </span>
                 </Link>
               )

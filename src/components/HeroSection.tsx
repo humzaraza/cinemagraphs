@@ -10,6 +10,7 @@ import {
   YAxis,
   CartesianGrid,
   ReferenceLine,
+  ReferenceDot,
   ResponsiveContainer,
 } from 'recharts'
 
@@ -20,6 +21,7 @@ interface HeroFilm {
   runtime: number | null
   director: string | null
   genres: string[]
+  synopsis: string | null
   posterUrl: string | null
   backdropUrl: string | null
   tmdbId: number
@@ -55,6 +57,7 @@ function scoreColor(score: number): string {
 export default function HeroSection({ films }: { films: HeroFilm[] }) {
   const [activeIndex, setActiveIndex] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
+  const [resetKey, setResetKey] = useState(0)
 
   const next = useCallback(() => {
     setActiveIndex((i) => (i + 1) % films.length)
@@ -64,11 +67,26 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
     setActiveIndex((i) => (i - 1 + films.length) % films.length)
   }, [films.length])
 
+  const manualNext = useCallback(() => {
+    next()
+    setResetKey((k) => k + 1)
+  }, [next])
+
+  const manualPrev = useCallback(() => {
+    prev()
+    setResetKey((k) => k + 1)
+  }, [prev])
+
+  const manualGoTo = useCallback((i: number) => {
+    setActiveIndex(i)
+    setResetKey((k) => k + 1)
+  }, [])
+
   useEffect(() => {
     if (isPaused || films.length <= 1) return
     const timer = setInterval(next, 8000)
     return () => clearInterval(timer)
-  }, [isPaused, next, films.length])
+  }, [isPaused, next, films.length, resetKey])
 
   if (films.length === 0) return null
 
@@ -121,7 +139,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
               )}
             </div>
             {film.genres.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-6">
+              <div className="flex flex-wrap gap-2 mb-4">
                 {film.genres.slice(0, 4).map((g) => (
                   <span
                     key={g}
@@ -131,6 +149,13 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                   </span>
                 ))}
               </div>
+            )}
+
+            {/* Synopsis */}
+            {film.synopsis && (
+              <p className="text-sm text-cinema-muted leading-relaxed mb-6 line-clamp-3">
+                {film.synopsis}
+              </p>
             )}
 
             {/* Cinemagraphs Score */}
@@ -163,8 +188,8 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
           </div>
 
           {/* Right: Sentiment graph */}
-          <div className="bg-cinema-darker/80 backdrop-blur-sm rounded-xl border border-cinema-border p-5">
-            <div className="flex items-center justify-between mb-3">
+          <div className="bg-cinema-darker/80 backdrop-blur-sm rounded-xl border border-cinema-border p-6">
+            <div className="flex items-center justify-between mb-4">
               <span className="text-xs text-cinema-muted uppercase tracking-wider">Sentiment Timeline</span>
               <span
                 className="font-[family-name:var(--font-bebas)] text-lg"
@@ -173,8 +198,8 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                 {film.sentimentScore.toFixed(1)}
               </span>
             </div>
-            <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={chartData} margin={{ top: 5, right: 35, left: 10, bottom: 5 }}>
+            <ResponsiveContainer width="100%" height={320}>
+              <AreaChart data={chartData} margin={{ top: 10, right: 35, left: 10, bottom: 10 }}>
                 <defs>
                   <linearGradient id="heroGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#C8A951" stopOpacity={0.3} />
@@ -183,11 +208,11 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3e" />
-                <XAxis dataKey="timeMidpoint" tickFormatter={formatTime} stroke="#666" fontSize={10} />
+                <XAxis dataKey="timeMidpoint" tickFormatter={formatTime} stroke="#666" fontSize={11} />
                 {/* Left Y-axis */}
-                <YAxis domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={10} width={28} />
+                <YAxis domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={11} width={28} />
                 {/* Right Y-axis */}
-                <YAxis yAxisId="right" orientation="right" domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={10} width={28} />
+                <YAxis yAxisId="right" orientation="right" domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={11} width={28} />
                 <Area yAxisId="right" type="monotone" dataKey="score" stroke="none" fill="none" dot={false} activeDot={false} isAnimationActive={false} />
                 {/* Dashed neutral midline at 5.0 */}
                 <ReferenceLine y={5} stroke="#888" strokeDasharray="6 4" strokeWidth={1} />
@@ -200,14 +225,33 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                   dot={false}
                   isAnimationActive={false}
                 />
+                {/* Colored dots for peak (green) and low (red) moments */}
+                {(() => {
+                  if (chartData.length === 0) return null
+                  const scores = chartData.map(d => d.score)
+                  const maxScore = Math.max(...scores)
+                  const minScore = Math.min(...scores)
+                  const peakPoint = chartData.find(d => d.score === maxScore)
+                  const lowPoint = chartData.find(d => d.score === minScore)
+                  return (
+                    <>
+                      {peakPoint && (
+                        <ReferenceDot x={peakPoint.timeMidpoint} y={peakPoint.score} r={6} fill="#2DD4A8" stroke="#fff" strokeWidth={2} />
+                      )}
+                      {lowPoint && lowPoint !== peakPoint && (
+                        <ReferenceDot x={lowPoint.timeMidpoint} y={lowPoint.score} r={6} fill="#ef4444" stroke="#fff" strokeWidth={2} />
+                      )}
+                    </>
+                  )
+                })()}
               </AreaChart>
             </ResponsiveContainer>
             {/* Story beat pills */}
-            <div className="flex flex-wrap gap-1.5 mt-3">
+            <div className="flex flex-wrap gap-1.5 mt-4">
               {film.dataPoints.slice(0, 10).map((dp, i) => (
                 <span
                   key={i}
-                  className="text-[9px] px-2 py-0.5 rounded-full border"
+                  className="text-[10px] px-2.5 py-0.5 rounded-full border"
                   style={{
                     color: scoreColor(dp.score),
                     borderColor: scoreColor(dp.score) + '40',
@@ -225,7 +269,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
         {films.length > 1 && (
           <div className="flex items-center justify-center gap-4 mt-10">
             <button
-              onClick={prev}
+              onClick={manualPrev}
               className="w-9 h-9 flex items-center justify-center rounded-full border border-cinema-border hover:border-cinema-gold/50 text-cinema-muted hover:text-cinema-cream transition-colors text-lg"
               aria-label="Previous film"
             >
@@ -235,7 +279,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
               {films.map((_, i) => (
                 <button
                   key={i}
-                  onClick={() => setActiveIndex(i)}
+                  onClick={() => manualGoTo(i)}
                   className={`w-2.5 h-2.5 rounded-full transition-colors ${
                     i === activeIndex ? 'bg-cinema-gold' : 'bg-cinema-border hover:bg-cinema-muted'
                   }`}
@@ -244,7 +288,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
               ))}
             </div>
             <button
-              onClick={next}
+              onClick={manualNext}
               className="w-9 h-9 flex items-center justify-center rounded-full border border-cinema-border hover:border-cinema-gold/50 text-cinema-muted hover:text-cinema-cream transition-colors text-lg"
               aria-label="Next film"
             >
