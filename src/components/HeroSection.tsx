@@ -22,6 +22,7 @@ interface HeroFilm {
   genres: string[]
   posterUrl: string | null
   backdropUrl: string | null
+  tmdbId: number
   sentimentScore: number
   dataPoints: {
     timeMidpoint: number
@@ -63,7 +64,6 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
     setActiveIndex((i) => (i - 1 + films.length) % films.length)
   }, [films.length])
 
-  // Auto-rotate every 8 seconds
   useEffect(() => {
     if (isPaused || films.length <= 1) return
     const timer = setInterval(next, 8000)
@@ -79,6 +79,8 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
     timeMidpoint: dp.timeMidpoint ?? Math.round((dp.timeStart + dp.timeEnd) / 2),
   }))
 
+  const trailerUrl = `https://www.themoviedb.org/movie/${film.tmdbId}/watch`
+
   return (
     <section
       className="relative overflow-hidden"
@@ -92,28 +94,34 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
             src={tmdbImageUrl(film.backdropUrl, 'w1280')}
             alt=""
             fill
-            className="object-cover opacity-30"
+            className="object-cover opacity-25"
             priority
           />
         )}
-        <div className="absolute inset-0 bg-gradient-to-r from-cinema-dark via-cinema-dark/90 to-cinema-dark/70" />
-        <div className="absolute inset-0 bg-gradient-to-t from-cinema-dark via-transparent to-cinema-dark/50" />
+        <div className="absolute inset-0 bg-gradient-to-r from-cinema-dark via-cinema-dark/90 to-cinema-dark/60" />
+        <div className="absolute inset-0 bg-gradient-to-t from-cinema-dark via-transparent to-cinema-dark/40" />
       </div>
 
-      <div className="relative max-w-7xl mx-auto px-4 py-12 md:py-16">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+      <div className="relative max-w-7xl mx-auto px-4 py-14 md:py-20">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
           {/* Left: Film info */}
           <div>
-            <h1 className="font-[family-name:var(--font-playfair)] text-4xl md:text-5xl font-bold mb-3 text-cinema-cream">
+            <h1 className="font-[family-name:var(--font-playfair)] text-4xl md:text-5xl lg:text-6xl font-bold mb-4 text-cinema-cream leading-tight">
               {film.title}
             </h1>
-            <div className="flex flex-wrap items-center gap-3 text-sm text-cinema-muted mb-4">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-cinema-muted mb-4">
               {year && <span>{year}</span>}
+              {year && film.runtime && <span className="text-cinema-muted/40">/</span>}
               {film.runtime && <span>{formatTime(film.runtime)}</span>}
-              {film.director && <span>Dir. {film.director}</span>}
+              {film.director && (
+                <>
+                  <span className="text-cinema-muted/40">/</span>
+                  <span>Dir. {film.director}</span>
+                </>
+              )}
             </div>
             {film.genres.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-5">
+              <div className="flex flex-wrap gap-2 mb-6">
                 {film.genres.slice(0, 4).map((g) => (
                   <span
                     key={g}
@@ -126,50 +134,68 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
             )}
 
             {/* Cinemagraphs Score */}
-            <div className="flex items-baseline gap-3 mb-6">
-              <span className="text-xs text-cinema-muted uppercase tracking-wider">Cinemagraphs Score</span>
+            <div className="mb-8">
+              <span className="text-xs text-cinema-muted uppercase tracking-wider block mb-1">Cinemagraphs Score</span>
               <span
-                className="font-[family-name:var(--font-bebas)] text-4xl"
+                className="font-[family-name:var(--font-bebas)] text-5xl"
                 style={{ color: scoreColor(film.sentimentScore) }}
               >
                 {film.sentimentScore.toFixed(1)}
               </span>
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
               <Link
                 href={`/films/${film.id}`}
-                className="bg-cinema-gold text-cinema-dark font-semibold px-6 py-2.5 rounded-lg hover:bg-cinema-gold/90 transition-colors text-sm"
+                className="bg-cinema-gold text-cinema-dark font-semibold px-7 py-3 rounded-lg hover:bg-cinema-gold/90 transition-colors text-sm"
               >
                 View Full Graph
               </Link>
+              <a
+                href={trailerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="border border-cinema-border text-cinema-cream font-semibold px-7 py-3 rounded-lg hover:border-cinema-gold/50 hover:text-cinema-gold transition-colors text-sm"
+              >
+                Watch Trailer
+              </a>
             </div>
           </div>
 
           {/* Right: Sentiment graph */}
-          <div className="bg-cinema-darker/80 backdrop-blur-sm rounded-lg border border-cinema-border p-4">
-            <div className="flex items-center justify-between mb-2">
+          <div className="bg-cinema-darker/80 backdrop-blur-sm rounded-xl border border-cinema-border p-5">
+            <div className="flex items-center justify-between mb-3">
               <span className="text-xs text-cinema-muted uppercase tracking-wider">Sentiment Timeline</span>
+              <span
+                className="font-[family-name:var(--font-bebas)] text-lg"
+                style={{ color: scoreColor(film.sentimentScore) }}
+              >
+                {film.sentimentScore.toFixed(1)}
+              </span>
             </div>
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={chartData} margin={{ top: 5, right: 30, left: 5, bottom: 5 }}>
+            <ResponsiveContainer width="100%" height={240}>
+              <AreaChart data={chartData} margin={{ top: 5, right: 35, left: 10, bottom: 5 }}>
                 <defs>
                   <linearGradient id="heroGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#C8A951" stopOpacity={0.3} />
+                    <stop offset="50%" stopColor="#C8A951" stopOpacity={0.1} />
                     <stop offset="95%" stopColor="#C8A951" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3e" />
                 <XAxis dataKey="timeMidpoint" tickFormatter={formatTime} stroke="#666" fontSize={10} />
-                <YAxis domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={10} width={25} />
-                <YAxis yAxisId="right" orientation="right" domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={10} width={25} />
+                {/* Left Y-axis */}
+                <YAxis domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={10} width={28} />
+                {/* Right Y-axis */}
+                <YAxis yAxisId="right" orientation="right" domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={10} width={28} />
                 <Area yAxisId="right" type="monotone" dataKey="score" stroke="none" fill="none" dot={false} activeDot={false} isAnimationActive={false} />
-                <ReferenceLine y={5} stroke="#666" strokeDasharray="6 4" />
+                {/* Dashed neutral midline at 5.0 */}
+                <ReferenceLine y={5} stroke="#888" strokeDasharray="6 4" strokeWidth={1} />
                 <Area
                   type="monotone"
                   dataKey="score"
                   stroke="#C8A951"
-                  strokeWidth={2}
+                  strokeWidth={2.5}
                   fill="url(#heroGradient)"
                   dot={false}
                   isAnimationActive={false}
@@ -177,11 +203,11 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
               </AreaChart>
             </ResponsiveContainer>
             {/* Story beat pills */}
-            <div className="flex flex-wrap gap-1 mt-2">
-              {film.dataPoints.slice(0, 8).map((dp, i) => (
+            <div className="flex flex-wrap gap-1.5 mt-3">
+              {film.dataPoints.slice(0, 10).map((dp, i) => (
                 <span
                   key={i}
-                  className="text-[9px] px-1.5 py-0.5 rounded-full border"
+                  className="text-[9px] px-2 py-0.5 rounded-full border"
                   style={{
                     color: scoreColor(dp.score),
                     borderColor: scoreColor(dp.score) + '40',
@@ -195,12 +221,12 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
           </div>
         </div>
 
-        {/* Navigation */}
+        {/* Navigation arrows + dots */}
         {films.length > 1 && (
-          <div className="flex items-center justify-center gap-4 mt-8">
+          <div className="flex items-center justify-center gap-4 mt-10">
             <button
               onClick={prev}
-              className="w-8 h-8 flex items-center justify-center rounded-full border border-cinema-border hover:border-cinema-gold/50 text-cinema-muted hover:text-cinema-cream transition-colors"
+              className="w-9 h-9 flex items-center justify-center rounded-full border border-cinema-border hover:border-cinema-gold/50 text-cinema-muted hover:text-cinema-cream transition-colors text-lg"
               aria-label="Previous film"
             >
               &#8249;
@@ -210,7 +236,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                 <button
                   key={i}
                   onClick={() => setActiveIndex(i)}
-                  className={`w-2 h-2 rounded-full transition-colors ${
+                  className={`w-2.5 h-2.5 rounded-full transition-colors ${
                     i === activeIndex ? 'bg-cinema-gold' : 'bg-cinema-border hover:bg-cinema-muted'
                   }`}
                   aria-label={`Go to film ${i + 1}`}
@@ -219,7 +245,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
             </div>
             <button
               onClick={next}
-              className="w-8 h-8 flex items-center justify-center rounded-full border border-cinema-border hover:border-cinema-gold/50 text-cinema-muted hover:text-cinema-cream transition-colors"
+              className="w-9 h-9 flex items-center justify-center rounded-full border border-cinema-border hover:border-cinema-gold/50 text-cinema-muted hover:text-cinema-cream transition-colors text-lg"
               aria-label="Next film"
             >
               &#8250;

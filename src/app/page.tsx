@@ -54,6 +54,7 @@ export default async function HomePage() {
       genres: f.genres,
       posterUrl: f.posterUrl,
       backdropUrl: f.backdropUrl,
+      tmdbId: f.tmdbId,
       sentimentScore: f.sentimentGraph!.overallScore,
       dataPoints: (f.sentimentGraph!.dataPoints as any[]).map((dp: any) => ({
         timeMidpoint: dp.timeMidpoint ?? Math.round(((dp.timeStart ?? 0) + (dp.timeEnd ?? 0)) / 2),
