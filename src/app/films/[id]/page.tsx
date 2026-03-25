@@ -108,11 +108,11 @@ export default async function FilmPage({
         <div className="mt-10">
           <ErrorBoundary>
             <SentimentGraph
-              dataPoints={(film.sentimentGraph?.dataPoints ?? []) as SentimentDataPoint[]}
+              dataPoints={(film.sentimentGraph?.dataPoints ?? []) as unknown as SentimentDataPoint[]}
               overallScore={film.sentimentGraph?.overallScore ?? 0}
               anchoredFrom={film.sentimentGraph?.anchoredFrom}
-              peakMoment={film.sentimentGraph?.peakMoment as PeakLowMoment | null}
-              lowestMoment={film.sentimentGraph?.lowestMoment as PeakLowMoment | null}
+              peakMoment={film.sentimentGraph?.peakMoment as unknown as PeakLowMoment | null}
+              lowestMoment={film.sentimentGraph?.lowestMoment as unknown as PeakLowMoment | null}
               biggestSwing={film.sentimentGraph?.biggestSwing}
               summary={film.sentimentGraph?.summary}
               sourcesUsed={film.sentimentGraph?.sourcesUsed}
