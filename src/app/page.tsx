@@ -23,7 +23,7 @@ export default async function HomePage() {
     // For ticker: get films with graphs
     prisma.film.findMany({
       where: { status: 'ACTIVE', sentimentGraph: { isNot: null } },
-      include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
+      include: { sentimentGraph: { select: { overallScore: true, previousScore: true, dataPoints: true } } },
       take: 20,
       orderBy: { updatedAt: 'desc' },
     }),
@@ -32,15 +32,21 @@ export default async function HomePage() {
   // Build ticker data
   const tickerFilms = allGraphFilms
     .filter((f) => f.sentimentGraph)
-    .map((f) => ({
-      id: f.id,
-      title: f.title,
-      score: f.sentimentGraph!.overallScore,
-      dataPoints: (f.sentimentGraph!.dataPoints as any[]).map((dp: any) => ({
+    .map((f) => {
+      const current = f.sentimentGraph!.overallScore
+      const previous = f.sentimentGraph!.previousScore
+      const delta = previous != null ? current - previous : 0 // default green (>= 0) when no previous
+      return {
+        id: f.id,
+        title: f.title,
+        score: current,
+        delta,
+        dataPoints: (f.sentimentGraph!.dataPoints as any[]).map((dp: any) => ({
         timeMidpoint: dp.timeMidpoint ?? Math.round(((dp.timeStart ?? 0) + (dp.timeEnd ?? 0)) / 2),
         score: dp.score,
       })),
-    }))
+      }
+    })
 
   // Build hero data from featured films that have graphs
   const heroFilms = featuredFilms

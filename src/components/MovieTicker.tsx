@@ -8,6 +8,7 @@ interface TickerFilm {
   id: string
   title: string
   score: number
+  delta: number // positive = trending up, negative = trending down, 0 = no change
   dataPoints: { timeMidpoint: number; score: number }[]
 }
 
@@ -69,7 +70,7 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
         >
           <div className="flex">
             {tickerFilms.map((film, i) => {
-              const isUp = film.score >= 7
+              const isUp = film.delta >= 0
               const color = isUp ? '#00E676' : '#E24B4A'
               const arrow = isUp ? '\u25B2' : '\u25BC'
 

@@ -114,6 +114,7 @@ model SentimentGraph {
   id              String   @id @default(cuid())
   filmId          String   @unique
   overallScore    Float
+  previousScore   Float?
   anchoredFrom    String
   dataPoints      Json
   peakMoment      Json?

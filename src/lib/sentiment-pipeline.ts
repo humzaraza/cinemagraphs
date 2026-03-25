@@ -96,6 +96,7 @@ export async function generateSentimentGraph(filmId: string): Promise<void> {
     await prisma.sentimentGraph.update({
       where: { filmId: film.id },
       data: {
+        previousScore: existing.overallScore,
         overallScore: graphData.overallSentiment,
         anchoredFrom: graphData.anchoredFrom,
         dataPoints: graphData.dataPoints as any,
