@@ -1,35 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { Film, Review } from '@/generated/prisma/client'
 import type { AnchorScores } from './omdb'
+import type { SentimentDataPoint, SentimentGraphData } from '@/lib/types'
+
+export type { SentimentDataPoint, SentimentGraphData }
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || process.env.CINEMA_ANTHROPIC_KEY || '',
 })
-
-export interface SentimentDataPoint {
-  timeStart: number
-  timeEnd: number
-  timeMidpoint: number
-  score: number
-  label: string
-  confidence: 'low' | 'medium' | 'high'
-  reviewEvidence: string
-}
-
-export interface SentimentGraphData {
-  film: string
-  anchoredFrom: string
-  dataPoints: SentimentDataPoint[]
-  overallSentiment: number
-  peakMoment: { label: string; score: number; time: number }
-  lowestMoment: { label: string; score: number; time: number }
-  biggestSentimentSwing: string
-  summary: string
-  sources: string[]
-  varianceSource: 'external_only' | 'blended'
-  reviewCount: number
-  generatedAt: string
-}
 
 function buildAnalysisPrompt(
   film: Film,

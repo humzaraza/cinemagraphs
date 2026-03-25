@@ -2,11 +2,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { tmdbImageUrl, formatYear } from '@/lib/utils'
 import { FilmCardMiniGraph } from './FilmCardMiniGraph'
-
-interface DataPoint {
-  timeMidpoint: number
-  score: number
-}
+import type { MiniGraphDataPoint } from '@/lib/types'
 
 interface FilmCardProps {
   id: string
@@ -15,7 +11,7 @@ interface FilmCardProps {
   releaseDate: string | null
   genres: string[]
   sentimentScore?: number | null
-  graphDataPoints?: DataPoint[] | null
+  graphDataPoints?: MiniGraphDataPoint[] | null
 }
 
 export default function FilmCard({

@@ -1,15 +1,9 @@
 'use client'
 
 import { AreaChart, Area, YAxis, XAxis, ResponsiveContainer } from 'recharts'
+import type { MiniGraphDataPoint } from '@/lib/types'
 
-interface DataPoint {
-  timeMidpoint?: number
-  timeStart?: number
-  timeEnd?: number
-  score: number
-}
-
-export function FilmCardMiniGraph({ dataPoints }: { dataPoints: DataPoint[] }) {
+export function FilmCardMiniGraph({ dataPoints }: { dataPoints: MiniGraphDataPoint[] }) {
   if (!dataPoints || dataPoints.length === 0) return null
 
   // Compute timeMidpoint if missing

@@ -11,25 +11,10 @@ import {
   ReferenceLine,
   ReferenceDot,
 } from 'recharts'
-
-interface DataPoint {
-  timeStart: number
-  timeEnd: number
-  timeMidpoint: number
-  score: number
-  label: string
-  confidence: 'low' | 'medium' | 'high'
-  reviewEvidence: string
-}
-
-interface PeakLowMoment {
-  label: string
-  score: number
-  time: number
-}
+import type { SentimentDataPoint, PeakLowMoment } from '@/lib/types'
 
 interface SentimentGraphProps {
-  dataPoints: DataPoint[]
+  dataPoints: SentimentDataPoint[]
   overallScore: number
   anchoredFrom?: string | null
   peakMoment?: PeakLowMoment | null
@@ -62,7 +47,7 @@ function confidenceRadius(confidence: string): number {
 
 function CustomTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
   if (!active || !payload?.length) return null
-  const data = payload[0].payload as DataPoint
+  const data = payload[0].payload as SentimentDataPoint
   return (
     <div className="bg-[#1a1a2e] border border-[#2a2a3e] rounded-lg p-3 max-w-xs shadow-xl">
       <div className="flex items-center justify-between gap-3 mb-1">
@@ -90,38 +75,6 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: any[] 
       {data.reviewEvidence && (
         <p className="text-xs text-cinema-cream/70 italic leading-relaxed">{data.reviewEvidence}</p>
       )}
-    </div>
-  )
-}
-
-// ── Mini Graph for Film Cards ──
-
-export function MiniSentimentGraph({ dataPoints }: { dataPoints: DataPoint[] }) {
-  if (!dataPoints || dataPoints.length === 0) return null
-
-  return (
-    <div className="w-full h-12">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={dataPoints} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
-          <defs>
-            <linearGradient id="miniGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#C8A951" stopOpacity={0.4} />
-              <stop offset="95%" stopColor="#C8A951" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <Area
-            type="monotone"
-            dataKey="score"
-            stroke="#C8A951"
-            strokeWidth={1.5}
-            fill="url(#miniGradient)"
-            dot={false}
-            isAnimationActive={false}
-          />
-          <YAxis domain={[1, 10]} hide />
-          <XAxis dataKey="timeMidpoint" hide />
-        </AreaChart>
-      </ResponsiveContainer>
     </div>
   )
 }

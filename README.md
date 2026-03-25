@@ -1,36 +1,100 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Cinemagraphs
+
+**[cinemagraphs.ca](https://cinemagraphs.ca)**
+
+A Next.js web application that aggregates movie reviews from multiple sources (TMDB, IMDb, The Guardian, Reddit, Letterboxd, critic blogs), analyzes them with Claude AI, and generates sentiment graphs showing how audience opinion shifts scene-by-scene across a film's runtime.
+
+## Tech Stack
+
+- **Next.js 16** (App Router)
+- **TypeScript**
+- **Tailwind CSS 4**
+- **Prisma ORM** with **Neon PostgreSQL** (serverless)
+- **Recharts 3** for data visualization
+- **Claude Sonnet** (Anthropic API) for NLP sentiment analysis
+- **NextAuth.js** with Google OAuth
+- Deployed on **Vercel**
+
+## Project Structure
+
+```
+src/
+├── app/                    # Next.js App Router pages & API routes
+│   ├── api/
+│   │   ├── admin/          # Admin-only endpoints (import, analyze)
+│   │   ├── auth/           # NextAuth endpoints
+│   │   ├── cron/           # Scheduled analysis jobs
+│   │   └── films/          # Public film API
+│   ├── admin/              # Admin dashboard
+│   ├── auth/               # Auth pages
+│   ├── films/              # Film detail & browse pages
+│   └── page.tsx            # Homepage
+├── components/             # React components
+│   ├── SentimentGraph.tsx  # Main sentiment visualization
+│   ├── FilmCard.tsx        # Film card with mini graph
+│   ├── FilmCardMiniGraph.tsx # Condensed sparkline graph
+│   └── ...
+├── lib/                    # Business logic
+│   ├── types.ts            # Shared TypeScript types
+│   ├── claude.ts           # Claude AI sentiment analysis
+│   ├── review-fetcher.ts   # Multi-source review orchestrator
+│   ├── sources/            # Individual review source fetchers
+│   │   ├── tmdb.ts
+│   │   ├── imdb.ts
+│   │   ├── guardian.ts
+│   │   ├── reddit.ts
+│   │   ├── letterboxd.ts
+│   │   ├── critic.ts
+│   │   └── helpers.ts
+│   ├── sentiment-pipeline.ts # Full analysis pipeline orchestrator
+│   ├── omdb.ts             # OMDB anchor scores
+│   ├── tmdb.ts             # TMDB API helpers
+│   ├── prisma.ts           # Prisma client singleton
+│   ├── auth.ts             # NextAuth config
+│   └── utils.ts            # General utilities
+└── generated/prisma/       # Auto-generated Prisma client
+prisma/
+└── schema.prisma           # Database schema
+```
+
+## How the Sentiment Pipeline Works
+
+1. **Review Fetching** -- Aggregates reviews from up to 6 sources in parallel (TMDB, IMDb via RapidAPI, The Guardian, Reddit, Letterboxd, critic blogs).
+2. **Anchor Scores** -- Pulls IMDb/RT/Metacritic ratings from OMDB as calibration anchors.
+3. **AI Analysis** -- Sends reviews and anchor scores to Claude Sonnet, which generates 14-18 data points mapping sentiment across the film's runtime.
+4. **Storage** -- Results are stored as JSON in the `SentimentGraph` table, linked to each `Film`.
+5. **Visualization** -- Recharts renders an interactive area chart with confidence-weighted dots, reference lines, and peak/low moment markers.
 
 ## Getting Started
 
-First, run the development server:
+1. Clone the repo.
+2. Copy `.env.example` to `.env` and fill in the required values.
+3. Install dependencies:
+   ```bash
+   npm install
+   ```
+4. Push the database schema:
+   ```bash
+   npx prisma db push
+   ```
+5. Generate the Prisma client:
+   ```bash
+   npx prisma generate
+   ```
+6. Start the development server:
+   ```bash
+   npm run dev
+   ```
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Environment Variables
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+See `.env.example` for all required and optional variables.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Key Commands
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Command | Description |
+|---|---|
+| `npm run dev` | Start the development server |
+| `npm run build` | Production build |
+| `npx prisma studio` | Browse the database visually |
+| `npx prisma db push` | Push schema changes to the database |

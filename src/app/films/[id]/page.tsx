@@ -5,12 +5,8 @@ export const dynamic = 'force-dynamic'
 import Image from 'next/image'
 import { tmdbImageUrl, formatRuntime, formatDate } from '@/lib/utils'
 import SentimentGraph from '@/components/SentimentGraph'
-
-interface CastMember {
-  name: string
-  character: string
-  profilePath?: string
-}
+import { ErrorBoundary } from '@/components/ErrorBoundary'
+import type { CastMember, PeakLowMoment, SentimentDataPoint } from '@/lib/types'
 
 export default async function FilmPage({
   params,
@@ -128,18 +124,20 @@ export default async function FilmPage({
 
         {/* Sentiment Graph */}
         <div className="mt-10">
-          <SentimentGraph
-            dataPoints={(film.sentimentGraph?.dataPoints ?? []) as any[]}
-            overallScore={film.sentimentGraph?.overallScore ?? 0}
-            anchoredFrom={film.sentimentGraph?.anchoredFrom}
-            peakMoment={film.sentimentGraph?.peakMoment as { label: string; score: number; time: number } | null}
-            lowestMoment={film.sentimentGraph?.lowestMoment as { label: string; score: number; time: number } | null}
-            biggestSwing={film.sentimentGraph?.biggestSwing}
-            summary={film.sentimentGraph?.summary}
-            sourcesUsed={film.sentimentGraph?.sourcesUsed}
-            reviewCount={film.sentimentGraph?.reviewCount}
-            runtime={film.runtime}
-          />
+          <ErrorBoundary>
+            <SentimentGraph
+              dataPoints={(film.sentimentGraph?.dataPoints ?? []) as SentimentDataPoint[]}
+              overallScore={film.sentimentGraph?.overallScore ?? 0}
+              anchoredFrom={film.sentimentGraph?.anchoredFrom}
+              peakMoment={film.sentimentGraph?.peakMoment as PeakLowMoment | null}
+              lowestMoment={film.sentimentGraph?.lowestMoment as PeakLowMoment | null}
+              biggestSwing={film.sentimentGraph?.biggestSwing}
+              summary={film.sentimentGraph?.summary}
+              sourcesUsed={film.sentimentGraph?.sourcesUsed}
+              reviewCount={film.sentimentGraph?.reviewCount}
+              runtime={film.runtime}
+            />
+          </ErrorBoundary>
         </div>
 
         {/* Cast */}
