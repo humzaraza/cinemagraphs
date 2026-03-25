@@ -5,7 +5,7 @@ export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get('q')
 
   if (!query || query.trim().length === 0) {
-    return Response.json({ error: 'Search query is required' }, { status: 400 })
+    return Response.json({ error: 'Search query is required', code: 'BAD_REQUEST' }, { status: 400 })
   }
 
   const sanitizedQuery = query.trim().slice(0, 200)

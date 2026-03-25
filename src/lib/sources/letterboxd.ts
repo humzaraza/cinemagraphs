@@ -1,6 +1,7 @@
 import type { Film } from '@/generated/prisma/client'
 import type { FetchedReview } from '@/lib/types'
 import { slugify } from './helpers'
+import { reviewLogger } from '@/lib/logger'
 
 // Note: Letterboxd uses Cloudflare anti-bot protection.
 // Server-side fetching will be blocked with a JS challenge page.
@@ -30,13 +31,13 @@ export async function fetchLetterboxdReviews(film: Film): Promise<FetchedReview[
 
         // Detect Cloudflare challenge
         if (html.includes('Just a moment...') || html.includes('cf_chl_opt') || html.includes('challenge-platform')) {
-          console.warn(`[ReviewFetcher] Letterboxd blocked by Cloudflare for "${film.title}" — skipping`)
+          reviewLogger.warn({ source: 'LETTERBOXD', filmTitle: film.title }, 'Letterboxd blocked by Cloudflare — skipping')
           return []
         }
 
         const reviews = parseLetterboxdHTML(html, url)
         if (reviews.length > 0) {
-          console.log(`[ReviewFetcher] Letterboxd: ${reviews.length} reviews for "${film.title}"`)
+          reviewLogger.info({ source: 'LETTERBOXD', filmTitle: film.title, count: reviews.length }, 'Letterboxd reviews fetched')
           return reviews
         }
       } catch {
@@ -44,10 +45,10 @@ export async function fetchLetterboxdReviews(film: Film): Promise<FetchedReview[
       }
     }
 
-    console.log(`[ReviewFetcher] Letterboxd: 0 reviews for "${film.title}" (Cloudflare blocked)`)
+    reviewLogger.info({ source: 'LETTERBOXD', filmTitle: film.title, count: 0 }, 'Letterboxd: 0 reviews (Cloudflare blocked)')
     return []
   } catch (err) {
-    console.error(`[ReviewFetcher] Letterboxd failed for ${film.title}:`, err)
+    reviewLogger.error({ source: 'LETTERBOXD', filmTitle: film.title, error: err instanceof Error ? err.message : String(err) }, 'Letterboxd fetch failed')
     return []
   }
 }

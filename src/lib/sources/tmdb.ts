@@ -1,5 +1,6 @@
 import type { Film } from '@/generated/prisma/client'
 import type { FetchedReview } from '@/lib/types'
+import { reviewLogger } from '@/lib/logger'
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY!
 const TMDB_BASE_URL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3'
@@ -33,10 +34,10 @@ export async function fetchTMDBReviews(film: Film): Promise<FetchedReview[]> {
       if (data.total_pages <= page) break
     }
 
-    console.log(`[ReviewFetcher] TMDB: ${reviews.length} reviews for "${film.title}"`)
+    reviewLogger.info({ source: 'TMDB', filmTitle: film.title, count: reviews.length }, 'TMDB reviews fetched')
     return reviews
   } catch (err) {
-    console.error(`[ReviewFetcher] TMDB failed for ${film.title}:`, err)
+    reviewLogger.error({ source: 'TMDB', filmTitle: film.title, error: err instanceof Error ? err.message : String(err) }, 'TMDB fetch failed')
     return []
   }
 }

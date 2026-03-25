@@ -1,6 +1,7 @@
 import type { Film } from '@/generated/prisma/client'
 import type { FetchedReview } from '@/lib/types'
 import { slugify, extractArticleText } from './helpers'
+import { reviewLogger } from '@/lib/logger'
 
 export async function fetchCriticReviews(film: Film): Promise<FetchedReview[]> {
   try {
@@ -34,10 +35,10 @@ export async function fetchCriticReviews(film: Film): Promise<FetchedReview[]> {
       }
     }
 
-    console.log(`[ReviewFetcher] Critic blogs: ${reviews.length} reviews for "${film.title}"`)
+    reviewLogger.info({ source: 'CRITIC_BLOG', filmTitle: film.title, count: reviews.length }, 'Critic blog reviews fetched')
     return reviews
   } catch (err) {
-    console.error(`[ReviewFetcher] Critic blogs failed for ${film.title}:`, err)
+    reviewLogger.error({ source: 'CRITIC_BLOG', filmTitle: film.title, error: err instanceof Error ? err.message : String(err) }, 'Critic blog fetch failed')
     return []
   }
 }

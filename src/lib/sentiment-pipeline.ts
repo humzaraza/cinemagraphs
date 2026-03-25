@@ -3,6 +3,7 @@ import { fetchAnchorScores } from './omdb'
 import { fetchAllReviews } from './review-fetcher'
 import { analyzeSentiment } from './claude'
 import type { AnchorScores } from './omdb'
+import { pipelineLogger } from './logger'
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY!
 const TMDB_BASE_URL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3'
@@ -25,7 +26,7 @@ export async function generateSentimentGraph(filmId: string): Promise<void> {
   const film = await prisma.film.findUnique({ where: { id: filmId } })
   if (!film) throw new Error(`Film not found: ${filmId}`)
 
-  console.log(`[Pipeline] Starting analysis for "${film.title}"`)
+  pipelineLogger.info({ filmId: film.id, filmTitle: film.title }, 'Starting analysis')
 
   // 2. Ensure we have the IMDb ID
   if (!film.imdbId) {
@@ -68,7 +69,7 @@ export async function generateSentimentGraph(filmId: string): Promise<void> {
     }
   }
 
-  console.log(`[Pipeline] Anchor scores: IMDb ${anchorScores.imdbRating}, RT ${anchorScores.rtCriticsScore}%, MC ${anchorScores.metacriticScore}`)
+  pipelineLogger.info({ filmId: film.id, filmTitle: film.title, imdbRating: anchorScores.imdbRating, rtCriticsScore: anchorScores.rtCriticsScore, metacriticScore: anchorScores.metacriticScore }, 'Anchor scores fetched')
 
   // 4. Fetch reviews from all sources
   const totalFetched = await fetchAllReviews(film)
@@ -83,7 +84,7 @@ export async function generateSentimentGraph(filmId: string): Promise<void> {
     throw new Error(`Insufficient reviews for "${film.title}": only ${reviews.length} found (minimum 2 required)`)
   }
 
-  console.log(`[Pipeline] ${reviews.length} reviews available for analysis`)
+  pipelineLogger.info({ filmId: film.id, filmTitle: film.title, reviewCount: reviews.length }, 'Reviews available for analysis')
 
   // 5. Send to Claude API for analysis
   const graphData = await analyzeSentiment(film, reviews, anchorScores)
@@ -108,7 +109,7 @@ export async function generateSentimentGraph(filmId: string): Promise<void> {
         version: existing.version + 1,
       },
     })
-    console.log(`[Pipeline] Updated sentiment graph for "${film.title}" (v${existing.version + 1})`)
+    pipelineLogger.info({ filmId: film.id, filmTitle: film.title, version: existing.version + 1 }, 'Updated sentiment graph')
   } else {
     await prisma.sentimentGraph.create({
       data: {
@@ -125,7 +126,7 @@ export async function generateSentimentGraph(filmId: string): Promise<void> {
         generatedAt: new Date(),
       },
     })
-    console.log(`[Pipeline] Created sentiment graph for "${film.title}"`)
+    pipelineLogger.info({ filmId: film.id, filmTitle: film.title }, 'Created sentiment graph')
   }
 }
 
@@ -142,7 +143,7 @@ export async function generateBatchSentimentGraphs(filmIds: string[]): Promise<{
       succeeded.push(filmId)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      console.error(`[Pipeline] Failed for ${filmId}: ${message}`)
+      pipelineLogger.error({ filmId, error: message }, 'Film analysis failed')
       failed.push({ id: filmId, error: message })
     }
 
@@ -152,6 +153,6 @@ export async function generateBatchSentimentGraphs(filmIds: string[]): Promise<{
     }
   }
 
-  console.log(`[Pipeline] Batch complete: ${succeeded.length} succeeded, ${failed.length} failed`)
+  pipelineLogger.info({ succeeded: succeeded.length, failed: failed.length }, 'Batch complete')
   return { succeeded, failed }
 }

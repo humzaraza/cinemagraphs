@@ -1,5 +1,6 @@
 import type { Film } from '@/generated/prisma/client'
 import type { FetchedReview } from '@/lib/types'
+import { reviewLogger } from '@/lib/logger'
 
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY
 const RAPIDAPI_IMDB_HOST = process.env.RAPIDAPI_IMDB_HOST || 'imdb232.p.rapidapi.com'
@@ -24,7 +25,7 @@ export async function fetchIMDbReviews(film: Film): Promise<FetchedReview[]> {
     )
 
     if (userRes.status === 403) {
-      console.warn(`[ReviewFetcher] IMDb RapidAPI 403 — not subscribed to ${RAPIDAPI_IMDB_HOST}. Subscribe at https://rapidapi.com/hub to enable IMDb reviews.`)
+      reviewLogger.warn({ source: 'IMDB', host: RAPIDAPI_IMDB_HOST }, 'IMDb RapidAPI 403 — not subscribed. Subscribe at https://rapidapi.com/hub to enable IMDb reviews.')
       return []
     }
 
@@ -82,10 +83,10 @@ export async function fetchIMDbReviews(film: Film): Promise<FetchedReview[]> {
       // Critic reviews are a bonus — failure is fine
     }
 
-    console.log(`[ReviewFetcher] IMDb: ${reviews.length} reviews for "${film.title}"`)
+    reviewLogger.info({ source: 'IMDB', filmTitle: film.title, count: reviews.length }, 'IMDb reviews fetched')
     return reviews
   } catch (err) {
-    console.error(`[ReviewFetcher] IMDb failed for ${film.title}:`, err)
+    reviewLogger.error({ source: 'IMDB', filmTitle: film.title, error: err instanceof Error ? err.message : String(err) }, 'IMDb fetch failed')
     return []
   }
 }

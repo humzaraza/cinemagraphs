@@ -8,7 +8,7 @@ export async function POST(
 ) {
   const session = await getServerSession(authOptions)
   if (!session?.user || session.user.role !== 'ADMIN') {
-    return Response.json({ error: 'Unauthorized' }, { status: 403 })
+    return Response.json({ error: 'Unauthorized', code: 'FORBIDDEN' }, { status: 403 })
   }
 
   const { id } = await params
@@ -18,6 +18,6 @@ export async function POST(
     return Response.json({ success: true, filmId: id })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Analysis failed'
-    return Response.json({ error: message }, { status: 500 })
+    return Response.json({ error: message, code: 'INTERNAL_ERROR' }, { status: 500 })
   }
 }

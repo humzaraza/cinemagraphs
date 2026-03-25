@@ -1,5 +1,6 @@
 import type { Film } from '@/generated/prisma/client'
 import type { FetchedReview } from '@/lib/types'
+import { reviewLogger } from '@/lib/logger'
 
 // The Guardian Open Platform API - free tier with "test" key
 const GUARDIAN_API_KEY = process.env.GUARDIAN_API_KEY || 'test'
@@ -91,10 +92,10 @@ export async function fetchGuardianReviews(film: Film): Promise<FetchedReview[]>
       }
     }
 
-    console.log(`[ReviewFetcher] Guardian: ${reviews.length} reviews for "${film.title}"`)
+    reviewLogger.info({ source: 'GUARDIAN', filmTitle: film.title, count: reviews.length }, 'Guardian reviews fetched')
     return reviews
   } catch (err) {
-    console.error(`[ReviewFetcher] Guardian failed for ${film.title}:`, err)
+    reviewLogger.error({ source: 'GUARDIAN', filmTitle: film.title, error: err instanceof Error ? err.message : String(err) }, 'Guardian fetch failed')
     return []
   }
 }

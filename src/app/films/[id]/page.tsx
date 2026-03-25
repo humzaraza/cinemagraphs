@@ -88,33 +88,15 @@ export default async function FilmPage({
               </div>
             )}
 
-            {/* Ratings */}
-            <div className="flex gap-6 mb-6">
-              {film.imdbRating != null && (
-                <div>
-                  <span className="text-xs text-cinema-muted block">IMDb</span>
-                  <span className="font-[family-name:var(--font-bebas)] text-2xl text-cinema-gold">
-                    {film.imdbRating.toFixed(1)}
-                  </span>
-                </div>
-              )}
-              {film.rtCriticsScore != null && (
-                <div>
-                  <span className="text-xs text-cinema-muted block">RT Critics</span>
-                  <span className="font-[family-name:var(--font-bebas)] text-2xl text-cinema-teal">
-                    {film.rtCriticsScore}%
-                  </span>
-                </div>
-              )}
-              {film.metacriticScore != null && (
-                <div>
-                  <span className="text-xs text-cinema-muted block">Metacritic</span>
-                  <span className="font-[family-name:var(--font-bebas)] text-2xl text-cinema-cream">
-                    {film.metacriticScore}
-                  </span>
-                </div>
-              )}
-            </div>
+            {/* Sentiment Score */}
+            {film.sentimentGraph && (
+              <div className="mb-6">
+                <span className="text-xs text-cinema-muted block">Cinemagraphs Score</span>
+                <span className="font-[family-name:var(--font-bebas)] text-3xl text-cinema-gold">
+                  {film.sentimentGraph.overallScore.toFixed(1)}
+                </span>
+              </div>
+            )}
 
             {film.synopsis && (
               <p className="text-cinema-cream/80 leading-relaxed mb-8">{film.synopsis}</p>

@@ -11,7 +11,7 @@ export async function GET(
   })
 
   if (!graph) {
-    return Response.json({ error: 'No sentiment graph found for this film' }, { status: 404 })
+    return Response.json({ error: 'No sentiment graph found for this film', code: 'NOT_FOUND' }, { status: 404 })
   }
 
   return Response.json({ graph })

@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { Film, Review } from '@/generated/prisma/client'
 import type { AnchorScores } from './omdb'
 import type { SentimentDataPoint, SentimentGraphData } from '@/lib/types'
+import { pipelineLogger } from './logger'
 
 export type { SentimentDataPoint, SentimentGraphData }
 
@@ -118,19 +119,26 @@ export async function analyzeSentiment(
   const prompt = buildAnalysisPrompt(film, reviews, anchorScores)
 
   let lastError: Error | null = null
+  let lastRawResponse: string | undefined
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
+      const currentPrompt = attempt === 0
+        ? prompt
+        : `IMPORTANT: Your previous response was not valid JSON. Respond with ONLY valid JSON — no markdown fences, no preamble, no trailing text.\n\n${prompt}`
+
       const message = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 4000,
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: 'user', content: currentPrompt }],
       })
 
       const responseText = message.content
         .filter((block) => block.type === 'text')
         .map((block) => block.text)
         .join('')
+
+      lastRawResponse = responseText
 
       // Strip any accidental markdown fences
       const cleaned = responseText
@@ -158,13 +166,19 @@ export async function analyzeSentiment(
       return data
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err))
-      console.error(`[Claude] Attempt ${attempt + 1} failed:`, lastError.message)
+      pipelineLogger.error(
+        { filmId: film.id, attempt: attempt + 1, error: lastError.message },
+        `Claude attempt ${attempt + 1} failed`
+      )
       if (attempt === 0) {
-        // Wait briefly before retry
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        await new Promise(resolve => setTimeout(resolve, 2000))
       }
     }
   }
 
+  pipelineLogger.error(
+    { filmId: film.id, filmTitle: film.title, rawResponse: lastRawResponse?.slice(0, 500) },
+    'Claude analysis failed after 2 attempts'
+  )
   throw new Error(`Claude analysis failed after 2 attempts: ${lastError?.message}`)
 }

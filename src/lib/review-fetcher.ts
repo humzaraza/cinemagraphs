@@ -2,6 +2,7 @@ import { prisma } from './prisma'
 import { createHash } from 'crypto'
 import type { Film } from '@/generated/prisma/client'
 import type { FetchedReview } from '@/lib/types'
+import { reviewLogger } from './logger'
 import {
   fetchTMDBReviews,
   fetchIMDbReviews,
@@ -16,7 +17,7 @@ function contentHash(text: string): string {
 }
 
 export async function fetchAllReviews(film: Film): Promise<number> {
-  console.log(`[ReviewFetcher] Fetching reviews for "${film.title}"...`)
+  reviewLogger.info({ filmId: film.id, filmTitle: film.title }, 'Fetching reviews')
 
   const [tmdb, imdb, critic, letterboxd, reddit, guardian] = await Promise.allSettled([
     fetchTMDBReviews(film),
@@ -41,8 +42,7 @@ export async function fetchAllReviews(film: Film): Promise<number> {
   for (const r of allReviews) {
     sourceCounts[r.sourcePlatform] = (sourceCounts[r.sourcePlatform] || 0) + 1
   }
-  console.log(`[ReviewFetcher] Source breakdown:`, sourceCounts)
-  console.log(`[ReviewFetcher] Total: ${allReviews.length} reviews from all sources`)
+  reviewLogger.info({ filmId: film.id, filmTitle: film.title, sourceCounts, total: allReviews.length }, 'Source breakdown')
 
   // Deduplicate by content hash and store
   let stored = 0
@@ -68,6 +68,6 @@ export async function fetchAllReviews(film: Film): Promise<number> {
     stored++
   }
 
-  console.log(`[ReviewFetcher] Stored ${stored} new reviews (${allReviews.length - stored} duplicates skipped)`)
+  reviewLogger.info({ filmId: film.id, filmTitle: film.title, stored, duplicatesSkipped: allReviews.length - stored }, 'Reviews stored')
   return allReviews.length
 }

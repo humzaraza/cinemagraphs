@@ -9,7 +9,7 @@ export async function PATCH(
   const session = await getServerSession(authOptions)
 
   if (!session?.user || session.user.role !== 'ADMIN') {
-    return Response.json({ error: 'Unauthorized' }, { status: 403 })
+    return Response.json({ error: 'Unauthorized', code: 'FORBIDDEN' }, { status: 403 })
   }
 
   const { id } = await params
@@ -25,7 +25,7 @@ export async function PATCH(
   }
 
   if (Object.keys(updateData).length === 0) {
-    return Response.json({ error: 'No valid fields to update' }, { status: 400 })
+    return Response.json({ error: 'No valid fields to update', code: 'BAD_REQUEST' }, { status: 400 })
   }
 
   const film = await prisma.film.update({

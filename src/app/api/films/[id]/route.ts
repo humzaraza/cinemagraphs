@@ -14,7 +14,7 @@ export async function GET(
   })
 
   if (!film) {
-    return Response.json({ error: 'Film not found' }, { status: 404 })
+    return Response.json({ error: 'Film not found', code: 'NOT_FOUND' }, { status: 404 })
   }
 
   return Response.json(film)

@@ -1,5 +1,6 @@
 import type { Film } from '@/generated/prisma/client'
 import type { FetchedReview } from '@/lib/types'
+import { reviewLogger } from '@/lib/logger'
 
 const REDDIT_CLIENT_ID = process.env.REDDIT_CLIENT_ID
 const REDDIT_CLIENT_SECRET = process.env.REDDIT_CLIENT_SECRET
@@ -73,10 +74,10 @@ export async function fetchRedditReviews(film: Film): Promise<FetchedReview[]> {
       }
     }
 
-    console.log(`[ReviewFetcher] Reddit: ${reviews.length} reviews for "${film.title}"`)
+    reviewLogger.info({ source: 'REDDIT', filmTitle: film.title, count: reviews.length }, 'Reddit reviews fetched')
     return reviews
   } catch (err) {
-    console.error(`[ReviewFetcher] Reddit failed for ${film.title}:`, err)
+    reviewLogger.error({ source: 'REDDIT', filmTitle: film.title, error: err instanceof Error ? err.message : String(err) }, 'Reddit fetch failed')
     return []
   }
 }

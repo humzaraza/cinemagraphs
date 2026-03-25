@@ -6,7 +6,7 @@ export async function POST(request: Request) {
   const session = await getServerSession(authOptions)
 
   if (!session?.user || session.user.role !== 'ADMIN') {
-    return Response.json({ error: 'Unauthorized' }, { status: 403 })
+    return Response.json({ error: 'Unauthorized', code: 'FORBIDDEN' }, { status: 403 })
   }
 
   const body = await request.json()
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   if (query && typeof query === 'string') {
     const sanitizedQuery = query.trim().slice(0, 200)
     if (sanitizedQuery.length === 0) {
-      return Response.json({ error: 'Search query is required' }, { status: 400 })
+      return Response.json({ error: 'Search query is required', code: 'BAD_REQUEST' }, { status: 400 })
     }
     const results = await searchMovies(sanitizedQuery)
     return Response.json({ results: results.results })
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   }
 
   return Response.json(
-    { error: 'Provide either a tmdbId (number) or query (string)' },
+    { error: 'Provide either a tmdbId (number) or query (string)', code: 'BAD_REQUEST' },
     { status: 400 }
   )
 }
