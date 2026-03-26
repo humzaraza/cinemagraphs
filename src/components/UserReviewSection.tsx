@@ -86,7 +86,7 @@ interface ExistingReview {
 
 export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
   const { data: session } = useSession()
-  const [overallRating, setOverallRating] = useState(5)
+  const [overallRating, setOverallRating] = useState(5.5)
   const [beatRatings, setBeatRatings] = useState<Record<string, number>>({})
   const [beginning, setBeginning] = useState('')
   const [middle, setMiddle] = useState('')
@@ -115,7 +115,7 @@ export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
     if (hasGraph && selectedBeats.length > 0 && !myReview && !editing) {
       const initial: Record<string, number> = {}
       for (const { beat } of selectedBeats) {
-        initial[beat.label] = 5
+        initial[beat.label] = 5.5
       }
       setBeatRatings(initial)
     }
@@ -330,7 +330,7 @@ export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
               />
               <div className="flex justify-between text-xs text-cinema-muted/60 mt-1">
                 <span>1</span>
-                <span>5</span>
+                <span>5.5</span>
                 <span>10</span>
               </div>
             </div>
