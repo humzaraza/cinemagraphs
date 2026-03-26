@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/analyze",
       "schedule": "0 3 * * 1"
+    },
+    {
+      "path": "/api/cron/import-new-films",
+      "schedule": "0 4 1 * *"
     }
   ]
 }
