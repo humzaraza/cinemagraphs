@@ -146,12 +146,13 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
             {film.genres.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-4">
                 {film.genres.slice(0, 4).map((g) => (
-                  <span
+                  <Link
                     key={g}
-                    className="text-xs px-3 py-1 rounded-full bg-cinema-gold/10 text-cinema-gold border border-cinema-gold/20"
+                    href={`/films/browse?genre=${encodeURIComponent(g)}`}
+                    className="text-xs px-3 py-1 rounded-full bg-cinema-gold/10 text-cinema-gold border border-cinema-gold/20 hover:border-cinema-gold/60 hover:bg-cinema-gold/20 transition-colors"
                   >
                     {g}
-                  </span>
+                  </Link>
                 ))}
               </div>
             )}

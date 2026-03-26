@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 
 export const dynamic = 'force-dynamic'
 import Image from 'next/image'
+import Link from 'next/link'
 import { tmdbImageUrl, formatRuntime, formatDate } from '@/lib/utils'
 import { getMovieTrailerKey } from '@/lib/tmdb'
 import SentimentGraph from '@/components/SentimentGraph'
@@ -81,12 +82,13 @@ export default async function FilmPage({
             {film.genres.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-4">
                 {film.genres.map((genre) => (
-                  <span
+                  <Link
                     key={genre}
-                    className="text-xs px-3 py-1 rounded-full bg-cinema-gold/10 text-cinema-gold border border-cinema-gold/20"
+                    href={`/films/browse?genre=${encodeURIComponent(genre)}`}
+                    className="text-xs px-3 py-1 rounded-full bg-cinema-gold/10 text-cinema-gold border border-cinema-gold/20 hover:border-cinema-gold/60 hover:bg-cinema-gold/20 transition-colors"
                   >
                     {genre}
-                  </span>
+                  </Link>
                 ))}
               </div>
             )}

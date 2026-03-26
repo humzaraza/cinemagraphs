@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import Image from 'next/image'
 import Link from 'next/link'
+import { tmdbImageUrl } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,16 +47,16 @@ export default async function CategoriesPage() {
           >
             {/* Poster collage background */}
             <div className="absolute inset-0 flex">
-              {genre.posters.map((url, i) => (
+              {genre.posters.map((path, i) => (
                 <div
                   key={i}
                   className="relative flex-1 h-full"
                 >
                   <Image
-                    src={url}
+                    src={tmdbImageUrl(path, 'w300')}
                     alt=""
                     fill
-                    sizes="(max-width: 640px) 50vw, 33vw"
+                    sizes="(max-width: 640px) 25vw, 15vw"
                     className="object-cover"
                   />
                 </div>
