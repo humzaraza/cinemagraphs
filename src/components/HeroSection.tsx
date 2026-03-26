@@ -189,14 +189,8 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
 
           {/* Right: Sentiment graph */}
           <div className="bg-cinema-darker/80 backdrop-blur-sm rounded-xl border border-cinema-border p-6">
-            <div className="flex items-center justify-between mb-4">
+            <div className="mb-4">
               <span className="text-xs text-cinema-muted uppercase tracking-wider">Sentiment Timeline</span>
-              <span
-                className="font-[family-name:var(--font-bebas)] text-lg"
-                style={{ color: scoreColor(film.sentimentScore) }}
-              >
-                {film.sentimentScore.toFixed(1)}
-              </span>
             </div>
             <ResponsiveContainer width="100%" height={320}>
               <AreaChart data={chartData} margin={{ top: 10, right: 35, left: 10, bottom: 10 }}>

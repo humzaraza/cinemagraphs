@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import {
   AreaChart,
   Area,
@@ -40,9 +41,9 @@ function scoreColor(score: number): string {
 }
 
 function confidenceRadius(confidence: string): number {
-  if (confidence === 'high') return 6
-  if (confidence === 'medium') return 4
-  return 3
+  if (confidence === 'high') return 8
+  if (confidence === 'medium') return 6
+  return 4
 }
 
 function CustomTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
@@ -93,6 +94,8 @@ export default function SentimentGraph({
   reviewCount,
   runtime,
 }: SentimentGraphProps) {
+  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null)
+
   if (!dataPoints || dataPoints.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 bg-cinema-darker rounded-lg border border-cinema-border">
@@ -182,7 +185,7 @@ export default function SentimentGraph({
               activeDot={false}
               isAnimationActive={false}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#C8A951', strokeOpacity: 0.3, strokeDasharray: '4 4' }} />
 
             {/* Neutral reference line */}
             <ReferenceLine y={5} stroke="#666" strokeDasharray="6 4" />
@@ -206,23 +209,58 @@ export default function SentimentGraph({
               fill="url(#sentimentGradient)"
               isAnimationActive={false}
               dot={(props: any) => {
-                const { cx, cy, payload } = props
+                const { cx, cy, payload, index } = props
                 if (cx == null || cy == null) return <circle r={0} />
-                const r = confidenceRadius(payload.confidence)
+                const isHighlighted = highlightedIndex === index
+                const baseR = confidenceRadius(payload.confidence)
+                const r = isHighlighted ? baseR + 4 : baseR
+                const color = scoreColor(payload.score)
+                return (
+                  <g key={`dot-${index}`}>
+                    {isHighlighted && (
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r={r + 4}
+                        fill="none"
+                        stroke="#fff"
+                        strokeWidth={2}
+                        opacity={0.6}
+                      >
+                        <animate attributeName="r" from={String(r + 2)} to={String(r + 6)} dur="1s" repeatCount="indefinite" />
+                        <animate attributeName="opacity" from="0.6" to="0" dur="1s" repeatCount="indefinite" />
+                      </circle>
+                    )}
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={r}
+                      fill={color}
+                      stroke={isHighlighted ? '#fff' : '#1a1a2e'}
+                      strokeWidth={isHighlighted ? 3 : 2}
+                      style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
+                    />
+                  </g>
+                )
+              }}
+              activeDot={(props: any) => {
+                const { cx, cy, payload, index } = props
+                if (cx == null || cy == null) return <circle r={0} />
+                const r = confidenceRadius(payload.confidence) + 3
+                const color = scoreColor(payload.score)
                 return (
                   <circle
-                    key={`dot-${payload.timeMidpoint}`}
+                    key={`activedot-${index}`}
                     cx={cx}
                     cy={cy}
                     r={r}
-                    fill={scoreColor(payload.score)}
-                    stroke={scoreColor(payload.score)}
-                    strokeWidth={1}
-                    opacity={0.9}
+                    fill={color}
+                    stroke="#F0E6D3"
+                    strokeWidth={2}
+                    style={{ cursor: 'pointer' }}
                   />
                 )
               }}
-              activeDot={{ r: 7, stroke: '#F0E6D3', strokeWidth: 2 }}
             />
 
             {/* Peak moment */}
@@ -258,21 +296,31 @@ export default function SentimentGraph({
           <span>10 — Masterpiece</span>
         </div>
 
-        {/* Story beat pills */}
+        {/* Story beat pills — each maps 1:1 to a graph dot */}
         <div className="flex flex-wrap gap-1.5 mt-4">
-          {dataPoints.map((dp, i) => (
-            <span
-              key={i}
-              className="text-[10px] px-2 py-0.5 rounded-full border"
-              style={{
-                color: scoreColor(dp.score),
-                borderColor: scoreColor(dp.score) + '40',
-                backgroundColor: scoreColor(dp.score) + '10',
-              }}
-            >
-              {dp.label}
-            </span>
-          ))}
+          {chartData.map((dp, i) => {
+            const color = scoreColor(dp.score)
+            const isActive = highlightedIndex === i
+            return (
+              <button
+                key={i}
+                type="button"
+                className="text-[10px] px-2 py-0.5 rounded-full border transition-all duration-200"
+                style={{
+                  color: isActive ? '#1a1a2e' : color,
+                  borderColor: isActive ? color : color + '40',
+                  backgroundColor: isActive ? color : color + '10',
+                  transform: isActive ? 'scale(1.1)' : 'scale(1)',
+                  boxShadow: isActive ? `0 0 8px ${color}60` : 'none',
+                }}
+                onMouseEnter={() => setHighlightedIndex(i)}
+                onMouseLeave={() => setHighlightedIndex(null)}
+                onClick={() => setHighlightedIndex(highlightedIndex === i ? null : i)}
+              >
+                {dp.label}
+              </button>
+            )
+          })}
         </div>
 
         {/* Legend */}
