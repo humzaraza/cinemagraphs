@@ -480,7 +480,13 @@ export default function SentimentGraph({
 
         {/* Biggest swing card */}
         {biggestSwing && (
-          <div className="bg-cinema-darker rounded-lg border border-cinema-gold/20 p-4">
+          <div
+            className="bg-cinema-darker rounded-lg border border-cinema-gold/20 p-4 transition-all duration-300"
+            style={{
+              filter: spoilersRevealed ? 'none' : 'blur(6px)',
+              opacity: spoilersRevealed ? 1 : 0.6,
+            }}
+          >
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs text-cinema-muted uppercase tracking-wider">Biggest Swing</span>
             </div>
