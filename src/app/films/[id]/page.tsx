@@ -8,6 +8,7 @@ import { tmdbImageUrl, formatRuntime, formatDate } from '@/lib/utils'
 import { getMovieTrailerKey } from '@/lib/tmdb'
 import SentimentGraph from '@/components/SentimentGraph'
 import TrailerButton from '@/components/TrailerButton'
+import FilmCommunityTabs from '@/components/FilmCommunityTabs'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import type { CastMember, PeakLowMoment, SentimentDataPoint } from '@/lib/types'
 
@@ -126,6 +127,8 @@ export default async function FilmPage({
                 sourcesUsed={film.sentimentGraph.sourcesUsed}
                 reviewCount={film.sentimentGraph.reviewCount}
                 runtime={film.runtime}
+                filmId={film.id}
+                generatedAt={film.sentimentGraph.generatedAt.toISOString()}
               />
             ) : (
               <SentimentGraph
@@ -135,6 +138,22 @@ export default async function FilmPage({
               />
             )}
           </ErrorBoundary>
+        </div>
+
+        {/* Community Reviews & Live Reactions */}
+        <div className="mt-10">
+          <FilmCommunityTabs
+            filmId={film.id}
+            hasGraph={!!film.sentimentGraph}
+            beats={
+              film.sentimentGraph
+                ? ((film.sentimentGraph.dataPoints as unknown as SentimentDataPoint[]) || []).map(
+                    (dp) => ({ label: dp.label, score: dp.score })
+                  )
+                : []
+            }
+            runtime={film.runtime}
+          />
         </div>
 
         {/* Cast */}

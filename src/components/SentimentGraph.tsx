@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   AreaChart,
   Area,
@@ -14,6 +14,11 @@ import {
 } from 'recharts'
 import type { SentimentDataPoint, PeakLowMoment } from '@/lib/types'
 
+interface UserLinePoint {
+  timeMidpoint: number
+  userScore: number | null
+}
+
 interface SentimentGraphProps {
   dataPoints: SentimentDataPoint[]
   overallScore: number
@@ -25,6 +30,8 @@ interface SentimentGraphProps {
   sourcesUsed?: string[]
   reviewCount?: number
   runtime?: number | null
+  filmId?: string
+  generatedAt?: string | null
 }
 
 function formatTime(minutes: number): string {
@@ -48,7 +55,7 @@ function confidenceRadius(confidence: string): number {
 
 function CustomTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
   if (!active || !payload?.length) return null
-  const data = payload[0].payload as SentimentDataPoint
+  const data = payload[0].payload as SentimentDataPoint & { userScore?: number | null }
   return (
     <div className="bg-[#1a1a2e] border border-[#2a2a3e] rounded-lg p-3 max-w-xs shadow-xl">
       <div className="flex items-center justify-between gap-3 mb-1">
@@ -60,6 +67,15 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: any[] 
           {data.score.toFixed(1)}
         </span>
       </div>
+      {data.userScore != null && (
+        <div className="flex items-center gap-2 mb-1">
+          <span className="w-2 h-2 rounded-full bg-[#2DD4A8]" />
+          <span className="text-xs text-cinema-muted">Users:</span>
+          <span className="font-[family-name:var(--font-bebas)] text-sm text-[#2DD4A8]">
+            {data.userScore.toFixed(1)}
+          </span>
+        </div>
+      )}
       <div className="text-xs text-cinema-muted mb-1">
         {formatTime(data.timeStart)} – {formatTime(data.timeEnd)}
       </div>
@@ -82,6 +98,19 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: any[] 
 
 // ── Main Graph ──
 
+function relativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d ago`
+  const months = Math.floor(days / 30)
+  return `${months}mo ago`
+}
+
 export default function SentimentGraph({
   dataPoints,
   overallScore,
@@ -93,14 +122,69 @@ export default function SentimentGraph({
   sourcesUsed,
   reviewCount,
   runtime,
+  filmId,
+  generatedAt,
 }: SentimentGraphProps) {
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null)
   const [spoilersRevealed, setSpoilersRevealed] = useState(false)
+  const [userLineData, setUserLineData] = useState<Record<string, number> | null>(null)
+  const [userReviewCount, setUserReviewCount] = useState(0)
 
   useEffect(() => {
     const stored = localStorage.getItem('cinemagraphs-spoilers')
     if (stored === 'true') setSpoilersRevealed(true)
   }, [])
+
+  // Fetch user review data to build the teal line
+  const fetchUserData = useCallback(async () => {
+    if (!filmId || !dataPoints || dataPoints.length === 0) return
+    try {
+      const res = await fetch(`/api/films/${filmId}/reviews?page=1`)
+      if (!res.ok) return
+      const data = await res.json()
+      setUserReviewCount(data.summary?.totalReviews ?? 0)
+
+      // Only show user line if 5+ reviews
+      if (data.summary?.totalReviews < 5) return
+
+      // Fetch all reviews to aggregate beat ratings
+      const allPages = Math.ceil(data.total / 5)
+      let allReviews = data.reviews
+      for (let p = 2; p <= allPages; p++) {
+        const r = await fetch(`/api/films/${filmId}/reviews?page=${p}`)
+        if (r.ok) {
+          const d = await r.json()
+          allReviews = [...allReviews, ...d.reviews]
+        }
+      }
+
+      // Average beat ratings per label
+      const beatTotals: Record<string, { total: number; count: number }> = {}
+      for (const review of allReviews) {
+        if (!review.beatRatings) continue
+        for (const [label, score] of Object.entries(review.beatRatings as Record<string, number>)) {
+          if (!beatTotals[label]) beatTotals[label] = { total: 0, count: 0 }
+          beatTotals[label].total += score
+          beatTotals[label].count++
+        }
+      }
+
+      const averages: Record<string, number> = {}
+      for (const [label, { total, count }] of Object.entries(beatTotals)) {
+        averages[label] = Math.round((total / count) * 10) / 10
+      }
+
+      if (Object.keys(averages).length > 0) {
+        setUserLineData(averages)
+      }
+    } catch {
+      // silently fail
+    }
+  }, [filmId, dataPoints])
+
+  useEffect(() => {
+    fetchUserData()
+  }, [fetchUserData])
 
   function toggleSpoilers() {
     const next = !spoilersRevealed
@@ -143,13 +227,15 @@ export default function SentimentGraph({
 
   // Map data for the chart — compute timeMidpoint if missing
   // Prepend a synthetic neutral point so the line starts from y=5
+  const hasUserLine = userLineData != null && Object.keys(userLineData).length > 0
   const realData = dataPoints.map((dp) => ({
     ...dp,
     timeMidpoint: dp.timeMidpoint ?? Math.round((dp.timeStart + dp.timeEnd) / 2),
     fill: scoreColor(dp.score),
+    userScore: hasUserLine ? (userLineData[dp.label] ?? null) : null,
   }))
   const chartData = [
-    { timeMidpoint: 0, timeStart: 0, timeEnd: 0, score: 5, label: '', confidence: 'low', fill: scoreColor(5) } as typeof realData[0],
+    { timeMidpoint: 0, timeStart: 0, timeEnd: 0, score: 5, label: '', confidence: 'low', fill: scoreColor(5), userScore: hasUserLine ? 5 : null } as typeof realData[0],
     ...realData,
   ]
 
@@ -182,6 +268,10 @@ export default function SentimentGraph({
                 <stop offset="5%" stopColor="#C8A951" stopOpacity={0.3} />
                 <stop offset="50%" stopColor="#C8A951" stopOpacity={0.1} />
                 <stop offset="95%" stopColor="#C8A951" stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="userGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#2DD4A8" stopOpacity={0.15} />
+                <stop offset="95%" stopColor="#2DD4A8" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3e" />
@@ -311,6 +401,50 @@ export default function SentimentGraph({
                 strokeWidth={2}
               />
             )}
+
+            {/* User sentiment line (teal dashed) */}
+            {hasUserLine && (
+              <Area
+                type="monotone"
+                dataKey="userScore"
+                stroke="#2DD4A8"
+                strokeWidth={2}
+                strokeDasharray="5 5"
+                fill="url(#userGradient)"
+                isAnimationActive={false}
+                connectNulls
+                dot={(props: any) => {
+                  const { cx, cy, payload, index } = props
+                  if (cx == null || cy == null || payload.userScore == null) return <circle r={0} />
+                  return (
+                    <circle
+                      key={`user-dot-${index}`}
+                      cx={cx}
+                      cy={cy}
+                      r={4}
+                      fill="#2DD4A8"
+                      stroke="#1a1a2e"
+                      strokeWidth={1.5}
+                    />
+                  )
+                }}
+                activeDot={(props: any) => {
+                  const { cx, cy, index } = props
+                  if (cx == null || cy == null) return <circle r={0} />
+                  return (
+                    <circle
+                      key={`user-activedot-${index}`}
+                      cx={cx}
+                      cy={cy}
+                      r={6}
+                      fill="#2DD4A8"
+                      stroke="#F0E6D3"
+                      strokeWidth={2}
+                    />
+                  )
+                }}
+              />
+            )}
           </AreaChart>
         </ResponsiveContainer>
 
@@ -395,31 +529,44 @@ export default function SentimentGraph({
         </div>
 
         {/* Legend */}
-        <div className="flex flex-wrap items-center gap-4 mt-4 text-xs text-cinema-muted">
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-[#2DD4A8]" />
-            <span>8+ Great</span>
+        <div className="flex flex-wrap items-center justify-between mt-4 text-xs text-cinema-muted">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-cinema-gold" />
+              <span>External Reviews</span>
+            </div>
+            {hasUserLine && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-[#2DD4A8]" />
+                <span>Cinemagraphs Users</span>
+              </div>
+            )}
+            <span className="text-cinema-muted/40">|</span>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-[#2DD4A8]" />
+              <span>8+ Great</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-cinema-gold" />
+              <span>6-8 Good</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-red-500" />
+              <span>&lt;6 Poor</span>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-cinema-gold" />
-            <span>6-8 Good</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-red-500" />
-            <span>&lt;6 Poor</span>
-          </div>
-          <span className="text-cinema-muted/40">|</span>
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-cinema-muted" />
-            <span>Low</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-cinema-muted" />
-            <span>Med</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-cinema-muted" />
-            <span>High confidence</span>
+          <div className="flex items-center gap-1 text-cinema-muted/60">
+            {(reviewCount != null || userReviewCount > 0) && (
+              <span>
+                {(reviewCount ?? 0) + userReviewCount} reviews
+              </span>
+            )}
+            {generatedAt && (
+              <>
+                <span>·</span>
+                <span>Last updated {relativeTime(generatedAt)}</span>
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -1,0 +1,103 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
+import { maybeBlendAndUpdate } from '@/lib/review-blender'
+
+const REACTION_WEIGHTS: Record<string, number> = {
+  up: 0.5,
+  down: -0.5,
+  wow: 1.0,
+  shock: 0.5,
+  funny: 0.3,
+}
+
+const RATE_LIMIT_MS = 10_000 // 1 reaction per 10 seconds
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+  }
+
+  const { id: filmId } = await params
+  const body = await request.json()
+  const { reaction, sessionTimestamp, currentScore } = body
+
+  if (!REACTION_WEIGHTS[reaction]) {
+    return NextResponse.json({ error: 'Invalid reaction type' }, { status: 400 })
+  }
+  if (typeof sessionTimestamp !== 'number' || sessionTimestamp < 0) {
+    return NextResponse.json({ error: 'Invalid session timestamp' }, { status: 400 })
+  }
+
+  // Rate limiting: check last reaction from this user on this film
+  const lastReaction = await prisma.liveReaction.findFirst({
+    where: { userId: session.user.id, filmId },
+    orderBy: { createdAt: 'desc' },
+    select: { createdAt: true },
+  })
+
+  if (lastReaction) {
+    const elapsed = Date.now() - lastReaction.createdAt.getTime()
+    if (elapsed < RATE_LIMIT_MS) {
+      const waitSec = Math.ceil((RATE_LIMIT_MS - elapsed) / 1000)
+      return NextResponse.json(
+        { error: `Rate limited. Wait ${waitSec}s.` },
+        { status: 429 }
+      )
+    }
+  }
+
+  // Calculate score nudge
+  const weight = REACTION_WEIGHTS[reaction]
+  const baseScore = typeof currentScore === 'number' ? currentScore : 5
+  const newScore = Math.max(1, Math.min(10, baseScore + weight))
+
+  const liveReaction = await prisma.liveReaction.create({
+    data: {
+      userId: session.user.id,
+      filmId,
+      reaction,
+      score: Math.round(newScore * 10) / 10,
+      sessionTimestamp,
+    },
+  })
+
+  // Trigger blend check in background
+  maybeBlendAndUpdate(filmId).catch(() => {})
+
+  return NextResponse.json({
+    id: liveReaction.id,
+    score: liveReaction.score,
+    reaction: liveReaction.reaction,
+  }, { status: 201 })
+}
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id: filmId } = await params
+
+  const reactions = await prisma.liveReaction.findMany({
+    where: { filmId },
+    orderBy: { sessionTimestamp: 'asc' },
+    select: { reaction: true, score: true, sessionTimestamp: true, createdAt: true },
+  })
+
+  // Aggregate counts
+  const counts: Record<string, number> = { up: 0, down: 0, wow: 0, shock: 0, funny: 0 }
+  for (const r of reactions) {
+    counts[r.reaction] = (counts[r.reaction] || 0) + 1
+  }
+
+  return NextResponse.json({
+    total: reactions.length,
+    counts,
+    reactions: reactions.slice(-100), // last 100 for timeline display
+  })
+}

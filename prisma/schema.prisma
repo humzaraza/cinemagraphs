@@ -45,6 +45,8 @@ model User {
   accounts       Account[]
   sessions       Session[]
   collections    Collection[]
+  userReviews    UserReview[]
+  liveReactions  LiveReaction[]
 }
 
 model Account {
@@ -108,6 +110,8 @@ model Film {
   updatedAt       DateTime       @updatedAt
   sentimentGraph  SentimentGraph?
   reviews         Review[]
+  userReviews     UserReview[]
+  liveReactions   LiveReaction[]
   featuredFilm    FeaturedFilm?
 
   @@index([tmdbId])
@@ -128,6 +132,7 @@ model SentimentGraph {
   reviewCount     Int
   sourcesUsed     String[]
   generatedAt     DateTime @default(now())
+  varianceSource  String   @default("external_only")
   version         Int      @default(1)
   film            Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
 }
@@ -164,6 +169,42 @@ model SiteSettings {
   value Json
 
   @@index([key])
+}
+
+model UserReview {
+  id            String   @id @default(cuid())
+  userId        String
+  filmId        String
+  overallRating Float
+  beginning     String?  @db.Text
+  middle        String?  @db.Text
+  ending        String?  @db.Text
+  otherThoughts String?  @db.Text
+  combinedText  String?  @db.Text
+  beatRatings   Json?
+  sentiment     Float?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  film          Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, filmId])
+  @@index([filmId])
+}
+
+model LiveReaction {
+  id               String   @id @default(cuid())
+  userId           String
+  filmId           String
+  reaction         String
+  score            Float
+  sessionTimestamp Int
+  createdAt        DateTime @default(now())
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  film             Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
+
+  @@index([filmId])
+  @@index([userId, filmId])
 }
 
 model Collection {
