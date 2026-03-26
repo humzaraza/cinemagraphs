@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import Image from 'next/image'
+import { tmdbImageUrl } from '@/lib/utils'
 
 interface FilmOption {
   id: string
@@ -202,7 +202,7 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
                 if (dragIndex !== null && dragIndex !== i) moveFeatured(dragIndex, i)
                 setDragIndex(null)
               }}
-              className="relative w-[80px] bg-cinema-darker border border-cinema-border rounded-lg overflow-hidden cursor-grab active:cursor-grabbing group"
+              className="relative w-[90px] bg-cinema-darker border border-cinema-border rounded-lg overflow-hidden cursor-grab active:cursor-grabbing group"
             >
               <div className="absolute top-1 left-1 z-10 bg-cinema-gold text-cinema-dark text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full">
                 {i + 1}
@@ -214,19 +214,19 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
                 x
               </button>
               {entry.film.posterUrl ? (
-                <Image
-                  src={entry.film.posterUrl}
+                <img
+                  src={tmdbImageUrl(entry.film.posterUrl, 'w200')}
                   alt={entry.film.title}
-                  width={80}
-                  height={120}
                   className="w-full h-[120px] object-cover"
-                  unoptimized
                 />
               ) : (
                 <div className="w-full h-[120px] bg-cinema-border flex items-center justify-center text-xs text-cinema-muted p-1 text-center">
-                  {entry.film.title}
+                  No poster
                 </div>
               )}
+              <p className="text-[10px] text-cinema-cream/80 text-center px-1 py-1 truncate">
+                {entry.film.title}
+              </p>
             </div>
           ))}
           {featured.length === 0 && (
@@ -253,7 +253,7 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
                 className="w-full flex items-center gap-3 px-3 py-2 hover:bg-cinema-card transition-colors text-left"
               >
                 {film.posterUrl && (
-                  <Image src={film.posterUrl} alt="" width={30} height={45} className="rounded" unoptimized />
+                  <img src={tmdbImageUrl(film.posterUrl, 'w200')} alt="" className="w-[30px] h-[45px] rounded object-cover" />
                 )}
                 <span className="text-sm text-cinema-cream">{film.title}</span>
               </button>
