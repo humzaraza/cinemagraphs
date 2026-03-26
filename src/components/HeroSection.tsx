@@ -10,7 +10,6 @@ import {
   YAxis,
   CartesianGrid,
   ReferenceLine,
-  ReferenceDot,
   ResponsiveContainer,
 } from 'recharts'
 
@@ -192,7 +191,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
             <div className="mb-4">
               <span className="text-xs text-cinema-muted uppercase tracking-wider">Sentiment Timeline</span>
             </div>
-            <ResponsiveContainer width="100%" height={320}>
+            <ResponsiveContainer width="100%" height={440}>
               <AreaChart data={chartData} margin={{ top: 10, right: 35, left: 10, bottom: 10 }}>
                 <defs>
                   <linearGradient id="heroGradient" x1="0" y1="0" x2="0" y2="1">
@@ -203,12 +202,9 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3e" />
                 <XAxis dataKey="timeMidpoint" tickFormatter={formatTime} stroke="#666" fontSize={11} />
-                {/* Left Y-axis */}
                 <YAxis domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={11} width={28} />
-                {/* Right Y-axis */}
                 <YAxis yAxisId="right" orientation="right" domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={11} width={28} />
                 <Area yAxisId="right" type="monotone" dataKey="score" stroke="none" fill="none" dot={false} activeDot={false} isAnimationActive={false} />
-                {/* Dashed neutral midline at 5.0 */}
                 <ReferenceLine y={5} stroke="#888" strokeDasharray="6 4" strokeWidth={1} />
                 <Area
                   type="monotone"
@@ -217,45 +213,11 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                   strokeWidth={2.5}
                   fill="url(#heroGradient)"
                   dot={false}
+                  activeDot={false}
                   isAnimationActive={false}
                 />
-                {/* Colored dots for peak (green) and low (red) moments */}
-                {(() => {
-                  if (chartData.length === 0) return null
-                  const scores = chartData.map(d => d.score)
-                  const maxScore = Math.max(...scores)
-                  const minScore = Math.min(...scores)
-                  const peakPoint = chartData.find(d => d.score === maxScore)
-                  const lowPoint = chartData.find(d => d.score === minScore)
-                  return (
-                    <>
-                      {peakPoint && (
-                        <ReferenceDot x={peakPoint.timeMidpoint} y={peakPoint.score} r={6} fill="#2DD4A8" stroke="#fff" strokeWidth={2} />
-                      )}
-                      {lowPoint && lowPoint !== peakPoint && (
-                        <ReferenceDot x={lowPoint.timeMidpoint} y={lowPoint.score} r={6} fill="#ef4444" stroke="#fff" strokeWidth={2} />
-                      )}
-                    </>
-                  )
-                })()}
               </AreaChart>
             </ResponsiveContainer>
-            {/* Story beat pills */}
-            <div className="flex flex-wrap gap-1.5 mt-4">
-              {film.dataPoints.slice(0, 10).map((dp, i) => (
-                <span
-                  key={i}
-                  className="text-[10px] px-2.5 py-0.5 rounded-full border"
-                  style={{
-                    color: scoreColor(dp.score),
-                    borderColor: scoreColor(dp.score) + '40',
-                    backgroundColor: scoreColor(dp.score) + '10',
-                  }}
-                >
-                  {dp.label}
-                </span>
-              ))}
-            </div>
           </div>
         </div>
 
