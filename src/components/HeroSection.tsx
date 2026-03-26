@@ -186,8 +186,9 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                   href={trailerUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="border border-cinema-border text-cinema-cream font-semibold px-7 py-3 rounded-lg hover:border-cinema-gold/50 hover:text-cinema-gold transition-colors text-sm"
+                  className="inline-flex items-center gap-2 border border-white/60 text-white font-semibold px-7 py-3 rounded-lg hover:border-cinema-gold hover:text-cinema-gold transition-colors text-sm"
                 >
+                  <span className="text-xs">&#9654;</span>
                   Watch Trailer
                 </a>
               )}

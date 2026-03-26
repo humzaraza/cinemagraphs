@@ -8,8 +8,10 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY!
 const TMDB_BASE_URL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3'
 
 async function fetchTMDBPage(endpoint: string, page: number): Promise<{ id: number }[]> {
-  const url = `${TMDB_BASE_URL}${endpoint}?api_key=${TMDB_API_KEY}&page=${page}`
-  const res = await fetch(url)
+  const url = `${TMDB_BASE_URL}${endpoint}?page=${page}`
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${TMDB_API_KEY}` },
+  })
   if (!res.ok) return []
   const data = await res.json()
   return data.results ?? []

@@ -38,12 +38,13 @@ interface TMDBSearchResult {
 
 async function tmdbFetch<T>(endpoint: string, params: Record<string, string> = {}): Promise<T> {
   const url = new URL(`${TMDB_BASE_URL}${endpoint}`)
-  url.searchParams.set('api_key', TMDB_API_KEY)
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value)
   }
 
-  const res = await fetch(url.toString())
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${TMDB_API_KEY}` },
+  })
   if (!res.ok) {
     throw new Error(`TMDB API error: ${res.status} ${res.statusText}`)
   }
