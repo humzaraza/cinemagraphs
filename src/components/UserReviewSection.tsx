@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession, signIn } from 'next-auth/react'
 import Image from 'next/image'
 
@@ -30,6 +30,60 @@ interface Props {
   beats: BeatInfo[]
 }
 
+/** Select up to 8 beats: peak, lowest, first, last, + 4 evenly distributed */
+function selectBeats(beats: BeatInfo[]): { beat: BeatInfo; tag: 'peak' | 'lowest' | null }[] {
+  if (beats.length <= 8) {
+    const peakIdx = beats.reduce((best, b, i) => (b.score > beats[best].score ? i : best), 0)
+    const lowIdx = beats.reduce((best, b, i) => (b.score < beats[best].score ? i : best), 0)
+    return beats.map((b, i) => ({
+      beat: b,
+      tag: i === peakIdx ? 'peak' : i === lowIdx ? 'lowest' : null,
+    }))
+  }
+
+  const peakIdx = beats.reduce((best, b, i) => (b.score > beats[best].score ? i : best), 0)
+  const lowIdx = beats.reduce((best, b, i) => (b.score < beats[best].score ? i : best), 0)
+
+  const selectedIndices = new Set<number>()
+  selectedIndices.add(0) // first
+  selectedIndices.add(beats.length - 1) // last
+  selectedIndices.add(peakIdx)
+  selectedIndices.add(lowIdx)
+
+  // Fill remaining slots with evenly distributed points
+  const remaining = beats
+    .map((_, i) => i)
+    .filter((i) => !selectedIndices.has(i))
+
+  const needed = 8 - selectedIndices.size
+  if (needed > 0 && remaining.length > 0) {
+    const step = remaining.length / needed
+    for (let j = 0; j < needed; j++) {
+      selectedIndices.add(remaining[Math.round(j * step)])
+    }
+  }
+
+  const sorted = Array.from(selectedIndices).sort((a, b) => a - b)
+  return sorted.map((i) => ({
+    beat: beats[i],
+    tag: i === peakIdx ? 'peak' : i === lowIdx ? 'lowest' : null,
+  }))
+}
+
+interface ExistingReview {
+  id: string
+  overallRating: number
+  beginning: string | null
+  middle: string | null
+  ending: string | null
+  otherThoughts: string | null
+  combinedText: string | null
+  beatRatings: Record<string, number> | null
+  status: string
+  createdAt: string
+  user: { id: string; name: string | null; image: string | null }
+}
+
 export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
   const { data: session } = useSession()
   const [overallRating, setOverallRating] = useState(5)
@@ -42,6 +96,10 @@ export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Existing review state
+  const [myReview, setMyReview] = useState<ExistingReview | null>(null)
+  const [editing, setEditing] = useState(false)
+
   // Community data
   const [reviews, setReviews] = useState<ReviewData[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
@@ -50,16 +108,18 @@ export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
   const [showAll, setShowAll] = useState(false)
   const [loading, setLoading] = useState(true)
 
+  const selectedBeats = useMemo(() => selectBeats(beats), [beats])
+
   // Initialize beat ratings
   useEffect(() => {
-    if (hasGraph && beats.length > 0) {
+    if (hasGraph && selectedBeats.length > 0 && !myReview && !editing) {
       const initial: Record<string, number> = {}
-      for (const beat of beats) {
+      for (const { beat } of selectedBeats) {
         initial[beat.label] = 5
       }
       setBeatRatings(initial)
     }
-  }, [hasGraph, beats])
+  }, [hasGraph, selectedBeats, myReview, editing])
 
   const fetchReviews = useCallback(async (p: number) => {
     try {
@@ -73,6 +133,10 @@ export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
         }
         setSummary(data.summary)
         setTotalPages(data.totalPages)
+        // Set existing review if present
+        if (data.myReview && p === 1) {
+          setMyReview(data.myReview)
+        }
       }
     } catch {
       // silently fail
@@ -84,6 +148,20 @@ export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
   useEffect(() => {
     fetchReviews(1)
   }, [fetchReviews])
+
+  function startEditing() {
+    if (!myReview) return
+    setOverallRating(myReview.overallRating)
+    setBeginning(myReview.beginning || '')
+    setMiddle(myReview.middle || '')
+    setEnding(myReview.ending || '')
+    setOtherThoughts(myReview.otherThoughts || '')
+    if (myReview.beatRatings) {
+      setBeatRatings(myReview.beatRatings)
+    }
+    setEditing(true)
+    setSubmitted(false)
+  }
 
   async function handleSubmit() {
     if (!session) {
@@ -115,6 +193,7 @@ export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
       }
 
       setSubmitted(true)
+      setEditing(false)
       fetchReviews(1)
     } catch {
       setError('Network error. Please try again.')
@@ -139,18 +218,92 @@ export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
           </div>
         )}
 
-        {submitted ? (
+        {/* Show existing review if user already reviewed and not editing */}
+        {myReview && !editing && !submitted ? (
+          <div className="space-y-4">
+            <h3 className="font-[family-name:var(--font-playfair)] text-lg text-cinema-cream">
+              Your Review
+            </h3>
+            <div className="bg-cinema-card border border-cinema-border rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-cinema-muted">
+                  Submitted {new Date(myReview.createdAt).toLocaleDateString()}
+                </span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className="text-xs px-2 py-0.5 rounded"
+                    style={{
+                      backgroundColor:
+                        myReview.status === 'approved'
+                          ? 'rgba(45,212,168,0.15)'
+                          : myReview.status === 'flagged'
+                            ? 'rgba(200,169,81,0.15)'
+                            : 'rgba(239,68,68,0.15)',
+                      color:
+                        myReview.status === 'approved'
+                          ? '#2DD4A8'
+                          : myReview.status === 'flagged'
+                            ? '#C8A951'
+                            : '#ef4444',
+                    }}
+                  >
+                    {myReview.status === 'approved' ? 'Live' : myReview.status === 'flagged' ? 'Under review' : 'Rejected'}
+                  </span>
+                  <span
+                    className="text-sm font-bold px-2 py-0.5 rounded"
+                    style={{
+                      backgroundColor:
+                        myReview.overallRating >= 8
+                          ? '#2DD4A8'
+                          : myReview.overallRating >= 6
+                            ? '#C8A951'
+                            : '#ef4444',
+                      color: '#1a1a2e',
+                    }}
+                  >
+                    {myReview.overallRating.toFixed(1)}
+                  </span>
+                </div>
+              </div>
+              {myReview.combinedText && (
+                <p className="text-sm text-cinema-cream/80 leading-relaxed">{myReview.combinedText}</p>
+              )}
+              {myReview.beatRatings && Object.keys(myReview.beatRatings).length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(myReview.beatRatings).map(([label, score]) => (
+                    <span
+                      key={label}
+                      className="text-[10px] px-2 py-0.5 rounded-full border"
+                      style={{
+                        borderColor: score >= 8 ? '#2DD4A840' : score >= 6 ? '#C8A95140' : '#ef444440',
+                        color: score >= 8 ? '#2DD4A8' : score >= 6 ? '#C8A951' : '#ef4444',
+                      }}
+                    >
+                      {label}: {score.toFixed(1)}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={startEditing}
+              className="text-sm text-cinema-gold hover:text-cinema-gold/80 transition-colors border border-cinema-gold/30 px-4 py-2 rounded-lg hover:bg-cinema-gold/10"
+            >
+              Edit your review
+            </button>
+          </div>
+        ) : submitted && !editing ? (
           <div className="text-center py-8">
             <div className="text-3xl mb-2">✓</div>
             <p className="text-cinema-cream text-lg font-medium">Review submitted!</p>
             <p className="text-cinema-muted text-sm mt-1">
-              Thank you for contributing to this film&apos;s sentiment graph.
+              Your review is now live. It may be flagged for review if our system detects anything unusual.
             </p>
           </div>
         ) : (
           <div className="space-y-5">
             <h3 className="font-[family-name:var(--font-playfair)] text-lg text-cinema-cream">
-              Write a Review
+              {editing ? 'Edit your Review' : 'Write a Review'}
             </h3>
 
             {!hasGraph && (
@@ -183,33 +336,70 @@ export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
             </div>
 
             {/* Beat Sliders (only for films with graphs) */}
-            {hasGraph && beats.length > 0 && (
-              <div className="space-y-3">
-                <p className="text-sm text-cinema-muted">Rate each story beat:</p>
-                {beats.map((beat) => (
-                  <div key={beat.label}>
-                    <div className="flex justify-between text-xs text-cinema-muted mb-1">
-                      <span className="truncate max-w-[200px]">{beat.label}</span>
-                      <span className="text-cinema-gold font-bold">
-                        {beatRatings[beat.label]?.toFixed(1) ?? '5.0'}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={1}
-                      max={10}
-                      step={0.5}
-                      value={beatRatings[beat.label] ?? 5}
-                      onChange={(e) =>
-                        setBeatRatings((prev) => ({
-                          ...prev,
-                          [beat.label]: parseFloat(e.target.value),
-                        }))
-                      }
-                      className="w-full accent-cinema-gold"
-                    />
-                  </div>
-                ))}
+            {hasGraph && selectedBeats.length > 0 && (
+              <div>
+                <p className="text-sm text-cinema-muted mb-4">Rate each story beat:</p>
+                <div className="space-y-3">
+                  {selectedBeats.map(({ beat, tag }) => {
+                    const borderColor =
+                      tag === 'peak'
+                        ? 'rgba(45,212,168,0.3)'
+                        : tag === 'lowest'
+                          ? 'rgba(239,68,68,0.3)'
+                          : 'rgba(255,255,255,0.06)'
+                    return (
+                      <div
+                        key={beat.label}
+                        className="rounded-lg"
+                        style={{
+                          padding: '16px 18px',
+                          border: `1px solid ${borderColor}`,
+                          backgroundColor: 'rgba(255,255,255,0.02)',
+                        }}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1 mr-3">
+                            <span className="text-sm text-cinema-cream leading-snug block">
+                              {beat.label}
+                            </span>
+                            {tag === 'peak' && (
+                              <span className="text-[10px] text-[#2DD4A8] mt-0.5 inline-block">
+                                ⬆ Peak moment
+                              </span>
+                            )}
+                            {tag === 'lowest' && (
+                              <span className="text-[10px] text-red-400 mt-0.5 inline-block">
+                                ⬇ Lowest moment
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-cinema-gold font-bold text-lg shrink-0">
+                            {beatRatings[beat.label]?.toFixed(1) ?? '5.0'}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={1}
+                          max={10}
+                          step={0.5}
+                          value={beatRatings[beat.label] ?? 5}
+                          onChange={(e) =>
+                            setBeatRatings((prev) => ({
+                              ...prev,
+                              [beat.label]: parseFloat(e.target.value),
+                            }))
+                          }
+                          className="w-full accent-cinema-gold"
+                        />
+                        <div className="flex justify-between text-[10px] text-cinema-muted/50 mt-1">
+                          <span>Hated it</span>
+                          <span>Neutral</span>
+                          <span>Loved it</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
 
@@ -258,7 +448,9 @@ export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
               {submitting
                 ? 'Submitting...'
                 : session
-                  ? 'Submit Review'
+                  ? editing
+                    ? 'Update Review'
+                    : 'Submit Review'
                   : 'Sign in to Review'}
             </button>
           </div>

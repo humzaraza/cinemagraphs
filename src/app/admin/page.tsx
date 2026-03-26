@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import AdminFilmImport from '@/components/AdminFilmImport'
 import AdminAnalyze from '@/components/AdminAnalyze'
 import AdminHomepageCuration from '@/components/AdminHomepageCuration'
+import AdminReviews from '@/components/AdminReviews'
 import AdminTabs from '@/components/AdminTabs'
 
 export const dynamic = 'force-dynamic'
@@ -16,10 +17,11 @@ export default async function AdminPage() {
     redirect('/auth/signin')
   }
 
-  const [filmCount, reviewCount, graphCount] = await Promise.all([
+  const [filmCount, reviewCount, graphCount, flaggedReviewCount] = await Promise.all([
     prisma.film.count(),
     prisma.review.count(),
     prisma.sentimentGraph.count(),
+    prisma.userReview.count({ where: { status: 'flagged' } }),
   ])
 
   const allFilms = await prisma.film.findMany({
@@ -122,6 +124,13 @@ export default async function AdminPage() {
             label: 'Sentiment Analysis',
             content: (
               <AdminAnalyze films={filmsForAnalyze} />
+            ),
+          },
+          {
+            id: 'reviews',
+            label: `Reviews${flaggedReviewCount > 0 ? ` (${flaggedReviewCount})` : ''}`,
+            content: (
+              <AdminReviews />
             ),
           },
           {

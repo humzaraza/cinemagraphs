@@ -33,7 +33,7 @@ export async function maybeBlendAndUpdate(filmId: string): Promise<void> {
   if (!graph) return // no graph to blend into
 
   const userReviews = await prisma.userReview.findMany({
-    where: { filmId, sentiment: { not: null } },
+    where: { filmId, status: 'approved', sentiment: { not: null } },
     select: { sentiment: true, beatRatings: true },
   })
 

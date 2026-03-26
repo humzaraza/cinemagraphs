@@ -183,6 +183,8 @@ model UserReview {
   combinedText  String?  @db.Text
   beatRatings   Json?
   sentiment     Float?
+  status        String   @default("approved") // approved, flagged, rejected
+  flagReason    String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -190,6 +192,7 @@ model UserReview {
 
   @@unique([userId, filmId])
   @@index([filmId])
+  @@index([status])
 }
 
 model LiveReaction {
