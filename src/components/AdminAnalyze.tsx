@@ -10,11 +10,14 @@ interface Film {
   graphDate: string | null
 }
 
-export default function AdminAnalyze({ films }: { films: Film[] }) {
+export default function AdminAnalyze({ films: initialFilms }: { films: Film[] }) {
+  const [films, setFilms] = useState(initialFilms)
   const [analyzing, setAnalyzing] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
   const [batchRunning, setBatchRunning] = useState(false)
   const [results, setResults] = useState<Record<string, 'success' | 'error' | 'pending'>>({})
   const [message, setMessage] = useState('')
+  const [toast, setToast] = useState<string | null>(null)
 
   async function analyzeFilm(filmId: string) {
     setAnalyzing(filmId)
@@ -70,10 +73,38 @@ export default function AdminAnalyze({ films }: { films: Film[] }) {
     }
   }
 
+  async function deleteFilm(film: Film) {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${film.title}"? This will also delete its sentiment graph and all associated reviews.`
+    )
+    if (!confirmed) return
+
+    setDeleting(film.id)
+    try {
+      const res = await fetch(`/api/admin/films/${film.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to delete')
+      }
+      setFilms((prev) => prev.filter((f) => f.id !== film.id))
+      setToast(`"${film.title}" deleted successfully`)
+      setTimeout(() => setToast(null), 3000)
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setDeleting(null)
+    }
+  }
+
   const filmsWithoutGraphs = films.filter((f) => !f.hasGraph).length
 
   return (
     <div>
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 bg-cinema-gold text-cinema-dark px-4 py-2 rounded-lg font-semibold text-sm shadow-lg">
+          {toast}
+        </div>
+      )}
       <div className="flex items-center justify-between mb-4">
         <div>
           <p className="text-sm text-cinema-muted">
@@ -132,13 +163,22 @@ export default function AdminAnalyze({ films }: { films: Film[] }) {
                   {film.graphDate || '—'}
                 </td>
                 <td className="py-2">
-                  <button
-                    onClick={() => analyzeFilm(film.id)}
-                    disabled={analyzing === film.id || batchRunning}
-                    className="text-xs px-3 py-1 bg-cinema-gold/10 text-cinema-gold border border-cinema-gold/20 rounded hover:bg-cinema-gold/20 disabled:opacity-50 transition-colors"
-                  >
-                    {analyzing === film.id ? 'Analyzing...' : film.hasGraph ? 'Regenerate' : 'Generate'}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => analyzeFilm(film.id)}
+                      disabled={analyzing === film.id || batchRunning}
+                      className="text-xs px-3 py-1 bg-cinema-gold/10 text-cinema-gold border border-cinema-gold/20 rounded hover:bg-cinema-gold/20 disabled:opacity-50 transition-colors"
+                    >
+                      {analyzing === film.id ? 'Analyzing...' : film.hasGraph ? 'Regenerate' : 'Generate'}
+                    </button>
+                    <button
+                      onClick={() => deleteFilm(film)}
+                      disabled={deleting === film.id}
+                      className="text-xs px-3 py-1 bg-red-500/10 text-red-400 border border-red-500/20 rounded hover:bg-red-500/20 disabled:opacity-50 transition-colors"
+                    >
+                      {deleting === film.id ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

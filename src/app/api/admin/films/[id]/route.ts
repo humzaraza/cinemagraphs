@@ -35,3 +35,30 @@ export async function PATCH(
 
   return Response.json({ film })
 }
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await getServerSession(authOptions)
+
+  if (!session?.user || session.user.role !== 'ADMIN') {
+    return Response.json({ error: 'Unauthorized' }, { status: 403 })
+  }
+
+  const { id } = await params
+
+  // Verify film exists
+  const film = await prisma.film.findUnique({ where: { id }, select: { id: true, title: true } })
+  if (!film) {
+    return Response.json({ error: 'Film not found' }, { status: 404 })
+  }
+
+  // Delete related records then the film (cascades handle most, but be explicit)
+  await prisma.featuredFilm.deleteMany({ where: { filmId: id } })
+  await prisma.sentimentGraph.deleteMany({ where: { filmId: id } })
+  await prisma.review.deleteMany({ where: { filmId: id } })
+  await prisma.film.delete({ where: { id } })
+
+  return Response.json({ ok: true, title: film.title })
+}
