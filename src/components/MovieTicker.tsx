@@ -8,7 +8,7 @@ interface TickerFilm {
   id: string
   title: string
   score: number
-  delta: number
+  delta: number | null
   dataPoints: { timeMidpoint: number; score: number }[]
 }
 
@@ -70,9 +70,12 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
         >
           <div className="flex">
             {tickerFilms.map((film, i) => {
-              const isUp = film.delta >= 0
-              const color = isUp ? '#00E676' : '#E24B4A'
-              const arrow = isUp ? '\u25B2' : '\u25BC'
+              const d = film.delta
+              const hasDelta = d != null
+              const isUp = d != null && d >= 0
+              const color = hasDelta
+                ? (isUp ? '#00E676' : '#E24B4A')
+                : '#C8A951'
 
               return (
                 <Link
@@ -113,9 +116,11 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
                   >
                     {film.score.toFixed(1)}
                   </span>
-                  <span className="text-sm font-medium" style={{ color }}>
-                    {arrow} {isUp ? '+' : ''}{film.delta.toFixed(1)}
-                  </span>
+                  {d != null && (
+                    <span className="text-sm font-medium" style={{ color }}>
+                      {isUp ? '\u25B2' : '\u25BC'} {isUp ? '+' : ''}{d.toFixed(1)}
+                    </span>
+                  )}
                 </Link>
               )
             })}

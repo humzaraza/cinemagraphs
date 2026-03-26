@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/import-new-films",
       "schedule": "0 2 * * 1"
+    },
+    {
+      "path": "/api/cron/refresh-scores",
+      "schedule": "0 0 * * *"
     }
   ]
 }

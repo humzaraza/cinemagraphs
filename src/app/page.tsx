@@ -31,9 +31,9 @@ export default async function HomePage() {
       take: 20,
       orderBy: { releaseDate: 'desc' },
     }),
-    // For ticker: all films with graphs
+    // For ticker: now playing films with graphs
     prisma.film.findMany({
-      where: { status: 'ACTIVE', sentimentGraph: { isNot: null } },
+      where: { status: 'ACTIVE', nowPlaying: true, sentimentGraph: { isNot: null } },
       include: {
         sentimentGraph: { select: { overallScore: true, previousScore: true, dataPoints: true } },
       },
@@ -88,7 +88,7 @@ export default async function HomePage() {
     .map((f) => {
       const current = f.sentimentGraph!.overallScore
       const previous = f.sentimentGraph!.previousScore
-      const delta = previous != null ? current - previous : 0
+      const delta = previous != null ? Math.round((current - previous) * 10) / 10 : null
       return {
         id: f.id,
         title: f.title,

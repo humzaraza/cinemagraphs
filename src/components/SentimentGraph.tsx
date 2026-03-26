@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   AreaChart,
   Area,
@@ -95,6 +95,18 @@ export default function SentimentGraph({
   runtime,
 }: SentimentGraphProps) {
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null)
+  const [spoilersRevealed, setSpoilersRevealed] = useState(false)
+
+  useEffect(() => {
+    const stored = localStorage.getItem('cinemagraphs-spoilers')
+    if (stored === 'true') setSpoilersRevealed(true)
+  }, [])
+
+  function toggleSpoilers() {
+    const next = !spoilersRevealed
+    setSpoilersRevealed(next)
+    localStorage.setItem('cinemagraphs-spoilers', String(next))
+  }
 
   if (!dataPoints || dataPoints.length === 0) {
     return (
@@ -140,11 +152,6 @@ export default function SentimentGraph({
     { timeMidpoint: 0, timeStart: 0, timeEnd: 0, score: 5, label: '', confidence: 'low', fill: scoreColor(5) } as typeof realData[0],
     ...realData,
   ]
-
-  // Compute IMDb anchor from anchoredFrom string
-  const imdbAnchor = anchoredFrom
-    ? parseFloat(anchoredFrom.match(/IMDb ([\d.]+)/)?.[1] || '0') || null
-    : null
 
   return (
     <div className="space-y-6">
@@ -218,17 +225,6 @@ export default function SentimentGraph({
 
             {/* Neutral reference line */}
             <ReferenceLine y={5} stroke="#666" strokeDasharray="6 4" />
-
-            {/* IMDb anchor line */}
-            {imdbAnchor && (
-              <ReferenceLine
-                y={imdbAnchor}
-                stroke="#C8A951"
-                strokeDasharray="4 4"
-                strokeOpacity={0.6}
-                label={{ value: `IMDb ${imdbAnchor}`, fill: '#C8A951', fontSize: 10, position: 'insideTopLeft' }}
-              />
-            )}
 
             <Area
               type="monotone"
@@ -325,32 +321,65 @@ export default function SentimentGraph({
           <span>10 — Masterpiece</span>
         </div>
 
-        {/* Story beat pills — skip synthetic first point, maps 1:1 to real graph dots */}
-        <div className="flex flex-wrap gap-1.5 mt-4">
-          {chartData.slice(1).map((dp, i) => {
-            const chartIndex = i + 1
-            const color = scoreColor(dp.score)
-            const isActive = highlightedIndex === chartIndex
-            return (
-              <button
-                key={i}
-                type="button"
-                className="text-[10px] px-2 py-0.5 rounded-full border transition-all duration-200"
-                style={{
-                  color: isActive ? '#1a1a2e' : color,
-                  borderColor: isActive ? color : color + '40',
-                  backgroundColor: isActive ? color : color + '10',
-                  transform: isActive ? 'scale(1.1)' : 'scale(1)',
-                  boxShadow: isActive ? `0 0 8px ${color}60` : 'none',
-                }}
-                onMouseEnter={() => setHighlightedIndex(chartIndex)}
-                onMouseLeave={() => setHighlightedIndex(null)}
-                onClick={() => setHighlightedIndex(highlightedIndex === chartIndex ? null : chartIndex)}
-              >
-                {dp.label}
-              </button>
-            )
-          })}
+        {/* Story beat pills with spoiler protection */}
+        <div className="mt-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs text-cinema-muted">Story beats</span>
+            <button
+              type="button"
+              onClick={toggleSpoilers}
+              className="inline-flex items-center gap-1 text-xs text-cinema-gold/70 hover:text-cinema-gold transition-colors"
+            >
+              {spoilersRevealed ? (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M3 3l18 18" />
+                  </svg>
+                  Hide
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  Reveal spoilers
+                </>
+              )}
+            </button>
+          </div>
+          <div
+            className="flex flex-wrap gap-1.5 transition-all duration-300"
+            style={{
+              filter: spoilersRevealed ? 'none' : 'blur(4px)',
+              opacity: spoilersRevealed ? 1 : 0.6,
+            }}
+          >
+            {chartData.slice(1).map((dp, i) => {
+              const chartIndex = i + 1
+              const color = scoreColor(dp.score)
+              const isActive = highlightedIndex === chartIndex
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  className="text-[10px] px-2 py-0.5 rounded-full border transition-all duration-200"
+                  style={{
+                    color: isActive ? '#1a1a2e' : color,
+                    borderColor: isActive ? color : color + '40',
+                    backgroundColor: isActive ? color : color + '10',
+                    transform: isActive ? 'scale(1.1)' : 'scale(1)',
+                    boxShadow: isActive ? `0 0 8px ${color}60` : 'none',
+                  }}
+                  onMouseEnter={() => spoilersRevealed ? setHighlightedIndex(chartIndex) : undefined}
+                  onMouseLeave={() => spoilersRevealed ? setHighlightedIndex(null) : undefined}
+                  onClick={() => spoilersRevealed ? setHighlightedIndex(highlightedIndex === chartIndex ? null : chartIndex) : toggleSpoilers()}
+                >
+                  {dp.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         {/* Legend */}
