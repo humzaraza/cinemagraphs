@@ -74,11 +74,17 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
               const d = film.delta
               const prev = film.previousScore
               const hasDelta = d != null && prev != null
-              const isUp = d != null && d > 0
-              const isDown = d != null && d < 0
-              const color = hasDelta
-                ? (isUp ? '#2DD4A8' : isDown ? '#ef4444' : '#C8A951')
-                : '#C8A951'
+
+              // Derive trend from dataPoints as fallback when no previousScore
+              const pts = film.dataPoints
+              const dpTrend = pts.length >= 2
+                ? pts[pts.length - 1].score - pts[0].score
+                : 0
+
+              const effectiveDelta = hasDelta ? d : dpTrend
+              const isUp = effectiveDelta > 0
+              const isDown = effectiveDelta < 0
+              const color = isUp ? '#2DD4A8' : isDown ? '#ef4444' : '#C8A951'
 
               return (
                 <Link
@@ -121,7 +127,12 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
                   </span>
                   {hasDelta && d !== 0 && (
                     <span className="text-sm font-medium" style={{ color }}>
-                      {isUp ? '\u25B2' : '\u25BC'} {isUp ? '+' : ''}{d.toFixed(1)}
+                      {isUp ? '\u25B2' : '\u25BC'} {isUp ? '+' : ''}{d!.toFixed(1)}
+                    </span>
+                  )}
+                  {!hasDelta && dpTrend !== 0 && (
+                    <span className="text-sm font-medium" style={{ color }}>
+                      {isUp ? '\u25B2' : '\u25BC'}
                     </span>
                   )}
                 </Link>
