@@ -98,9 +98,33 @@ export default function SentimentGraph({
 
   if (!dataPoints || dataPoints.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 bg-cinema-darker rounded-lg border border-cinema-border">
-        <p className="text-cinema-muted mb-1">Sentiment analysis coming soon</p>
-        <p className="text-xs text-cinema-muted/60">Graph will appear once reviews are analyzed</p>
+      <div className="space-y-6">
+        <div className="bg-cinema-darker rounded-lg border border-cinema-border p-4 md:p-6">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="font-[family-name:var(--font-playfair)] text-lg text-cinema-cream">
+              Audience Sentiment
+            </h3>
+          </div>
+          <div className="relative" style={{ height: 320 }}>
+            {/* Flat dashed midline placeholder */}
+            <svg className="w-full h-full" preserveAspectRatio="none">
+              <line
+                x1="5%"
+                y1="50%"
+                x2="95%"
+                y2="50%"
+                stroke="#555"
+                strokeWidth={1.5}
+                strokeDasharray="8 6"
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <p className="text-cinema-muted text-sm text-center max-w-md leading-relaxed">
+                Not enough reviews yet — we&apos;re waiting for more data to build this film&apos;s sentiment timeline
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
     )
   }

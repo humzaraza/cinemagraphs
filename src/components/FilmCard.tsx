@@ -60,12 +60,10 @@ export default function FilmCard({
           )}
         </div>
 
-        {/* 2. Mini sentiment graph */}
-        {graphDataPoints && graphDataPoints.length > 0 && (
-          <div className="px-2 pt-2 pb-1" style={{ backgroundColor: '#13131f' }}>
-            <FilmCardMiniGraph dataPoints={graphDataPoints} runtime={runtime ?? null} />
-          </div>
-        )}
+        {/* 2. Mini sentiment graph (or dashed placeholder) */}
+        <div className="px-2 pt-2 pb-1" style={{ backgroundColor: '#13131f' }}>
+          <FilmCardMiniGraph dataPoints={graphDataPoints ?? []} runtime={runtime ?? null} />
+        </div>
 
         {/* 3. Title and metadata */}
         <div className="px-3 py-2.5" style={{ backgroundColor: '#13131f' }}>

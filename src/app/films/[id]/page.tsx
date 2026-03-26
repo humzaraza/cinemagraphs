@@ -107,18 +107,26 @@ export default async function FilmPage({
         {/* Sentiment Graph */}
         <div className="mt-10">
           <ErrorBoundary>
-            <SentimentGraph
-              dataPoints={(film.sentimentGraph?.dataPoints ?? []) as unknown as SentimentDataPoint[]}
-              overallScore={film.sentimentGraph?.overallScore ?? 0}
-              anchoredFrom={film.sentimentGraph?.anchoredFrom}
-              peakMoment={film.sentimentGraph?.peakMoment as unknown as PeakLowMoment | null}
-              lowestMoment={film.sentimentGraph?.lowestMoment as unknown as PeakLowMoment | null}
-              biggestSwing={film.sentimentGraph?.biggestSwing}
-              summary={film.sentimentGraph?.summary}
-              sourcesUsed={film.sentimentGraph?.sourcesUsed}
-              reviewCount={film.sentimentGraph?.reviewCount}
-              runtime={film.runtime}
-            />
+            {film.sentimentGraph ? (
+              <SentimentGraph
+                dataPoints={(film.sentimentGraph.dataPoints ?? []) as unknown as SentimentDataPoint[]}
+                overallScore={film.sentimentGraph.overallScore}
+                anchoredFrom={film.sentimentGraph.anchoredFrom}
+                peakMoment={film.sentimentGraph.peakMoment as unknown as PeakLowMoment | null}
+                lowestMoment={film.sentimentGraph.lowestMoment as unknown as PeakLowMoment | null}
+                biggestSwing={film.sentimentGraph.biggestSwing}
+                summary={film.sentimentGraph.summary}
+                sourcesUsed={film.sentimentGraph.sourcesUsed}
+                reviewCount={film.sentimentGraph.reviewCount}
+                runtime={film.runtime}
+              />
+            ) : (
+              <SentimentGraph
+                dataPoints={[]}
+                overallScore={0}
+                runtime={film.runtime}
+              />
+            )}
           </ErrorBoundary>
         </div>
 

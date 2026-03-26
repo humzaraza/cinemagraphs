@@ -27,7 +27,29 @@ export function FilmCardMiniGraph({
   dataPoints: MiniGraphDataPoint[]
   runtime: number | null
 }) {
-  if (!dataPoints || dataPoints.length === 0) return null
+  if (!dataPoints || dataPoints.length === 0) {
+    // Flat dashed placeholder line
+    return (
+      <div>
+        <svg
+          viewBox={`0 0 ${300} ${GRAPH_HEIGHT}`}
+          preserveAspectRatio="none"
+          className="w-full"
+          style={{ height: GRAPH_HEIGHT, display: 'block' }}
+        >
+          <line
+            x1={GRAPH_PADDING_X}
+            y1={GRAPH_HEIGHT / 2}
+            x2={300 - GRAPH_PADDING_X}
+            y2={GRAPH_HEIGHT / 2}
+            stroke="#555"
+            strokeWidth={0.8}
+            strokeDasharray="4 3"
+          />
+        </svg>
+      </div>
+    )
+  }
 
   const chartData = dataPoints.map((dp) => ({
     ...dp,
