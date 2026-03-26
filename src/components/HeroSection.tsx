@@ -24,6 +24,7 @@ interface HeroFilm {
   posterUrl: string | null
   backdropUrl: string | null
   tmdbId: number
+  trailerKey: string | null
   sentimentScore: number
   dataPoints: {
     timeMidpoint: number
@@ -101,7 +102,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
     ...realData,
   ]
 
-  const trailerUrl = `https://www.themoviedb.org/movie/${film.tmdbId}/watch`
+  const trailerUrl = film.trailerKey ? `https://www.youtube.com/watch?v=${film.trailerKey}` : null
 
   return (
     <section
@@ -180,14 +181,16 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
               >
                 View Full Graph
               </Link>
-              <a
-                href={trailerUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="border border-cinema-border text-cinema-cream font-semibold px-7 py-3 rounded-lg hover:border-cinema-gold/50 hover:text-cinema-gold transition-colors text-sm"
-              >
-                Watch Trailer
-              </a>
+              {trailerUrl && (
+                <a
+                  href={trailerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="border border-cinema-border text-cinema-cream font-semibold px-7 py-3 rounded-lg hover:border-cinema-gold/50 hover:text-cinema-gold transition-colors text-sm"
+                >
+                  Watch Trailer
+                </a>
+              )}
             </div>
           </div>
 

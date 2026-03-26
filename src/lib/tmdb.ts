@@ -71,6 +71,23 @@ export async function getMovieReviews(tmdbId: number, page: number = 1) {
   })
 }
 
+interface TMDBVideo {
+  key: string
+  site: string
+  type: string
+  name: string
+}
+
+export async function getMovieTrailerKey(tmdbId: number): Promise<string | null> {
+  try {
+    const data = await tmdbFetch<{ results: TMDBVideo[] }>(`/movie/${tmdbId}/videos`)
+    const trailer = data.results.find((v) => v.site === 'YouTube' && v.type === 'Trailer')
+    return trailer?.key ?? null
+  } catch {
+    return null
+  }
+}
+
 export async function importMovie(tmdbId: number) {
   const existing = await prisma.film.findUnique({ where: { tmdbId } })
   if (existing) return existing
