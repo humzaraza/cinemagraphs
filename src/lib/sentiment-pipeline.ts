@@ -8,6 +8,72 @@ import { pipelineLogger } from './logger'
 const TMDB_API_KEY = process.env.TMDB_API_KEY!
 const TMDB_BASE_URL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3'
 
+// ── Review quality filter ──
+
+const ENGLISH_REGEX = /^[\x00-\x7F\u00C0-\u024F\u2018-\u201D\u2014\u2013\u2026\s.,;:!?'"()\-[\]{}@#$%^&*+=/<>~`|\\]+$/
+const MIN_WORD_COUNT = 50
+
+function isQualityReview(text: string): boolean {
+  const words = text.trim().split(/\s+/)
+  if (words.length < MIN_WORD_COUNT) return false
+  // Check if predominantly English/Latin characters
+  if (!ENGLISH_REGEX.test(text.slice(0, 500))) return false
+  return true
+}
+
+/**
+ * Check if a film needs re-analysis based on review growth threshold.
+ * Returns true if:
+ * - No existing graph (never analyzed)
+ * - Filtered review count grew by ≥10% over lastReviewCount
+ */
+export async function filmNeedsReanalysis(filmId: string): Promise<{ needsAnalysis: boolean; filteredCount: number; reason: string }> {
+  const film = await prisma.film.findUnique({
+    where: { id: filmId },
+    include: { sentimentGraph: { select: { id: true } } },
+  })
+  if (!film) return { needsAnalysis: false, filteredCount: 0, reason: 'Film not found' }
+
+  // Never analyzed — always analyze
+  if (!film.sentimentGraph) {
+    return { needsAnalysis: true, filteredCount: 0, reason: 'No existing graph' }
+  }
+
+  // Count filtered reviews
+  const reviews = await prisma.review.findMany({
+    where: { filmId },
+    select: { reviewText: true },
+  })
+  const filteredCount = reviews.filter((r) => isQualityReview(r.reviewText)).length
+
+  const lastCount = film.lastReviewCount || 0
+  if (lastCount === 0) {
+    // Had a graph but lastReviewCount wasn't set (legacy) — re-analyze if ≥3 quality reviews
+    return {
+      needsAnalysis: filteredCount >= 3,
+      filteredCount,
+      reason: lastCount === 0 ? 'Legacy film, no lastReviewCount' : 'No previous reviews',
+    }
+  }
+
+  const threshold = Math.max(1, Math.ceil(lastCount * 0.10))
+  const newReviews = filteredCount - lastCount
+
+  if (newReviews >= threshold) {
+    return {
+      needsAnalysis: true,
+      filteredCount,
+      reason: `${newReviews} new quality reviews (threshold: ${threshold})`,
+    }
+  }
+
+  return {
+    needsAnalysis: false,
+    filteredCount,
+    reason: `Only ${newReviews} new reviews (need ${threshold})`,
+  }
+}
+
 async function lookupImdbId(tmdbId: number): Promise<string | null> {
   try {
     const res = await fetch(`${TMDB_BASE_URL}/movie/${tmdbId}/external_ids`, {
@@ -74,17 +140,19 @@ export async function generateSentimentGraph(filmId: string): Promise<void> {
   // 4. Fetch reviews from all sources
   const totalFetched = await fetchAllReviews(film)
 
-  // Get all stored reviews for this film
-  const reviews = await prisma.review.findMany({
+  // Get all stored reviews for this film, filter for quality
+  const allReviews = await prisma.review.findMany({
     where: { filmId: film.id },
     orderBy: { fetchedAt: 'desc' },
   })
+  const reviews = allReviews.filter((r) => isQualityReview(r.reviewText))
+  const filteredReviewCount = reviews.length
 
   if (reviews.length < 2) {
-    throw new Error(`Insufficient reviews for "${film.title}": only ${reviews.length} found (minimum 2 required)`)
+    throw new Error(`Insufficient quality reviews for "${film.title}": only ${reviews.length} found (minimum 2 required)`)
   }
 
-  pipelineLogger.info({ filmId: film.id, filmTitle: film.title, reviewCount: reviews.length }, 'Reviews available for analysis')
+  pipelineLogger.info({ filmId: film.id, filmTitle: film.title, totalReviews: allReviews.length, qualityReviews: filteredReviewCount }, 'Reviews available for analysis')
 
   // 5. Send to Claude API for analysis
   const graphData = await analyzeSentiment(film, reviews, anchorScores)
@@ -129,6 +197,12 @@ export async function generateSentimentGraph(filmId: string): Promise<void> {
     })
     pipelineLogger.info({ filmId: film.id, filmTitle: film.title }, 'Created sentiment graph')
   }
+
+  // Update lastReviewCount so future re-analysis checks the delta
+  await prisma.film.update({
+    where: { id: film.id },
+    data: { lastReviewCount: filteredReviewCount },
+  })
 }
 
 export async function generateBatchSentimentGraphs(filmIds: string[]): Promise<{

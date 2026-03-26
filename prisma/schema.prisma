@@ -99,6 +99,7 @@ model Film {
   rtCriticsScore  Int?
   rtAudienceScore Int?
   metacriticScore Int?
+  lastReviewCount Int            @default(0)
   isFeatured      Boolean        @default(false)
   status          FilmStatus     @default(ACTIVE)
   createdAt       DateTime       @default(now())

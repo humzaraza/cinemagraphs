@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { generateSentimentGraph } from '@/lib/sentiment-pipeline'
+import { generateSentimentGraph, filmNeedsReanalysis } from '@/lib/sentiment-pipeline'
 import { cronLogger } from '@/lib/logger'
 
 export const maxDuration = 300
@@ -16,39 +16,43 @@ export async function GET(request: Request) {
       return Response.json({ error: 'Unauthorized', code: 'UNAUTHORIZED' }, { status: 401 })
     }
 
-    // Prioritise films without graphs, then stale graphs (>7 days)
-    const sevenDaysAgo = new Date()
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-
-    const filmsNeedingAnalysis = await prisma.film.findMany({
-      where: {
-        status: 'ACTIVE',
-        OR: [
-          { sentimentGraph: null },
-          { sentimentGraph: { generatedAt: { lt: sevenDaysAgo } } },
-        ],
-      },
-      take: 10,
+    // Get candidate films: no graph, or any active film (we'll check threshold)
+    const candidates = await prisma.film.findMany({
+      where: { status: 'ACTIVE' },
+      include: { sentimentGraph: { select: { id: true, generatedAt: true } } },
       orderBy: [
-        // Films without graphs first (nulls first via raw ordering)
         { sentimentGraph: { generatedAt: 'asc' } },
         { createdAt: 'asc' },
       ],
+      take: 50, // Check more candidates since many may not meet threshold
     })
 
-    if (filmsNeedingAnalysis.length === 0) {
+    // Filter to films that actually need re-analysis
+    const filmsToProcess: { id: string; title: string; reason: string }[] = []
+
+    for (const film of candidates) {
+      if (filmsToProcess.length >= 10) break // Process max 10 per run
+
+      const { needsAnalysis, reason } = await filmNeedsReanalysis(film.id)
+      if (needsAnalysis) {
+        filmsToProcess.push({ id: film.id, title: film.title, reason })
+        cronLogger.info({ filmId: film.id, filmTitle: film.title, reason }, 'Film queued for analysis')
+      }
+    }
+
+    if (filmsToProcess.length === 0) {
       cronLogger.info('No films need analysis')
       return Response.json({ message: 'No films need analysis', processed: 0 })
     }
 
     let succeeded = 0
     let failed = 0
-    const results: { title: string; success: boolean; error?: string }[] = []
+    const results: { title: string; success: boolean; reason: string; error?: string }[] = []
 
-    for (const film of filmsNeedingAnalysis) {
+    for (const film of filmsToProcess) {
       try {
         await generateSentimentGraph(film.id)
-        results.push({ title: film.title, success: true })
+        results.push({ title: film.title, success: true, reason: film.reason })
         succeeded++
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'
@@ -56,6 +60,7 @@ export async function GET(request: Request) {
         results.push({
           title: film.title,
           success: false,
+          reason: film.reason,
           error: message,
         })
         failed++
