@@ -111,12 +111,12 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
             src={tmdbImageUrl(film.backdropUrl, 'w1280')}
             alt=""
             fill
-            className="object-cover opacity-25"
+            className="object-cover opacity-40"
             priority
           />
         )}
-        <div className="absolute inset-0 bg-gradient-to-r from-cinema-dark via-cinema-dark/90 to-cinema-dark/60" />
-        <div className="absolute inset-0 bg-gradient-to-t from-cinema-dark via-transparent to-cinema-dark/40" />
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(to right, rgba(13,13,26,0.9) 0%, rgba(13,13,26,0.7) 40%, rgba(13,13,26,0.35) 100%)' }} />
+        <div className="absolute inset-0 bg-gradient-to-t from-cinema-dark via-transparent to-cinema-dark/30" />
       </div>
 
       <div className="relative max-w-7xl mx-auto px-4 py-14 md:py-20">
