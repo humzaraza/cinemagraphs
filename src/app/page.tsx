@@ -128,8 +128,8 @@ export default async function HomePage() {
       })),
     }))
 
-  // Biggest sentiment swings
-  const swingFilms = allSwingFilms
+  // Biggest sentiment swings — pick 10 random from top 20
+  const topSwings = allSwingFilms
     .map((f) => {
       const peak = f.sentimentGraph?.peakMoment as unknown as PeakLow | null
       const low = f.sentimentGraph?.lowestMoment as unknown as PeakLow | null
@@ -140,7 +140,15 @@ export default async function HomePage() {
     })
     .filter((s) => s.swing > 0)
     .sort((a, b) => b.swing - a.swing)
-    .slice(0, 10)
+    .slice(0, 20)
+
+  // Shuffle and pick 10 for variety on each page load
+  const shuffled = [...topSwings]
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+  }
+  const swingFilms = shuffled.slice(0, 10)
 
   // Latest trailers: recently added films with TMDB trailers
   const recentForTrailers = await prisma.film.findMany({
