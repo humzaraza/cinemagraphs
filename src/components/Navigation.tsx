@@ -11,12 +11,12 @@ export default function Navigation() {
   return (
     <nav className="border-b border-cinema-border bg-cinema-darker/80 backdrop-blur-sm sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-20">
           <Link href="/" className="flex flex-col">
-            <span className="font-[family-name:var(--font-playfair)] text-2xl font-bold text-cinema-gold leading-tight">
+            <span className="font-[family-name:var(--font-playfair)] text-3xl font-bold text-cinema-gold leading-tight">
               Cinemagraphs
             </span>
-            <span className="font-[family-name:var(--font-dm-sans)] text-[11px] leading-tight" style={{ color: 'rgba(255,255,255,0.4)' }}>
+            <span className="font-[family-name:var(--font-dm-sans)] text-xs leading-tight" style={{ color: 'rgba(255,255,255,0.4)' }}>
               Movie reviews, visualized.
             </span>
           </Link>
