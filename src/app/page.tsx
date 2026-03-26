@@ -35,7 +35,7 @@ export default async function HomePage() {
     prisma.film.findMany({
       where: { status: 'ACTIVE', nowPlaying: true, sentimentGraph: { isNot: null } },
       include: {
-        sentimentGraph: { select: { overallScore: true, previousScore: true, dataPoints: true } },
+        sentimentGraph: { select: { overallScore: true, previousScore: true } },
       },
       take: 20,
       orderBy: { updatedAt: 'desc' },
@@ -93,11 +93,8 @@ export default async function HomePage() {
         id: f.id,
         title: f.title,
         score: current,
+        previousScore: previous,
         delta,
-        dataPoints: (f.sentimentGraph!.dataPoints as unknown as any[]).map((dp: any) => ({
-          timeMidpoint: dp.timeMidpoint ?? Math.round(((dp.timeStart ?? 0) + (dp.timeEnd ?? 0)) / 2),
-          score: dp.score,
-        })),
       }
     })
 
