@@ -10,6 +10,7 @@ interface TickerFilm {
   score: number
   previousScore: number | null
   delta: number | null
+  dataPoints: { timeMidpoint: number; score: number }[]
 }
 
 export default function MovieTicker({ films }: { films: TickerFilm[] }) {
@@ -79,11 +80,6 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
                 ? (isUp ? '#2DD4A8' : isDown ? '#ef4444' : '#C8A951')
                 : '#C8A951'
 
-              // 2-point sparkline: previousScore → currentScore
-              const sparkData = prev != null
-                ? [{ t: 0, score: prev }, { t: 1, score: film.score }]
-                : [{ t: 0, score: film.score }, { t: 1, score: film.score }]
-
               return (
                 <Link
                   key={`${film.id}-${i}`}
@@ -93,10 +89,10 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
                   <span className="text-base font-medium text-cinema-cream whitespace-nowrap max-w-[160px] truncate">
                     {film.title}
                   </span>
-                  {/* Mini sparkline: previous → current */}
+                  {/* Mini sparkline — sentiment curve colored by score direction */}
                   <div className="w-28 h-12">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={sparkData} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
+                      <AreaChart data={film.dataPoints} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
                         <defs>
                           <linearGradient id={`tickerGrad-${film.id}-${i}`} x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor={color} stopOpacity={0.3} />
@@ -106,7 +102,7 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
                         <YAxis domain={[1, 10]} hide />
                         <ReferenceLine y={5.5} stroke="#888" strokeDasharray="3 3" strokeWidth={0.5} />
                         <Area
-                          type="linear"
+                          type="monotone"
                           dataKey="score"
                           stroke={color}
                           strokeWidth={1.5}

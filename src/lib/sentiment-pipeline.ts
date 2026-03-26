@@ -148,8 +148,13 @@ export async function generateSentimentGraph(filmId: string): Promise<void> {
   const reviews = allReviews.filter((r) => isQualityReview(r.reviewText))
   const filteredReviewCount = reviews.length
 
-  if (reviews.length < 2) {
-    throw new Error(`Insufficient quality reviews for "${film.title}": only ${reviews.length} found (minimum 2 required)`)
+  // Lower threshold for newer films (released within last 6 months)
+  const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
+  const isRecentRelease = film.releaseDate && film.releaseDate > sixMonthsAgo
+  const minReviews = isRecentRelease ? 1 : 2
+
+  if (reviews.length < minReviews) {
+    throw new Error(`Insufficient quality reviews for "${film.title}": only ${reviews.length} found (minimum ${minReviews} required)`)
   }
 
   pipelineLogger.info({ filmId: film.id, filmTitle: film.title, totalReviews: allReviews.length, qualityReviews: filteredReviewCount }, 'Reviews available for analysis')

@@ -19,7 +19,7 @@ function contentHash(text: string): string {
 export async function fetchAllReviews(film: Film): Promise<number> {
   reviewLogger.info({ filmId: film.id, filmTitle: film.title }, 'Fetching reviews')
 
-  const [tmdb, imdb, critic, letterboxd, reddit, guardian] = await Promise.allSettled([
+  const results = await Promise.allSettled([
     fetchTMDBReviews(film),
     fetchIMDbReviews(film),
     fetchCriticReviews(film),
@@ -28,21 +28,22 @@ export async function fetchAllReviews(film: Film): Promise<number> {
     fetchGuardianReviews(film),
   ])
 
-  const allReviews: FetchedReview[] = [
-    ...(tmdb.status === 'fulfilled' ? tmdb.value : []),
-    ...(imdb.status === 'fulfilled' ? imdb.value : []),
-    ...(critic.status === 'fulfilled' ? critic.value : []),
-    ...(letterboxd.status === 'fulfilled' ? letterboxd.value : []),
-    ...(reddit.status === 'fulfilled' ? reddit.value : []),
-    ...(guardian.status === 'fulfilled' ? guardian.value : []),
-  ]
+  const sourceNames = ['TMDB', 'IMDb', 'Critic', 'Letterboxd', 'Reddit', 'Guardian']
+  const perSource: Record<string, number> = {}
+  const allReviews: FetchedReview[] = []
 
-  // Log source breakdown
-  const sourceCounts: Record<string, number> = {}
-  for (const r of allReviews) {
-    sourceCounts[r.sourcePlatform] = (sourceCounts[r.sourcePlatform] || 0) + 1
-  }
-  reviewLogger.info({ filmId: film.id, filmTitle: film.title, sourceCounts, total: allReviews.length }, 'Source breakdown')
+  results.forEach((r, i) => {
+    const name = sourceNames[i]
+    if (r.status === 'fulfilled') {
+      perSource[name] = r.value.length
+      allReviews.push(...r.value)
+    } else {
+      perSource[name] = 0
+      reviewLogger.warn({ filmId: film.id, source: name, error: r.reason?.message ?? String(r.reason) }, 'Source fetch failed')
+    }
+  })
+
+  reviewLogger.info({ filmId: film.id, filmTitle: film.title, perSource, total: allReviews.length }, 'Review source breakdown')
 
   // Deduplicate by content hash and store
   let stored = 0
