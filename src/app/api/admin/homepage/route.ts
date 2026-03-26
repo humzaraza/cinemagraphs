@@ -16,8 +16,26 @@ export async function GET() {
     prisma.siteSettings.findUnique({ where: { key: 'homepage_sections' } }),
   ])
 
+  // If no curated featured films, return the current fallback (top rated with graphs)
+  let effectiveFeatured = featured
+  if (featured.length === 0) {
+    const fallbackFilms = await prisma.film.findMany({
+      where: { status: 'ACTIVE', sentimentGraph: { isNot: null } },
+      select: { id: true, title: true, posterUrl: true, tmdbId: true },
+      take: 5,
+      orderBy: { sentimentGraph: { overallScore: 'desc' } },
+    })
+    effectiveFeatured = fallbackFilms.map((f, i) => ({
+      id: `fallback-${i}`,
+      filmId: f.id,
+      position: i + 1,
+      film: f,
+    }))
+  }
+
   return Response.json({
-    featured,
+    featured: effectiveFeatured,
+    isFallback: featured.length === 0,
     sectionVisibility: settings?.value ?? {
       inTheaters: true,
       topRated: true,

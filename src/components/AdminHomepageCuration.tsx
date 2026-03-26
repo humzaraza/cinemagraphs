@@ -56,12 +56,14 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
   const [saving, setSaving] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [isFallback, setIsFallback] = useState(false)
 
   useEffect(() => {
     fetch('/api/admin/homepage')
       .then((r) => r.json())
       .then((data) => {
         if (data.featured) setFeatured(data.featured)
+        if (data.isFallback) setIsFallback(true)
         if (data.sectionVisibility) setVisibility(data.sectionVisibility)
       })
       .catch(() => {})
@@ -99,6 +101,7 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
       body: JSON.stringify({ action: 'featured', filmIds: featured.map((f) => f.filmId) }),
     })
     setSaving(null)
+    if (res.ok) setIsFallback(false)
     flash(res.ok ? 'Featured films saved' : 'Failed to save')
   }
 
@@ -181,6 +184,11 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
         <p className="text-xs text-cinema-muted mb-3">
           Select up to 6 films with sentiment graphs. Drag to reorder.
         </p>
+        {isFallback && featured.length > 0 && (
+          <div className="bg-cinema-gold/10 border border-cinema-gold/30 rounded-lg px-4 py-2 mb-3 text-xs text-cinema-gold">
+            These are auto-selected (top rated). Click &quot;Save Order&quot; to lock them in, or swap films below.
+          </div>
+        )}
 
         {/* Current featured list */}
         <div className="flex gap-3 mb-4 min-h-[120px] flex-wrap">
