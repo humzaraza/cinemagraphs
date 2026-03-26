@@ -211,43 +211,6 @@ export default async function HomePage() {
         </section>
       )}
 
-      {/* Top Rated */}
-      {topRatedFilms.length > 0 && (
-        <section className="max-w-7xl mx-auto px-4 py-12">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="font-[family-name:var(--font-playfair)] text-2xl font-bold">
-              Top Rated
-            </h2>
-            <Link
-              href="/films/browse"
-              className="text-sm text-cinema-gold hover:text-cinema-gold/80 transition-colors"
-            >
-              View All &rarr;
-            </Link>
-          </div>
-          <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-cinema-border scrollbar-track-transparent">
-            {topRatedFilms.map((film, i) => (
-              <div key={film.id} className="flex-shrink-0 w-[180px] relative">
-                <FilmCard
-                  id={film.id}
-                  title={film.title}
-                  posterUrl={film.posterUrl}
-                  releaseDate={film.releaseDate?.toISOString() ?? null}
-                  genres={film.genres}
-                  sentimentScore={film.sentimentGraph?.overallScore}
-                  graphDataPoints={film.sentimentGraph?.dataPoints as unknown as { timeMidpoint: number; score: number }[] | null}
-                  runtime={film.runtime}
-                />
-                {/* Rank badge */}
-                <div className="absolute bottom-[88px] left-2 z-10 bg-cinema-gold text-cinema-dark font-[family-name:var(--font-bebas)] text-lg w-8 h-8 flex items-center justify-center rounded-full shadow-lg">
-                  {i + 1}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
       {/* Biggest Sentiment Swings */}
       {swingFilms.length > 0 && (
         <section className="max-w-7xl mx-auto px-4 py-12">
@@ -300,6 +263,43 @@ export default async function HomePage() {
                 backdropUrl={t.backdropUrl}
                 trailerKey={t.trailerKey}
               />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Top Rated */}
+      {topRatedFilms.length > 0 && (
+        <section className="max-w-7xl mx-auto px-4 py-12">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="font-[family-name:var(--font-playfair)] text-2xl font-bold">
+              Top Rated
+            </h2>
+            <Link
+              href="/films/browse"
+              className="text-sm text-cinema-gold hover:text-cinema-gold/80 transition-colors"
+            >
+              View All &rarr;
+            </Link>
+          </div>
+          <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-cinema-border scrollbar-track-transparent">
+            {topRatedFilms.map((film, i) => (
+              <div key={film.id} className="flex-shrink-0 w-[180px] relative">
+                <FilmCard
+                  id={film.id}
+                  title={film.title}
+                  posterUrl={film.posterUrl}
+                  releaseDate={film.releaseDate?.toISOString() ?? null}
+                  genres={film.genres}
+                  sentimentScore={film.sentimentGraph?.overallScore}
+                  graphDataPoints={film.sentimentGraph?.dataPoints as unknown as { timeMidpoint: number; score: number }[] | null}
+                  runtime={film.runtime}
+                />
+                {/* Rank badge */}
+                <div className="absolute bottom-[88px] left-2 z-10 bg-cinema-gold text-cinema-dark font-[family-name:var(--font-bebas)] text-lg w-8 h-8 flex items-center justify-center rounded-full shadow-lg">
+                  {i + 1}
+                </div>
+              </div>
             ))}
           </div>
         </section>
