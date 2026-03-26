@@ -9,7 +9,8 @@ interface Film {
   posterUrl: string | null
   releaseDate: string | null
   genres: string[]
-  sentimentGraph?: { overallScore: number } | null
+  runtime?: number | null
+  sentimentGraph?: { overallScore: number; dataPoints?: any[] } | null
 }
 
 export default function BrowsePage() {
@@ -81,6 +82,8 @@ export default function BrowsePage() {
                 releaseDate={film.releaseDate}
                 genres={film.genres}
                 sentimentScore={film.sentimentGraph?.overallScore}
+                graphDataPoints={film.sentimentGraph?.dataPoints ?? null}
+                runtime={film.runtime}
               />
             ))}
           </div>

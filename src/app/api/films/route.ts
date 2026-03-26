@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const [films, total] = await Promise.all([
     prisma.film.findMany({
       where: { status: 'ACTIVE' },
-      include: { sentimentGraph: { select: { overallScore: true } } },
+      include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
       orderBy: { createdAt: 'desc' },
       skip,
       take: limit,

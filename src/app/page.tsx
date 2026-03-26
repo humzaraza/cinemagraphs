@@ -123,6 +123,7 @@ export default async function HomePage() {
                 genres={film.genres}
                 sentimentScore={film.sentimentGraph?.overallScore}
                 graphDataPoints={film.sentimentGraph?.dataPoints as unknown as { timeMidpoint: number; score: number }[] | null}
+                runtime={film.runtime}
               />
             ))}
           </div>
