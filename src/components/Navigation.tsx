@@ -29,6 +29,16 @@ export default function Navigation() {
             >
               Browse
             </Link>
+            <Link
+              href="/categories"
+              className={`text-sm transition-colors ${
+                pathname === '/categories'
+                  ? 'text-cinema-gold'
+                  : 'text-cinema-cream/70 hover:text-cinema-cream'
+              }`}
+            >
+              Categories
+            </Link>
 
             {session?.user?.role === 'ADMIN' && (
               <Link

@@ -308,9 +308,17 @@ export default async function HomePage() {
       {/* Browse by Genre */}
       {genres.length > 0 && (
         <section className="max-w-7xl mx-auto px-4 py-12">
-          <h2 className="font-[family-name:var(--font-playfair)] text-2xl font-bold mb-6">
-            Browse by Genre
-          </h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="font-[family-name:var(--font-playfair)] text-2xl font-bold">
+              Browse by Genre
+            </h2>
+            <Link
+              href="/categories"
+              className="text-sm text-cinema-gold hover:text-cinema-gold/80 transition-colors"
+            >
+              View All Categories &rarr;
+            </Link>
+          </div>
           <div className="flex flex-wrap gap-3">
             {genres.map((genre) => (
               <Link
