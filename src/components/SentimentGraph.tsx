@@ -106,11 +106,16 @@ export default function SentimentGraph({
   }
 
   // Map data for the chart — compute timeMidpoint if missing
-  const chartData = dataPoints.map((dp) => ({
+  // Prepend a synthetic neutral point so the line starts from y=5
+  const realData = dataPoints.map((dp) => ({
     ...dp,
     timeMidpoint: dp.timeMidpoint ?? Math.round((dp.timeStart + dp.timeEnd) / 2),
     fill: scoreColor(dp.score),
   }))
+  const chartData = [
+    { timeMidpoint: 0, timeStart: 0, timeEnd: 0, score: 5, label: '', confidence: 'low', fill: scoreColor(5) } as typeof realData[0],
+    ...realData,
+  ]
 
   // Compute IMDb anchor from anchoredFrom string
   const imdbAnchor = anchoredFrom
@@ -296,11 +301,12 @@ export default function SentimentGraph({
           <span>10 — Masterpiece</span>
         </div>
 
-        {/* Story beat pills — each maps 1:1 to a graph dot */}
+        {/* Story beat pills — skip synthetic first point, maps 1:1 to real graph dots */}
         <div className="flex flex-wrap gap-1.5 mt-4">
-          {chartData.map((dp, i) => {
+          {chartData.slice(1).map((dp, i) => {
+            const chartIndex = i + 1
             const color = scoreColor(dp.score)
-            const isActive = highlightedIndex === i
+            const isActive = highlightedIndex === chartIndex
             return (
               <button
                 key={i}
@@ -313,9 +319,9 @@ export default function SentimentGraph({
                   transform: isActive ? 'scale(1.1)' : 'scale(1)',
                   boxShadow: isActive ? `0 0 8px ${color}60` : 'none',
                 }}
-                onMouseEnter={() => setHighlightedIndex(i)}
+                onMouseEnter={() => setHighlightedIndex(chartIndex)}
                 onMouseLeave={() => setHighlightedIndex(null)}
-                onClick={() => setHighlightedIndex(highlightedIndex === i ? null : i)}
+                onClick={() => setHighlightedIndex(highlightedIndex === chartIndex ? null : chartIndex)}
               >
                 {dp.label}
               </button>

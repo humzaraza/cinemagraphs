@@ -91,10 +91,15 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
 
   const film = films[activeIndex]
   const year = film.releaseDate ? new Date(film.releaseDate).getFullYear() : null
-  const chartData = film.dataPoints.map((dp) => ({
+  // Prepend a synthetic neutral point so the line starts from y=5
+  const realData = film.dataPoints.map((dp) => ({
     ...dp,
     timeMidpoint: dp.timeMidpoint ?? Math.round((dp.timeStart + dp.timeEnd) / 2),
   }))
+  const chartData = [
+    { timeMidpoint: 0, timeStart: 0, timeEnd: 0, score: 5, label: '', confidence: 'low' },
+    ...realData,
+  ]
 
   const trailerUrl = `https://www.themoviedb.org/movie/${film.tmdbId}/watch`
 
@@ -120,7 +125,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
       </div>
 
       <div className="relative max-w-7xl mx-auto px-4 py-14 md:py-20">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
+        <div className="grid grid-cols-1 md:grid-cols-[2fr_3fr] gap-6 items-start">
           {/* Left: Film info */}
           <div>
             <h1 className="font-[family-name:var(--font-playfair)] text-4xl md:text-5xl lg:text-6xl font-bold mb-4 text-cinema-cream leading-tight">
@@ -186,12 +191,12 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
             </div>
           </div>
 
-          {/* Right: Sentiment graph */}
-          <div className="bg-cinema-darker/80 backdrop-blur-sm rounded-xl border border-cinema-border p-6">
-            <div className="mb-4">
+          {/* Right: Sentiment graph — wide landscape card */}
+          <div className="bg-cinema-darker/80 backdrop-blur-sm rounded-xl border border-cinema-border px-5 py-4">
+            <div className="mb-2">
               <span className="text-xs text-cinema-muted uppercase tracking-wider">Sentiment Timeline</span>
             </div>
-            <ResponsiveContainer width="100%" height={440}>
+            <ResponsiveContainer width="100%" height={260}>
               <AreaChart data={chartData} margin={{ top: 10, right: 35, left: 10, bottom: 10 }}>
                 <defs>
                   <linearGradient id="heroGradient" x1="0" y1="0" x2="0" y2="1">
