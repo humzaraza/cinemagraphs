@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import AdminFilmImport from '@/components/AdminFilmImport'
 import AdminAnalyze from '@/components/AdminAnalyze'
 import AdminHomepageCuration from '@/components/AdminHomepageCuration'
+import AdminTabs from '@/components/AdminTabs'
 
 export const dynamic = 'force-dynamic'
 
@@ -64,61 +65,74 @@ export default async function AdminPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-10">
-      <h1 className="font-[family-name:var(--font-playfair)] text-3xl font-bold mb-8 text-cinema-gold">
+      <h1 className="font-[family-name:var(--font-playfair)] text-3xl font-bold mb-6 text-cinema-gold">
         Admin Dashboard
       </h1>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-        <div className="bg-cinema-card border border-cinema-border rounded-lg p-4">
-          <p className="text-sm text-cinema-muted">Total Films</p>
-          <p className="font-[family-name:var(--font-bebas)] text-3xl text-cinema-teal">
-            {filmCount}
-          </p>
-        </div>
-        <div className="bg-cinema-card border border-cinema-border rounded-lg p-4">
-          <p className="text-sm text-cinema-muted">Total Reviews</p>
-          <p className="font-[family-name:var(--font-bebas)] text-3xl text-cinema-teal">
-            {reviewCount}
-          </p>
-        </div>
-        <div className="bg-cinema-card border border-cinema-border rounded-lg p-4">
-          <p className="text-sm text-cinema-muted">Sentiment Graphs</p>
-          <p className="font-[family-name:var(--font-bebas)] text-3xl text-cinema-gold">
-            {graphCount}
-          </p>
-        </div>
-        <div className="bg-cinema-card border border-cinema-border rounded-lg p-4">
-          <p className="text-sm text-cinema-muted">Pending Analysis</p>
-          <p className="font-[family-name:var(--font-bebas)] text-3xl text-red-400">
-            {filmCount - graphCount}
-          </p>
-        </div>
-      </div>
-
-      {/* Import Section */}
-      <section className="mb-10">
-        <h2 className="font-[family-name:var(--font-playfair)] text-xl font-bold mb-4">
-          Import from TMDB
-        </h2>
-        <AdminFilmImport />
-      </section>
-
-      {/* Sentiment Analysis Section */}
-      <section className="mb-10">
-        <h2 className="font-[family-name:var(--font-playfair)] text-xl font-bold mb-4">
-          Sentiment Analysis
-        </h2>
-        <AdminAnalyze films={filmsForAnalyze} />
-      </section>
-
-      {/* Homepage Curation Section */}
-      <section className="mb-10">
-        <h2 className="font-[family-name:var(--font-playfair)] text-xl font-bold mb-4">
-          Homepage Curation
-        </h2>
-        <AdminHomepageCuration films={filmsForCuration} />
-      </section>
+      <AdminTabs
+        tabs={[
+          {
+            id: 'overview',
+            label: 'Overview',
+            content: (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-cinema-card border border-cinema-border rounded-lg p-4">
+                  <p className="text-sm text-cinema-muted">Total Films</p>
+                  <p className="font-[family-name:var(--font-bebas)] text-3xl text-cinema-teal">
+                    {filmCount}
+                  </p>
+                </div>
+                <div className="bg-cinema-card border border-cinema-border rounded-lg p-4">
+                  <p className="text-sm text-cinema-muted">Total Reviews</p>
+                  <p className="font-[family-name:var(--font-bebas)] text-3xl text-cinema-teal">
+                    {reviewCount}
+                  </p>
+                </div>
+                <div className="bg-cinema-card border border-cinema-border rounded-lg p-4">
+                  <p className="text-sm text-cinema-muted">Sentiment Graphs</p>
+                  <p className="font-[family-name:var(--font-bebas)] text-3xl text-cinema-gold">
+                    {graphCount}
+                  </p>
+                </div>
+                <div className="bg-cinema-card border border-cinema-border rounded-lg p-4">
+                  <p className="text-sm text-cinema-muted">Pending Analysis</p>
+                  <p className="font-[family-name:var(--font-bebas)] text-3xl text-red-400">
+                    {filmCount - graphCount}
+                  </p>
+                </div>
+              </div>
+            ),
+          },
+          {
+            id: 'films',
+            label: 'Films',
+            content: (
+              <div>
+                <section className="mb-10">
+                  <h2 className="font-[family-name:var(--font-playfair)] text-xl font-bold mb-4">
+                    Import from TMDB
+                  </h2>
+                  <AdminFilmImport />
+                </section>
+              </div>
+            ),
+          },
+          {
+            id: 'analysis',
+            label: 'Sentiment Analysis',
+            content: (
+              <AdminAnalyze films={filmsForAnalyze} />
+            ),
+          },
+          {
+            id: 'curation',
+            label: 'Homepage Curation',
+            content: (
+              <AdminHomepageCuration films={filmsForCuration} />
+            ),
+          },
+        ]}
+      />
     </div>
   )
 }
