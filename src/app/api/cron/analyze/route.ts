@@ -16,20 +16,24 @@ export async function GET(request: Request) {
       return Response.json({ error: 'Unauthorized', code: 'UNAUTHORIZED' }, { status: 401 })
     }
 
-    // Find films without graphs, or with graphs older than 30 days
-    const thirtyDaysAgo = new Date()
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    // Prioritise films without graphs, then stale graphs (>7 days)
+    const sevenDaysAgo = new Date()
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
     const filmsNeedingAnalysis = await prisma.film.findMany({
       where: {
         status: 'ACTIVE',
         OR: [
           { sentimentGraph: null },
-          { sentimentGraph: { generatedAt: { lt: thirtyDaysAgo } } },
+          { sentimentGraph: { generatedAt: { lt: sevenDaysAgo } } },
         ],
       },
-      take: 5,
-      orderBy: { createdAt: 'asc' },
+      take: 10,
+      orderBy: [
+        // Films without graphs first (nulls first via raw ordering)
+        { sentimentGraph: { generatedAt: 'asc' } },
+        { createdAt: 'asc' },
+      ],
     })
 
     if (filmsNeedingAnalysis.length === 0) {
