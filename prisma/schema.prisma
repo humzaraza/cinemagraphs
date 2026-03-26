@@ -102,11 +102,13 @@ model Film {
   lastReviewCount Int            @default(0)
   nowPlaying      Boolean        @default(false)
   isFeatured      Boolean        @default(false)
+  pinnedSection   String?
   status          FilmStatus     @default(ACTIVE)
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   sentimentGraph  SentimentGraph?
   reviews         Review[]
+  featuredFilm    FeaturedFilm?
 
   @@index([tmdbId])
   @@index([title])
@@ -144,6 +146,24 @@ model Review {
 
   @@index([filmId])
   @@index([contentHash])
+}
+
+model FeaturedFilm {
+  id       String @id @default(cuid())
+  filmId   String
+  position Int
+  film     Film   @relation(fields: [filmId], references: [id], onDelete: Cascade)
+
+  @@unique([filmId])
+  @@unique([position])
+}
+
+model SiteSettings {
+  id    String @id @default(cuid())
+  key   String @unique
+  value Json
+
+  @@index([key])
 }
 
 model Collection {

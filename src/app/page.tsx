@@ -13,24 +13,50 @@ interface PeakLow {
   [key: string]: unknown
 }
 
+interface SectionVisibility {
+  inTheaters: boolean
+  topRated: boolean
+  biggestSwings: boolean
+  latestTrailers: boolean
+  browseByGenre: boolean
+}
+
 export default async function HomePage() {
-  const [featuredFilms, recentFilms, allGraphFilms, topRatedFilms, allSwingFilms, allGenres] = await Promise.all([
-    // Admin-selected featured films
-    prisma.film.findMany({
-      where: { status: 'ACTIVE', isFeatured: true, sentimentGraph: { isNot: null } },
-      include: {
-        sentimentGraph: { select: { overallScore: true, dataPoints: true } },
+  // Load section visibility settings
+  const settingsRow = await prisma.siteSettings.findUnique({ where: { key: 'homepage_sections' } })
+  const sections: SectionVisibility = (settingsRow?.value as unknown as SectionVisibility) ?? {
+    inTheaters: true,
+    topRated: true,
+    biggestSwings: true,
+    latestTrailers: true,
+    browseByGenre: true,
+  }
+
+  // Load featured films from FeaturedFilm table (ordered by position)
+  const featuredRows = await prisma.featuredFilm.findMany({
+    orderBy: { position: 'asc' },
+    include: {
+      film: {
+        include: {
+          sentimentGraph: { select: { overallScore: true, dataPoints: true } },
+        },
       },
-      take: 6,
-      orderBy: { createdAt: 'desc' },
-    }),
+    },
+  })
+  const featuredFilms = featuredRows
+    .map((r) => r.film)
+    .filter((f) => f.status === 'ACTIVE' && f.sentimentGraph)
+
+  const [recentFilms, allGraphFilms, topRatedFilms, pinnedTopRated, allSwingFilms, pinnedSwings, pinnedInTheaters, allGenres] = await Promise.all([
     // In Theaters: films with nowPlaying flag
-    prisma.film.findMany({
-      where: { status: 'ACTIVE', nowPlaying: true },
-      include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
-      take: 20,
-      orderBy: { releaseDate: 'desc' },
-    }),
+    sections.inTheaters
+      ? prisma.film.findMany({
+          where: { status: 'ACTIVE', nowPlaying: true },
+          include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
+          take: 20,
+          orderBy: { releaseDate: 'desc' },
+        })
+      : Promise.resolve([]),
     // For ticker: now playing films with graphs
     prisma.film.findMany({
       where: { status: 'ACTIVE', nowPlaying: true, sentimentGraph: { isNot: null } },
@@ -41,29 +67,60 @@ export default async function HomePage() {
       orderBy: { updatedAt: 'desc' },
     }),
     // Top rated by sentiment
-    prisma.film.findMany({
-      where: { status: 'ACTIVE', sentimentGraph: { isNot: null } },
-      include: {
-        sentimentGraph: { select: { overallScore: true, dataPoints: true } },
-      },
-      take: 10,
-      orderBy: { sentimentGraph: { overallScore: 'desc' } },
-    }),
+    sections.topRated
+      ? prisma.film.findMany({
+          where: { status: 'ACTIVE', sentimentGraph: { isNot: null }, pinnedSection: { not: 'topRated' } },
+          include: {
+            sentimentGraph: { select: { overallScore: true, dataPoints: true } },
+          },
+          take: 10,
+          orderBy: { sentimentGraph: { overallScore: 'desc' } },
+        })
+      : Promise.resolve([]),
+    // Pinned to top rated
+    sections.topRated
+      ? prisma.film.findMany({
+          where: { status: 'ACTIVE', pinnedSection: 'topRated', sentimentGraph: { isNot: null } },
+          include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
+        })
+      : Promise.resolve([]),
     // For biggest swings calculation
-    prisma.film.findMany({
-      where: { status: 'ACTIVE', sentimentGraph: { isNot: null } },
-      include: {
-        sentimentGraph: { select: { overallScore: true, dataPoints: true, peakMoment: true, lowestMoment: true } },
-      },
-    }),
+    sections.biggestSwings
+      ? prisma.film.findMany({
+          where: { status: 'ACTIVE', sentimentGraph: { isNot: null } },
+          include: {
+            sentimentGraph: { select: { overallScore: true, dataPoints: true, peakMoment: true, lowestMoment: true } },
+          },
+        })
+      : Promise.resolve([]),
+    // Pinned to biggest swings
+    sections.biggestSwings
+      ? prisma.film.findMany({
+          where: { status: 'ACTIVE', pinnedSection: 'biggestSwings', sentimentGraph: { isNot: null } },
+          include: {
+            sentimentGraph: { select: { overallScore: true, dataPoints: true, peakMoment: true, lowestMoment: true } },
+          },
+        })
+      : Promise.resolve([]),
+    // Pinned to in theaters
+    sections.inTheaters
+      ? prisma.film.findMany({
+          where: { status: 'ACTIVE', pinnedSection: 'inTheaters' },
+          include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
+        })
+      : Promise.resolve([]),
     // All genres
-    prisma.film.findMany({
-      where: { status: 'ACTIVE' },
-      select: { genres: true },
-    }),
+    sections.browseByGenre
+      ? prisma.film.findMany({ where: { status: 'ACTIVE' }, select: { genres: true } })
+      : Promise.resolve([]),
   ])
 
-  const inTheaterFilms = recentFilms
+  // Merge pinned + regular for In Theaters (pinned first, no duplicates)
+  const pinnedInTheaterIds = new Set(pinnedInTheaters.map((f) => f.id))
+  const inTheaterFilms = [
+    ...pinnedInTheaters,
+    ...recentFilms.filter((f) => !pinnedInTheaterIds.has(f.id)),
+  ]
 
   // If no admin-selected featured films, use top-scored films with graphs
   const heroSourceFilms = featuredFilms.length > 0
@@ -128,8 +185,15 @@ export default async function HomePage() {
       })),
     }))
 
-  // Biggest sentiment swings — pick 10 random from top 20
-  const topSwings = allSwingFilms
+  // Merge pinned + regular for Top Rated (pinned first)
+  const pinnedTopRatedIds = new Set(pinnedTopRated.map((f) => f.id))
+  const mergedTopRated = [
+    ...pinnedTopRated,
+    ...topRatedFilms.filter((f) => !pinnedTopRatedIds.has(f.id)),
+  ].slice(0, 10)
+
+  // Biggest sentiment swings — pick 10 random from top 20, pinned first
+  const allSwingsComputed = allSwingFilms
     .map((f) => {
       const peak = f.sentimentGraph?.peakMoment as unknown as PeakLow | null
       const low = f.sentimentGraph?.lowestMoment as unknown as PeakLow | null
@@ -140,36 +204,39 @@ export default async function HomePage() {
     })
     .filter((s) => s.swing > 0)
     .sort((a, b) => b.swing - a.swing)
-    .slice(0, 20)
 
-  // Shuffle and pick 10 for variety on each page load
-  const shuffled = [...topSwings]
-  for (let i = shuffled.length - 1; i > 0; i--) {
+  const pinnedSwingIds = new Set(pinnedSwings.map((f) => f.id))
+  const pinnedSwingEntries = allSwingsComputed.filter((s) => pinnedSwingIds.has(s.film.id))
+  const unpinnedSwings = allSwingsComputed.filter((s) => !pinnedSwingIds.has(s.film.id)).slice(0, 20)
+
+  // Shuffle unpinned and pick enough to fill 10 total
+  for (let i = unpinnedSwings.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
-    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+    ;[unpinnedSwings[i], unpinnedSwings[j]] = [unpinnedSwings[j], unpinnedSwings[i]]
   }
-  const swingFilms = shuffled.slice(0, 10)
+  const swingFilms = [...pinnedSwingEntries, ...unpinnedSwings].slice(0, 10)
 
   // Latest trailers: recently added films with TMDB trailers
-  const recentForTrailers = await prisma.film.findMany({
-    where: { status: 'ACTIVE', backdropUrl: { not: null } },
-    select: { id: true, tmdbId: true, title: true, genres: true, backdropUrl: true },
-    take: 15,
-    orderBy: { createdAt: 'desc' },
-  })
-
   const trailerCards: { id: string; title: string; genres: string[]; backdropUrl: string; trailerKey: string }[] = []
-  for (const film of recentForTrailers) {
-    if (trailerCards.length >= 3) break
-    const key = await getMovieTrailerKey(film.tmdbId)
-    if (key && film.backdropUrl) {
-      trailerCards.push({
-        id: film.id,
-        title: film.title,
-        genres: film.genres,
-        backdropUrl: film.backdropUrl,
-        trailerKey: key,
-      })
+  if (sections.latestTrailers) {
+    const recentForTrailers = await prisma.film.findMany({
+      where: { status: 'ACTIVE', backdropUrl: { not: null } },
+      select: { id: true, tmdbId: true, title: true, genres: true, backdropUrl: true },
+      take: 15,
+      orderBy: { createdAt: 'desc' },
+    })
+    for (const film of recentForTrailers) {
+      if (trailerCards.length >= 3) break
+      const key = await getMovieTrailerKey(film.tmdbId)
+      if (key && film.backdropUrl) {
+        trailerCards.push({
+          id: film.id,
+          title: film.title,
+          genres: film.genres,
+          backdropUrl: film.backdropUrl,
+          trailerKey: key,
+        })
+      }
     }
   }
 
@@ -187,7 +254,7 @@ export default async function HomePage() {
       <HeroSection films={heroFilms} />
 
       {/* In Theaters */}
-      {inTheaterFilms.length > 0 && (
+      {sections.inTheaters && inTheaterFilms.length > 0 && (
         <section className="max-w-7xl mx-auto px-4 py-12">
           <div className="flex items-center justify-between mb-6">
             <h2 className="font-[family-name:var(--font-playfair)] text-2xl font-bold">
@@ -220,7 +287,7 @@ export default async function HomePage() {
       )}
 
       {/* Biggest Sentiment Swings */}
-      {swingFilms.length > 0 && (
+      {sections.biggestSwings && swingFilms.length > 0 && (
         <section className="max-w-7xl mx-auto px-4 py-12">
           <div className="flex items-center justify-between mb-6">
             <h2 className="font-[family-name:var(--font-playfair)] text-2xl font-bold">
@@ -257,7 +324,7 @@ export default async function HomePage() {
       )}
 
       {/* Latest Trailers */}
-      {trailerCards.length > 0 && (
+      {sections.latestTrailers && trailerCards.length > 0 && (
         <section className="max-w-7xl mx-auto px-4 py-12">
           <h2 className="font-[family-name:var(--font-playfair)] text-2xl font-bold mb-6">
             Latest Trailers
@@ -277,7 +344,7 @@ export default async function HomePage() {
       )}
 
       {/* Top Rated */}
-      {topRatedFilms.length > 0 && (
+      {sections.topRated && mergedTopRated.length > 0 && (
         <section className="max-w-7xl mx-auto px-4 py-12">
           <div className="flex items-center justify-between mb-6">
             <h2 className="font-[family-name:var(--font-playfair)] text-2xl font-bold">
@@ -291,7 +358,7 @@ export default async function HomePage() {
             </Link>
           </div>
           <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-cinema-border scrollbar-track-transparent">
-            {topRatedFilms.map((film, i) => (
+            {mergedTopRated.map((film, i) => (
               <div key={film.id} className="flex-shrink-0 w-[180px] relative">
                 <FilmCard
                   id={film.id}
@@ -314,7 +381,7 @@ export default async function HomePage() {
       )}
 
       {/* Browse by Genre */}
-      {genres.length > 0 && (
+      {sections.browseByGenre && genres.length > 0 && (
         <section className="max-w-7xl mx-auto px-4 py-12">
           <div className="flex items-center justify-between mb-6">
             <h2 className="font-[family-name:var(--font-playfair)] text-2xl font-bold">

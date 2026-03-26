@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import AdminFilmImport from '@/components/AdminFilmImport'
 import AdminAnalyze from '@/components/AdminAnalyze'
+import AdminHomepageCuration from '@/components/AdminHomepageCuration'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,8 +27,11 @@ export default async function AdminPage() {
       id: true,
       title: true,
       tmdbId: true,
+      posterUrl: true,
       status: true,
       isFeatured: true,
+      nowPlaying: true,
+      pinnedSection: true,
       createdAt: true,
       sentimentGraph: {
         select: { generatedAt: true },
@@ -46,6 +50,16 @@ export default async function AdminPage() {
     graphDate: film.sentimentGraph?.generatedAt
       ? film.sentimentGraph.generatedAt.toLocaleDateString()
       : null,
+  }))
+
+  const filmsForCuration = allFilms.map((film) => ({
+    id: film.id,
+    title: film.title,
+    posterUrl: film.posterUrl,
+    tmdbId: film.tmdbId,
+    nowPlaying: film.nowPlaying,
+    pinnedSection: film.pinnedSection,
+    hasGraph: !!film.sentimentGraph,
   }))
 
   return (
@@ -96,6 +110,14 @@ export default async function AdminPage() {
           Sentiment Analysis
         </h2>
         <AdminAnalyze films={filmsForAnalyze} />
+      </section>
+
+      {/* Homepage Curation Section */}
+      <section className="mb-10">
+        <h2 className="font-[family-name:var(--font-playfair)] text-xl font-bold mb-4">
+          Homepage Curation
+        </h2>
+        <AdminHomepageCuration films={filmsForCuration} />
       </section>
     </div>
   )
