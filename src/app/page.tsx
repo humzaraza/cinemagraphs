@@ -25,12 +25,15 @@ export default async function HomePage() {
       take: 6,
       orderBy: { createdAt: 'desc' },
     }),
-    // Recently added (all films)
+    // Latest releases: films released in the last 2 weeks
     prisma.film.findMany({
-      where: { status: 'ACTIVE' },
+      where: {
+        status: 'ACTIVE',
+        releaseDate: { gte: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) },
+      },
       include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
       take: 12,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { releaseDate: 'desc' },
     }),
     // For ticker: all films with graphs
     prisma.film.findMany({
@@ -63,6 +66,20 @@ export default async function HomePage() {
       select: { genres: true },
     }),
   ])
+
+  // If fewer than 5 latest releases, expand window to 4 weeks
+  let latestReleases = recentFilms
+  if (latestReleases.length < 5) {
+    latestReleases = await prisma.film.findMany({
+      where: {
+        status: 'ACTIVE',
+        releaseDate: { gte: new Date(Date.now() - 28 * 24 * 60 * 60 * 1000) },
+      },
+      include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
+      take: 12,
+      orderBy: { releaseDate: 'desc' },
+    })
+  }
 
   // If no admin-selected featured films, use top-scored films with graphs
   const heroSourceFilms = featuredFilms.length > 0
@@ -176,11 +193,11 @@ export default async function HomePage() {
       {/* Hero Section — Featured Film Spotlight */}
       <HeroSection films={heroFilms} />
 
-      {/* Recently Added */}
+      {/* Latest Releases */}
       <section className="max-w-7xl mx-auto px-4 py-12">
         <div className="flex items-center justify-between mb-6">
           <h2 className="font-[family-name:var(--font-playfair)] text-2xl font-bold">
-            Recently Added
+            Latest Releases
           </h2>
           <Link
             href="/films/browse"
@@ -189,9 +206,9 @@ export default async function HomePage() {
             View All &rarr;
           </Link>
         </div>
-        {recentFilms.length > 0 ? (
+        {latestReleases.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {recentFilms.map((film) => (
+            {latestReleases.map((film) => (
               <FilmCard
                 key={film.id}
                 id={film.id}
