@@ -2,9 +2,8 @@ import { prisma } from '@/lib/prisma'
 import FilmCard from '@/components/FilmCard'
 import MovieTicker from '@/components/MovieTicker'
 import HeroSection from '@/components/HeroSection'
+import TrailerCard from '@/components/TrailerCard'
 import Link from 'next/link'
-import Image from 'next/image'
-import { tmdbImageUrl } from '@/lib/utils'
 import { getMovieTrailerKey } from '@/lib/tmdb'
 
 export const dynamic = 'force-dynamic'
@@ -25,14 +24,11 @@ export default async function HomePage() {
       take: 6,
       orderBy: { createdAt: 'desc' },
     }),
-    // Latest releases: films released in the last 2 weeks
+    // In Theaters: films with nowPlaying flag
     prisma.film.findMany({
-      where: {
-        status: 'ACTIVE',
-        releaseDate: { gte: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) },
-      },
+      where: { status: 'ACTIVE', nowPlaying: true },
       include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
-      take: 12,
+      take: 20,
       orderBy: { releaseDate: 'desc' },
     }),
     // For ticker: all films with graphs
@@ -67,19 +63,7 @@ export default async function HomePage() {
     }),
   ])
 
-  // If fewer than 5 latest releases, expand window to 4 weeks
-  let latestReleases = recentFilms
-  if (latestReleases.length < 5) {
-    latestReleases = await prisma.film.findMany({
-      where: {
-        status: 'ACTIVE',
-        releaseDate: { gte: new Date(Date.now() - 28 * 24 * 60 * 60 * 1000) },
-      },
-      include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
-      take: 12,
-      orderBy: { releaseDate: 'desc' },
-    })
-  }
+  const inTheaterFilms = recentFilms
 
   // If no admin-selected featured films, use top-scored films with graphs
   const heroSourceFilms = featuredFilms.length > 0
@@ -193,42 +177,38 @@ export default async function HomePage() {
       {/* Hero Section — Featured Film Spotlight */}
       <HeroSection films={heroFilms} />
 
-      {/* Latest Releases */}
-      <section className="max-w-7xl mx-auto px-4 py-12">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="font-[family-name:var(--font-playfair)] text-2xl font-bold">
-            Latest Releases
-          </h2>
-          <Link
-            href="/films/browse"
-            className="text-sm text-cinema-gold hover:text-cinema-gold/80 transition-colors"
-          >
-            View All &rarr;
-          </Link>
-        </div>
-        {latestReleases.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {latestReleases.map((film) => (
-              <FilmCard
-                key={film.id}
-                id={film.id}
-                title={film.title}
-                posterUrl={film.posterUrl}
-                releaseDate={film.releaseDate?.toISOString() ?? null}
-                genres={film.genres}
-                sentimentScore={film.sentimentGraph?.overallScore}
-                graphDataPoints={film.sentimentGraph?.dataPoints as unknown as { timeMidpoint: number; score: number }[] | null}
-                runtime={film.runtime}
-              />
+      {/* In Theaters */}
+      {inTheaterFilms.length > 0 && (
+        <section className="max-w-7xl mx-auto px-4 py-12">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="font-[family-name:var(--font-playfair)] text-2xl font-bold">
+              In Theaters
+            </h2>
+            <Link
+              href="/films/browse"
+              className="text-sm text-cinema-gold hover:text-cinema-gold/80 transition-colors"
+            >
+              View All &rarr;
+            </Link>
+          </div>
+          <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-cinema-border scrollbar-track-transparent">
+            {inTheaterFilms.map((film) => (
+              <div key={film.id} className="flex-shrink-0 w-[180px]">
+                <FilmCard
+                  id={film.id}
+                  title={film.title}
+                  posterUrl={film.posterUrl}
+                  releaseDate={film.releaseDate?.toISOString() ?? null}
+                  genres={film.genres}
+                  sentimentScore={film.sentimentGraph?.overallScore}
+                  graphDataPoints={film.sentimentGraph?.dataPoints as unknown as { timeMidpoint: number; score: number }[] | null}
+                  runtime={film.runtime}
+                />
+              </div>
             ))}
           </div>
-        ) : (
-          <div className="text-center py-20 text-cinema-muted">
-            <p className="text-lg mb-2">No films yet</p>
-            <p className="text-sm">Import films from TMDB via the admin dashboard.</p>
-          </div>
-        )}
-      </section>
+        </section>
+      )}
 
       {/* Top Rated */}
       {topRatedFilms.length > 0 && (
@@ -312,41 +292,13 @@ export default async function HomePage() {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {trailerCards.map((t) => (
-              <a
+              <TrailerCard
                 key={t.id}
-                href={`https://www.youtube.com/watch?v=${t.trailerKey}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group relative rounded-xl overflow-hidden aspect-video"
-              >
-                <Image
-                  src={tmdbImageUrl(t.backdropUrl, 'w780')}
-                  alt={t.title}
-                  fill
-                  className="object-cover group-hover:scale-105 transition-transform duration-500"
-                  sizes="(max-width: 768px) 100vw, 33vw"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                {/* Play button */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-16 h-16 rounded-full bg-cinema-gold/90 flex items-center justify-center group-hover:bg-cinema-gold group-hover:scale-110 transition-all duration-300 shadow-xl">
-                    <svg viewBox="0 0 24 24" fill="none" className="w-7 h-7 ml-1">
-                      <path d="M8 5v14l11-7L8 5z" fill="#0D0D1A" />
-                    </svg>
-                  </div>
-                </div>
-                {/* Title overlay */}
-                <div className="absolute bottom-0 left-0 right-0 p-4">
-                  <h3 className="font-[family-name:var(--font-playfair)] text-lg font-bold text-white leading-tight">
-                    {t.title}
-                  </h3>
-                  {t.genres.length > 0 && (
-                    <p className="text-xs text-cinema-muted mt-1">
-                      {t.genres.slice(0, 3).join(' / ')}
-                    </p>
-                  )}
-                </div>
-              </a>
+                title={t.title}
+                genres={t.genres}
+                backdropUrl={t.backdropUrl}
+                trailerKey={t.trailerKey}
+              />
             ))}
           </div>
         </section>

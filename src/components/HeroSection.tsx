@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
+import TrailerModal from './TrailerModal'
 import {
   AreaChart,
   Area,
@@ -58,6 +59,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
   const [activeIndex, setActiveIndex] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
   const [resetKey, setResetKey] = useState(0)
+  const [showTrailer, setShowTrailer] = useState(false)
 
   const next = useCallback(() => {
     setActiveIndex((i) => (i + 1) % films.length)
@@ -101,8 +103,6 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
     { timeMidpoint: 0, timeStart: 0, timeEnd: 0, score: 5, label: '', confidence: 'low' },
     ...realData,
   ]
-
-  const trailerUrl = film.trailerKey ? `https://www.youtube.com/watch?v=${film.trailerKey}` : null
 
   return (
     <section
@@ -181,16 +181,14 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
               >
                 View Full Graph
               </Link>
-              {trailerUrl && (
-                <a
-                  href={trailerUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+              {film.trailerKey && (
+                <button
+                  onClick={() => setShowTrailer(true)}
                   className="inline-flex items-center gap-2 border border-white/60 text-white font-semibold px-7 py-3 rounded-lg hover:border-cinema-gold hover:text-cinema-gold transition-colors text-sm"
                 >
                   <span className="text-xs">&#9654;</span>
                   Watch Trailer
-                </a>
+                </button>
               )}
             </div>
           </div>
@@ -262,6 +260,10 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
           </div>
         )}
       </div>
+
+      {showTrailer && film.trailerKey && (
+        <TrailerModal trailerKey={film.trailerKey} onClose={() => setShowTrailer(false)} />
+      )}
     </section>
   )
 }

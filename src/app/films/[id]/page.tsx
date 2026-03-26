@@ -6,6 +6,7 @@ import Image from 'next/image'
 import { tmdbImageUrl, formatRuntime, formatDate } from '@/lib/utils'
 import { getMovieTrailerKey } from '@/lib/tmdb'
 import SentimentGraph from '@/components/SentimentGraph'
+import TrailerButton from '@/components/TrailerButton'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import type { CastMember, PeakLowMoment, SentimentDataPoint } from '@/lib/types'
 
@@ -104,17 +105,7 @@ export default async function FilmPage({
               <p className="text-cinema-cream/80 leading-relaxed mb-6">{film.synopsis}</p>
             )}
 
-            {trailerKey && (
-              <a
-                href={`https://www.youtube.com/watch?v=${trailerKey}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 border border-white/60 text-white px-5 py-2.5 rounded-lg hover:border-cinema-gold hover:text-cinema-gold transition-colors text-sm mb-8"
-              >
-                <span className="text-xs">&#9654;</span>
-                Watch Trailer
-              </a>
-            )}
+            {trailerKey && <TrailerButton trailerKey={trailerKey} />}
           </div>
         </div>
 

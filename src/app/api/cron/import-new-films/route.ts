@@ -28,37 +28,58 @@ export async function GET(request: Request) {
       return Response.json({ error: 'Unauthorized', code: 'UNAUTHORIZED' }, { status: 401 })
     }
 
-    // Fetch from now_playing and upcoming (pages 1–3 each)
-    const pages = await Promise.all([
+    // Fetch now_playing (pages 1–3) for "In Theaters" tracking
+    const nowPlayingPages = await Promise.all([
       fetchTMDBPage('/movie/now_playing', 1),
       fetchTMDBPage('/movie/now_playing', 2),
       fetchTMDBPage('/movie/now_playing', 3),
+    ])
+    const nowPlayingIds = new Set<number>()
+    for (const page of nowPlayingPages) {
+      for (const movie of page) {
+        nowPlayingIds.add(movie.id)
+      }
+    }
+
+    // Fetch upcoming (pages 1–3) for new imports
+    const upcomingPages = await Promise.all([
       fetchTMDBPage('/movie/upcoming', 1),
       fetchTMDBPage('/movie/upcoming', 2),
       fetchTMDBPage('/movie/upcoming', 3),
     ])
 
-    // De-duplicate by TMDB ID
-    const seen = new Set<number>()
-    const tmdbIds: number[] = []
-    for (const page of pages) {
+    // All candidate TMDB IDs (de-duped)
+    const allIds = new Set<number>(nowPlayingIds)
+    for (const page of upcomingPages) {
       for (const movie of page) {
-        if (!seen.has(movie.id)) {
-          seen.add(movie.id)
-          tmdbIds.push(movie.id)
-        }
+        allIds.add(movie.id)
       }
     }
 
-    cronLogger.info({ candidateCount: tmdbIds.length }, 'TMDB candidates fetched')
+    cronLogger.info({ nowPlayingCount: nowPlayingIds.size, totalCandidates: allIds.size }, 'TMDB candidates fetched')
 
-    // Filter out films already in the database
+    // --- Refresh nowPlaying flags ---
+    // Set nowPlaying=false for all films not in the current now_playing list
+    await prisma.film.updateMany({
+      where: { nowPlaying: true, tmdbId: { notIn: Array.from(nowPlayingIds) } },
+      data: { nowPlaying: false },
+    })
+    // Set nowPlaying=true for films that ARE in the current now_playing list
+    if (nowPlayingIds.size > 0) {
+      await prisma.film.updateMany({
+        where: { tmdbId: { in: Array.from(nowPlayingIds) } },
+        data: { nowPlaying: true },
+      })
+    }
+    cronLogger.info({ nowPlayingIds: nowPlayingIds.size }, 'nowPlaying flags refreshed')
+
+    // --- Import new films ---
     const existing = await prisma.film.findMany({
-      where: { tmdbId: { in: tmdbIds } },
+      where: { tmdbId: { in: Array.from(allIds) } },
       select: { tmdbId: true },
     })
     const existingSet = new Set(existing.map((f) => f.tmdbId))
-    const newTmdbIds = tmdbIds.filter((id) => !existingSet.has(id))
+    const newTmdbIds = Array.from(allIds).filter((id) => !existingSet.has(id))
 
     cronLogger.info({ newCount: newTmdbIds.length, skippedExisting: existingSet.size }, 'After de-duplication')
 
@@ -73,7 +94,6 @@ export async function GET(request: Request) {
           getMovieCredits(tmdbId),
         ])
 
-        // Filter: must have poster, runtime > 60, and overview
         if (!movie.poster_path || !movie.runtime || movie.runtime <= 60 || !movie.overview) {
           skipped++
           continue
@@ -104,6 +124,7 @@ export async function GET(request: Request) {
             cast: topCast,
             imdbRating: movie.vote_average ?? null,
             imdbVotes: movie.vote_count ?? null,
+            nowPlaying: nowPlayingIds.has(movie.id),
           },
         })
 
@@ -117,9 +138,9 @@ export async function GET(request: Request) {
     }
 
     const durationMs = Date.now() - startTime
-    cronLogger.info({ imported, skipped, failed, durationMs }, 'Monthly import complete')
+    cronLogger.info({ imported, skipped, failed, durationMs }, 'Weekly import complete')
 
-    return Response.json({ imported, skipped, failed, durationMs })
+    return Response.json({ imported, skipped, failed, nowPlayingRefreshed: nowPlayingIds.size, durationMs })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     cronLogger.error({ error: message, durationMs: Date.now() - startTime }, 'Import cron failed')
