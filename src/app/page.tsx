@@ -246,7 +246,7 @@ export default async function HomePage() {
   const genres = Array.from(genreSet).sort()
 
   return (
-    <div>
+    <div className="overflow-x-hidden">
       {/* Movie Market Ticker */}
       <MovieTicker films={tickerFilms} />
 

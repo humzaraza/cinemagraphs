@@ -26,7 +26,30 @@ const bebas = Bebas_Neue({
 export const metadata: Metadata = {
   title: "Cinemagraphs — Visualize Movie Sentiment",
   description:
-    "See how audience opinion shifts across a film's runtime. Dynamic sentiment graphs for every movie.",
+    "See how audience opinion moves through a film — not just the final verdict. Sentiment graphs for 371 films.",
+  openGraph: {
+    title: "Cinemagraphs — Visualize Movie Sentiment",
+    description:
+      "See how audience opinion moves through a film — not just the final verdict.",
+    url: "https://cinemagraphs.ca",
+    siteName: "Cinemagraphs",
+    images: [
+      {
+        url: "https://cinemagraphs.ca/og-image.png",
+        width: 1200,
+        height: 630,
+      },
+    ],
+    locale: "en_CA",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Cinemagraphs — Visualize Movie Sentiment",
+    description:
+      "See how audience opinion moves through a film — not just the final verdict.",
+    images: ["https://cinemagraphs.ca/og-image.png"],
+  },
 };
 
 export default function RootLayout({

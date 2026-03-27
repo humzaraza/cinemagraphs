@@ -11,17 +11,17 @@ export default function Navigation() {
   return (
     <nav className="border-b border-cinema-border bg-cinema-darker/80 backdrop-blur-sm sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-20">
+        <div className="flex items-center justify-between h-14 md:h-20">
           <Link href="/" className="flex flex-col">
-            <span className="font-[family-name:var(--font-playfair)] text-3xl font-bold text-cinema-gold leading-tight">
+            <span className="font-[family-name:var(--font-playfair)] text-xl md:text-3xl font-bold text-cinema-gold leading-tight">
               Cinemagraphs
             </span>
-            <span className="font-[family-name:var(--font-dm-sans)] text-xs leading-tight" style={{ color: 'rgba(255,255,255,0.4)' }}>
+            <span className="font-[family-name:var(--font-dm-sans)] text-xs leading-tight hidden md:block" style={{ color: 'rgba(255,255,255,0.4)' }}>
               Movie reviews, visualized.
             </span>
           </Link>
 
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3 md:gap-6">
             <Link
               href="/films/browse"
               className={`text-sm transition-colors ${
@@ -57,8 +57,8 @@ export default function Navigation() {
             )}
 
             {session ? (
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-cinema-muted">
+              <div className="flex items-center gap-2 md:gap-3">
+                <span className="text-sm text-cinema-muted hidden md:inline">
                   {session.user?.name || session.user?.email}
                 </span>
                 <button

@@ -125,11 +125,11 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
         <div className="absolute inset-0 bg-gradient-to-t from-cinema-dark via-transparent to-cinema-dark/30" />
       </div>
 
-      <div className="relative max-w-7xl mx-auto px-4 py-14 md:py-20">
-        <div className="grid grid-cols-1 md:grid-cols-[2fr_3fr] gap-6 items-start">
+      <div className="relative max-w-7xl mx-auto px-4 py-8 md:py-20">
+        <div className="grid grid-cols-1 md:grid-cols-[2fr_3fr] gap-4 md:gap-6 items-start">
           {/* Left: Film info */}
           <div>
-            <h1 className="font-[family-name:var(--font-playfair)] text-4xl md:text-5xl lg:text-6xl font-bold mb-4 text-cinema-cream leading-tight">
+            <h1 className="font-[family-name:var(--font-playfair)] text-3xl md:text-5xl lg:text-6xl font-bold mb-4 text-cinema-cream leading-tight line-clamp-2 md:line-clamp-none">
               {film.title}
             </h1>
             <div className="flex flex-wrap items-center gap-2 text-sm text-cinema-muted mb-4">
@@ -165,10 +165,10 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
             )}
 
             {/* Cinemagraphs Score */}
-            <div className="mb-8">
+            <div className="mb-6 md:mb-8">
               <span className="text-xs text-cinema-muted uppercase tracking-wider block mb-1">Cinemagraphs Score</span>
               <span
-                className="font-[family-name:var(--font-bebas)] text-5xl"
+                className="font-[family-name:var(--font-bebas)] text-4xl md:text-5xl"
                 style={{ color: scoreColor(film.sentimentScore) }}
               >
                 {film.sentimentScore.toFixed(1)}
@@ -178,14 +178,14 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
             <div className="flex flex-wrap gap-3">
               <Link
                 href={`/films/${film.id}`}
-                className="bg-cinema-gold text-cinema-dark font-semibold px-7 py-3 rounded-lg hover:bg-cinema-gold/90 transition-colors text-sm"
+                className="bg-cinema-gold text-cinema-dark font-semibold px-5 py-2.5 md:px-7 md:py-3 rounded-lg hover:bg-cinema-gold/90 transition-colors text-sm"
               >
                 View Full Graph
               </Link>
               {film.trailerKey && (
                 <button
                   onClick={() => setShowTrailer(true)}
-                  className="inline-flex items-center gap-2 border border-white/60 text-white font-semibold px-7 py-3 rounded-lg hover:border-cinema-gold hover:text-cinema-gold transition-colors text-sm"
+                  className="inline-flex items-center gap-2 border border-white/60 text-white font-semibold px-5 py-2.5 md:px-7 md:py-3 rounded-lg hover:border-cinema-gold hover:text-cinema-gold transition-colors text-sm"
                 >
                   <span className="text-xs">&#9654;</span>
                   Watch Trailer
@@ -195,11 +195,11 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
           </div>
 
           {/* Right: Sentiment graph — wide landscape card */}
-          <div className="bg-cinema-darker/80 backdrop-blur-sm rounded-xl border border-cinema-border px-5 py-4">
+          <div className="bg-cinema-darker/80 backdrop-blur-sm rounded-xl border border-cinema-border px-3 py-3 md:px-5 md:py-4">
             <div className="mb-2">
               <span className="text-xs text-cinema-muted uppercase tracking-wider">Sentiment Timeline</span>
             </div>
-            <ResponsiveContainer width="100%" height={260}>
+            <ResponsiveContainer width="100%" height={200}>
               <AreaChart data={chartData} margin={{ top: 10, right: 35, left: 10, bottom: 10 }}>
                 <defs>
                   <linearGradient id="heroGradient" x1="0" y1="0" x2="0" y2="1">
