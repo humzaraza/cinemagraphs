@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
  */
 const signInAttempts = new Map<string, number[]>()
 const accountCreations = new Map<string, number[]>()
+const publicApiRequests = new Map<string, number[]>()
 
 function isRateLimited(
   store: Map<string, number[]>,
@@ -38,63 +39,138 @@ function getClientIp(request: NextRequest): string {
   )
 }
 
+const ALLOWED_ORIGINS = [
+  'https://cinemagraphs.ca',
+  'https://www.cinemagraphs.ca',
+  'http://localhost:3000',
+]
+
+const BLOCKED_UA_PATTERN = /curl|python|scrapy|wget|bot/i
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const ip = getClientIp(request)
 
-  // Rate limit sign-in attempts: 10 per IP per 15 minutes
-  if (pathname.startsWith('/api/auth/signin') || pathname.startsWith('/api/auth/callback')) {
-    const { limited, retryAfterMs } = isRateLimited(
-      signInAttempts,
-      ip,
-      10,
-      15 * 60 * 1000 // 15 minutes
-    )
-
-    if (limited) {
+  // --- Block suspicious User-Agents on all API routes ---
+  if (pathname.startsWith('/api/')) {
+    const ua = request.headers.get('user-agent') || ''
+    if (!ua || BLOCKED_UA_PATTERN.test(ua)) {
       return NextResponse.json(
-        { error: 'Too many attempts, please try again later.' },
-        {
-          status: 429,
-          headers: { 'Retry-After': Math.ceil(retryAfterMs / 1000).toString() },
-        }
+        { error: 'Forbidden' },
+        { status: 403 }
       )
     }
   }
 
-  // Rate limit account creation: 3 per IP per hour
-  // NextAuth creates accounts on first callback, so we track callback/google specifically
-  if (pathname.startsWith('/api/auth/callback/google')) {
-    const { limited, retryAfterMs } = isRateLimited(
-      accountCreations,
-      ip,
-      3,
-      60 * 60 * 1000 // 1 hour
-    )
+  // --- CORS restriction on API routes ---
+  if (pathname.startsWith('/api/')) {
+    const origin = request.headers.get('origin')
+    // If there's an Origin header (cross-origin request), validate it
+    if (origin && !ALLOWED_ORIGINS.includes(origin)) {
+      return new NextResponse(null, {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+        statusText: 'Forbidden',
+      })
+    }
 
-    if (limited) {
-      return NextResponse.json(
-        { error: 'Too many attempts, please try again later.' },
-        {
-          status: 429,
-          headers: { 'Retry-After': Math.ceil(retryAfterMs / 1000).toString() },
-        }
+    // Set CORS headers on the response
+    const response = NextResponse.next()
+    if (origin && ALLOWED_ORIGINS.includes(origin)) {
+      response.headers.set('Access-Control-Allow-Origin', origin)
+      response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+      response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    }
+
+    // Handle preflight
+    if (request.method === 'OPTIONS') {
+      return new NextResponse(null, {
+        status: 204,
+        headers: {
+          'Access-Control-Allow-Origin': origin && ALLOWED_ORIGINS.includes(origin) ? origin : '',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          'Access-Control-Max-Age': '86400',
+        },
+      })
+    }
+
+    // --- Rate limit public API routes: 60 per IP per minute ---
+    if (pathname.startsWith('/api/films')) {
+      const { limited, retryAfterMs } = isRateLimited(
+        publicApiRequests,
+        ip,
+        60,
+        60 * 1000 // 1 minute
       )
-    }
-  }
 
-  // Honeypot check: if the request has a honeypot field in query params, reject silently
-  if (pathname.startsWith('/api/auth/')) {
-    const honeypot = request.nextUrl.searchParams.get('_hp_website')
-    if (honeypot) {
-      // Silently return a fake success — don't reveal detection
-      return NextResponse.json({ url: '/' })
+      if (limited) {
+        return NextResponse.json(
+          { error: 'Too many requests. Please slow down.' },
+          {
+            status: 429,
+            headers: { 'Retry-After': Math.ceil(retryAfterMs / 1000).toString() },
+          }
+        )
+      }
     }
+
+    // --- Auth-specific rate limiting ---
+
+    // Rate limit sign-in attempts: 10 per IP per 15 minutes
+    if (pathname.startsWith('/api/auth/signin') || pathname.startsWith('/api/auth/callback')) {
+      const { limited, retryAfterMs } = isRateLimited(
+        signInAttempts,
+        ip,
+        10,
+        15 * 60 * 1000
+      )
+
+      if (limited) {
+        return NextResponse.json(
+          { error: 'Too many attempts, please try again later.' },
+          {
+            status: 429,
+            headers: { 'Retry-After': Math.ceil(retryAfterMs / 1000).toString() },
+          }
+        )
+      }
+    }
+
+    // Rate limit account creation: 3 per IP per hour
+    if (pathname.startsWith('/api/auth/callback/google')) {
+      const { limited, retryAfterMs } = isRateLimited(
+        accountCreations,
+        ip,
+        3,
+        60 * 60 * 1000
+      )
+
+      if (limited) {
+        return NextResponse.json(
+          { error: 'Too many attempts, please try again later.' },
+          {
+            status: 429,
+            headers: { 'Retry-After': Math.ceil(retryAfterMs / 1000).toString() },
+          }
+        )
+      }
+    }
+
+    // Honeypot check
+    if (pathname.startsWith('/api/auth/')) {
+      const honeypot = request.nextUrl.searchParams.get('_hp_website')
+      if (honeypot) {
+        return NextResponse.json({ url: '/' })
+      }
+    }
+
+    return response
   }
 
   return NextResponse.next()
 }
 
 export const config = {
-  matcher: ['/api/auth/:path*'],
+  matcher: ['/api/:path*'],
 }
