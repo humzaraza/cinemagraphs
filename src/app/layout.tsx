@@ -50,6 +50,10 @@ export const metadata: Metadata = {
       "See how audience opinion moves through a film — not just the final verdict.",
     images: ["https://cinemagraphs.ca/og-image.png"],
   },
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({
