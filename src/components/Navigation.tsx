@@ -58,9 +58,12 @@ export default function Navigation() {
 
             {session ? (
               <div className="flex items-center gap-2 md:gap-3">
-                <span className="text-sm text-cinema-muted hidden md:inline">
+                <Link
+                  href={`/profile/${session.user?.id}`}
+                  className="text-sm text-cinema-muted hover:text-cinema-gold transition-colors hidden md:inline"
+                >
                   {session.user?.name || session.user?.email}
-                </span>
+                </Link>
                 <button
                   onClick={() => signOut()}
                   className="text-sm text-cinema-cream/70 hover:text-cinema-cream transition-colors"

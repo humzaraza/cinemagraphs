@@ -17,6 +17,13 @@ interface ReactionPoint {
   emoji: string
 }
 
+interface IncompleteSession {
+  id: string
+  lastReactionAt: string
+  completionRate: number
+  reactions: { reaction: string; score: number; sessionTimestamp: number }[]
+}
+
 interface Props {
   filmId: string
   runtime: number | null
@@ -31,9 +38,78 @@ export default function LiveReactionSection({ filmId, runtime }: Props) {
   const [lastReaction, setLastReaction] = useState<{ emoji: string; score: number } | null>(null)
   const [cooldown, setCooldown] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [incompleteSession, setIncompleteSession] = useState<IncompleteSession | null>(null)
+  const [checkingSession, setCheckingSession] = useState(true)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const totalSeconds = (runtime || 120) * 60
+
+  // Check for incomplete session on mount
+  useEffect(() => {
+    if (!session?.user?.id) {
+      setCheckingSession(false)
+      return
+    }
+
+    fetch(`/api/films/${filmId}/reaction-sessions`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.session && data.session.completionRate < 1.0) {
+          setIncompleteSession(data.session)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setCheckingSession(false))
+  }, [filmId, session?.user?.id])
+
+  async function startNewSession(abandonPrevious = false) {
+    try {
+      const res = await fetch(`/api/films/${filmId}/reaction-sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ abandonPrevious }),
+      })
+      const data = await res.json()
+      setSessionId(data.session.id)
+      setIncompleteSession(null)
+    } catch {
+      setError('Failed to start session')
+    }
+  }
+
+  function resumeSession() {
+    if (!incompleteSession) return
+
+    setSessionId(incompleteSession.id)
+
+    // Restore previous reactions onto the graph
+    const emojiMap: Record<string, string> = {
+      up: '👍', down: '👎', wow: '🤩', shock: '😱', funny: '😂',
+    }
+
+    const restoredPoints: ReactionPoint[] = incompleteSession.reactions.map((r) => ({
+      time: r.sessionTimestamp,
+      score: r.score,
+      emoji: emojiMap[r.reaction] || '',
+    }))
+
+    setPoints(restoredPoints)
+
+    // Set elapsed to last reaction timestamp
+    const lastTs = incompleteSession.reactions.length > 0
+      ? incompleteSession.reactions[incompleteSession.reactions.length - 1].sessionTimestamp
+      : 0
+    setElapsed(lastTs)
+
+    // Set current score to last reaction score
+    const lastScore = incompleteSession.reactions.length > 0
+      ? incompleteSession.reactions[incompleteSession.reactions.length - 1].score
+      : 5
+    setCurrentScore(lastScore)
+
+    setIncompleteSession(null)
+  }
 
   // Timer logic
   useEffect(() => {
@@ -168,6 +244,12 @@ export default function LiveReactionSection({ filmId, runtime }: Props) {
       signIn()
       return
     }
+
+    // Auto-create session if not started
+    if (!sessionId) {
+      await startNewSession()
+    }
+
     if (cooldown) return
 
     setError(null)
@@ -181,6 +263,7 @@ export default function LiveReactionSection({ filmId, runtime }: Props) {
           reaction: reactionKey,
           sessionTimestamp: elapsed,
           currentScore,
+          sessionId,
         }),
       })
 
@@ -218,9 +301,51 @@ export default function LiveReactionSection({ filmId, runtime }: Props) {
     setPoints([])
     setLastReaction(null)
     setIsPlaying(false)
+    startNewSession(true)
   }
 
   const progress = totalSeconds > 0 ? (elapsed / totalSeconds) * 100 : 0
+
+  // Show resume banner
+  if (!checkingSession && incompleteSession) {
+    const lastTs = incompleteSession.reactions.length > 0
+      ? incompleteSession.reactions[incompleteSession.reactions.length - 1].sessionTimestamp
+      : 0
+    const mins = Math.floor(lastTs / 60)
+    const secs = lastTs % 60
+
+    return (
+      <div className="space-y-4">
+        <div
+          className="rounded-lg p-4"
+          style={{
+            background: 'linear-gradient(135deg, rgba(200,169,81,0.15), rgba(200,169,81,0.05))',
+            border: '1px solid rgba(200,169,81,0.2)',
+          }}
+        >
+          <p className="text-cinema-cream font-medium mb-2">
+            You have an unfinished session — you reacted up to {mins}:{secs.toString().padStart(2, '0')}.
+            Resume from where you left off?
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={resumeSession}
+              className="px-4 py-2 rounded text-sm font-medium"
+              style={{ backgroundColor: '#C8A951', color: '#0D0D1A' }}
+            >
+              Resume
+            </button>
+            <button
+              onClick={() => startNewSession(true)}
+              className="px-4 py-2 rounded text-sm text-cinema-muted border border-cinema-border hover:border-cinema-gold/40 transition-colors"
+            >
+              Start Over
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">

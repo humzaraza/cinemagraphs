@@ -30,23 +30,24 @@ enum ReviewSource {
 }
 
 model User {
-  id             String       @id @default(cuid())
-  name           String?
-  email          String       @unique
-  emailVerified  DateTime?
-  image          String?
-  bio            String?
-  favoriteGenres String[]
-  role           UserRole     @default(USER)
-  isPublic       Boolean      @default(true)
-  points         Int          @default(0)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  accounts       Account[]
-  sessions       Session[]
-  collections    Collection[]
-  userReviews    UserReview[]
-  liveReactions  LiveReaction[]
+  id                   String                @id @default(cuid())
+  name                 String?
+  email                String                @unique
+  emailVerified        DateTime?
+  image                String?
+  bio                  String?
+  favoriteGenres       String[]
+  role                 UserRole              @default(USER)
+  isPublic             Boolean               @default(true)
+  points               Int                   @default(0)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  accounts             Account[]
+  sessions             Session[]
+  collections          Collection[]
+  userReviews          UserReview[]
+  liveReactions        LiveReaction[]
+  liveReactionSessions LiveReactionSession[]
 }
 
 model Account {
@@ -84,35 +85,36 @@ model VerificationToken {
 }
 
 model Film {
-  id              String         @id @default(cuid())
-  tmdbId          Int            @unique
-  imdbId          String?
-  title           String
-  releaseDate     DateTime?
-  runtime         Int?
-  synopsis        String?        @db.Text
-  posterUrl       String?
-  backdropUrl     String?
-  genres          String[]
-  director        String?
-  cast            Json?
-  imdbRating      Float?
-  imdbVotes       Int?
-  rtCriticsScore  Int?
-  rtAudienceScore Int?
-  metacriticScore Int?
-  lastReviewCount Int            @default(0)
-  nowPlaying      Boolean        @default(false)
-  isFeatured      Boolean        @default(false)
-  pinnedSection   String?
-  status          FilmStatus     @default(ACTIVE)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  sentimentGraph  SentimentGraph?
-  reviews         Review[]
-  userReviews     UserReview[]
-  liveReactions   LiveReaction[]
-  featuredFilm    FeaturedFilm?
+  id                   String                @id @default(cuid())
+  tmdbId               Int                   @unique
+  imdbId               String?
+  title                String
+  releaseDate          DateTime?
+  runtime              Int?
+  synopsis             String?               @db.Text
+  posterUrl            String?
+  backdropUrl          String?
+  genres               String[]
+  director             String?
+  cast                 Json?
+  imdbRating           Float?
+  imdbVotes            Int?
+  rtCriticsScore       Int?
+  rtAudienceScore      Int?
+  metacriticScore      Int?
+  lastReviewCount      Int                   @default(0)
+  nowPlaying           Boolean               @default(false)
+  isFeatured           Boolean               @default(false)
+  pinnedSection        String?
+  status               FilmStatus            @default(ACTIVE)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  sentimentGraph       SentimentGraph?
+  reviews              Review[]
+  userReviews          UserReview[]
+  liveReactions        LiveReaction[]
+  liveReactionSessions LiveReactionSession[]
+  featuredFilm         FeaturedFilm?
 
   @@index([tmdbId])
   @@index([title])
@@ -196,17 +198,36 @@ model UserReview {
 }
 
 model LiveReaction {
-  id               String   @id @default(cuid())
+  id               String               @id @default(cuid())
   userId           String
   filmId           String
   reaction         String
   score            Float
   sessionTimestamp Int
-  createdAt        DateTime @default(now())
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  film             Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
+  sessionId        String?
+  createdAt        DateTime             @default(now())
+  user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  film             Film                 @relation(fields: [filmId], references: [id], onDelete: Cascade)
+  session          LiveReactionSession? @relation(fields: [sessionId], references: [id])
 
   @@index([filmId])
+  @@index([userId, filmId])
+  @@index([sessionId])
+}
+
+model LiveReactionSession {
+  id             String         @id @default(cuid())
+  userId         String
+  filmId         String
+  startedAt      DateTime       @default(now())
+  lastReactionAt DateTime
+  completionRate Float          @default(0)
+  flagged        Boolean        @default(false)
+  flagReason     String?
+  reactions      LiveReaction[]
+  user           User           @relation(fields: [userId], references: [id])
+  film           Film           @relation(fields: [filmId], references: [id])
+
   @@index([userId, filmId])
 }
 

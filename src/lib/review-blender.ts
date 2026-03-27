@@ -37,8 +37,22 @@ export async function maybeBlendAndUpdate(filmId: string): Promise<void> {
     select: { sentiment: true, beatRatings: true },
   })
 
+  // Only include reactions from quality sessions (50%+ completion, not flagged)
+  const qualitySessions = await prisma.liveReactionSession.findMany({
+    where: { filmId, completionRate: { gte: 0.5 }, flagged: false },
+    select: { id: true },
+  })
+  const qualitySessionIds = qualitySessions.map((s) => s.id)
+
   const liveReactions = await prisma.liveReaction.findMany({
-    where: { filmId },
+    where: {
+      filmId,
+      OR: [
+        { sessionId: { in: qualitySessionIds } },
+        // Include legacy reactions without sessions
+        { sessionId: null },
+      ],
+    },
     select: { reaction: true, score: true, sessionTimestamp: true },
   })
 

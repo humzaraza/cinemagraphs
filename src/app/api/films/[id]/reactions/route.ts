@@ -25,7 +25,7 @@ export async function POST(
 
   const { id: filmId } = await params
   const body = await request.json()
-  const { reaction, sessionTimestamp, currentScore } = body
+  const { reaction, sessionTimestamp, currentScore, sessionId } = body
 
   if (!REACTION_WEIGHTS[reaction]) {
     return NextResponse.json({ error: 'Invalid reaction type' }, { status: 400 })
@@ -64,8 +64,49 @@ export async function POST(
       reaction,
       score: Math.round(newScore * 10) / 10,
       sessionTimestamp,
+      sessionId: sessionId || null,
     },
   })
+
+  // Update session if provided
+  if (sessionId) {
+    const film = await prisma.film.findUnique({
+      where: { id: filmId },
+      select: { runtime: true },
+    })
+    const totalSeconds = (film?.runtime || 120) * 60
+    const completionRate = Math.min(1, sessionTimestamp / totalSeconds)
+
+    await prisma.liveReactionSession.update({
+      where: { id: sessionId },
+      data: {
+        lastReactionAt: new Date(),
+        completionRate: Math.round(completionRate * 100) / 100,
+      },
+    })
+
+    // Auto-flag: check if 80%+ of reactions are the same type
+    const sessionReactions = await prisma.liveReaction.findMany({
+      where: { sessionId },
+      select: { reaction: true },
+    })
+    if (sessionReactions.length >= 10) {
+      const counts: Record<string, number> = {}
+      for (const r of sessionReactions) {
+        counts[r.reaction] = (counts[r.reaction] || 0) + 1
+      }
+      const maxCount = Math.max(...Object.values(counts))
+      if (maxCount / sessionReactions.length >= 0.8) {
+        await prisma.liveReactionSession.update({
+          where: { id: sessionId },
+          data: {
+            flagged: true,
+            flagReason: `${Math.round((maxCount / sessionReactions.length) * 100)}% same reaction type`,
+          },
+        })
+      }
+    }
+  }
 
   // Trigger blend check in background
   maybeBlendAndUpdate(filmId).catch(() => {})
