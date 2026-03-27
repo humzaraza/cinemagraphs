@@ -142,8 +142,7 @@ export async function GET(request: Request) {
 
     return Response.json({ imported, skipped, failed, nowPlayingRefreshed: nowPlayingIds.size, durationMs })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    cronLogger.error({ error: message, durationMs: Date.now() - startTime }, 'Import cron failed')
-    return Response.json({ error: message, code: 'INTERNAL_ERROR' }, { status: 500 })
+    cronLogger.error({ err, durationMs: Date.now() - startTime }, 'Import cron failed')
+    return Response.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
   }
 }

@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { generateBatchSentimentGraphs } from '@/lib/sentiment-pipeline'
+import { apiLogger } from '@/lib/logger'
 
 export const maxDuration = 300 // 5 minutes for Vercel
 
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
     const result = await generateBatchSentimentGraphs(filmIds)
     return Response.json(result)
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Batch analysis failed'
-    return Response.json({ error: message, code: 'INTERNAL_ERROR' }, { status: 500 })
+    apiLogger.error({ err, filmIds }, 'Batch analysis failed')
+    return Response.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
   }
 }

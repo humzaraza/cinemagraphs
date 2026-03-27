@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { apiLogger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -124,6 +125,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ reviewId: string }> }
 ) {
+  try {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
@@ -217,6 +219,10 @@ export async function GET(
       'Cache-Control': 'private, no-store',
     },
   })
+  } catch (err) {
+    apiLogger.error({ err }, 'Failed to generate share image')
+    return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
+  }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

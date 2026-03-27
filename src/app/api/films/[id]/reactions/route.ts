@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { maybeBlendAndUpdate } from '@/lib/review-blender'
+import { apiLogger } from '@/lib/logger'
 
 const REACTION_WEIGHTS: Record<string, number> = {
   up: 0.5,
@@ -18,6 +19,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  try {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
@@ -116,29 +118,38 @@ export async function POST(
     score: liveReaction.score,
     reaction: liveReaction.reaction,
   }, { status: 201 })
+  } catch (err) {
+    apiLogger.error({ err }, 'Failed to submit reaction')
+    return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
+  }
 }
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id: filmId } = await params
+  try {
+    const { id: filmId } = await params
 
-  const reactions = await prisma.liveReaction.findMany({
-    where: { filmId },
-    orderBy: { sessionTimestamp: 'asc' },
-    select: { reaction: true, score: true, sessionTimestamp: true, createdAt: true },
-  })
+    const reactions = await prisma.liveReaction.findMany({
+      where: { filmId },
+      orderBy: { sessionTimestamp: 'asc' },
+      select: { reaction: true, score: true, sessionTimestamp: true, createdAt: true },
+    })
 
-  // Aggregate counts
-  const counts: Record<string, number> = { up: 0, down: 0, wow: 0, shock: 0, funny: 0 }
-  for (const r of reactions) {
-    counts[r.reaction] = (counts[r.reaction] || 0) + 1
+    // Aggregate counts
+    const counts: Record<string, number> = { up: 0, down: 0, wow: 0, shock: 0, funny: 0 }
+    for (const r of reactions) {
+      counts[r.reaction] = (counts[r.reaction] || 0) + 1
+    }
+
+    return NextResponse.json({
+      total: reactions.length,
+      counts,
+      reactions: reactions.slice(-100), // last 100 for timeline display
+    })
+  } catch (err) {
+    apiLogger.error({ err }, 'Failed to fetch reactions')
+    return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
   }
-
-  return NextResponse.json({
-    total: reactions.length,
-    counts,
-    reactions: reactions.slice(-100), // last 100 for timeline display
-  })
 }

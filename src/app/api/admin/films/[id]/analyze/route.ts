@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { generateSentimentGraph } from '@/lib/sentiment-pipeline'
+import { apiLogger } from '@/lib/logger'
 
 export async function POST(
   _request: Request,
@@ -17,7 +18,7 @@ export async function POST(
     await generateSentimentGraph(id)
     return Response.json({ success: true, filmId: id })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Analysis failed'
-    return Response.json({ error: message, code: 'INTERNAL_ERROR' }, { status: 500 })
+    apiLogger.error({ err, filmId: id }, 'Film analysis failed')
+    return Response.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
   }
 }

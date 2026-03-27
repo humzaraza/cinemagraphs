@@ -47,7 +47,7 @@ export async function GET(request: Request) {
 
     let succeeded = 0
     let failed = 0
-    const results: { title: string; success: boolean; reason: string; error?: string }[] = []
+    const results: { title: string; success: boolean; reason: string }[] = []
 
     for (const film of filmsToProcess) {
       try {
@@ -55,13 +55,11 @@ export async function GET(request: Request) {
         results.push({ title: film.title, success: true, reason: film.reason })
         succeeded++
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unknown error'
-        cronLogger.error({ filmId: film.id, filmTitle: film.title, error: message }, 'Film analysis failed in cron')
+        cronLogger.error({ err, filmId: film.id, filmTitle: film.title }, 'Film analysis failed in cron')
         results.push({
           title: film.title,
           success: false,
           reason: film.reason,
-          error: message,
         })
         failed++
       }
@@ -77,8 +75,7 @@ export async function GET(request: Request) {
       results,
     })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    cronLogger.error({ error: message, durationMs: Date.now() - startTime }, 'Cron route failed')
-    return Response.json({ error: message, code: 'INTERNAL_ERROR' }, { status: 500 })
+    cronLogger.error({ err, durationMs: Date.now() - startTime }, 'Cron route failed')
+    return Response.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
   }
 }
