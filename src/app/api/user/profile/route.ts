@@ -6,13 +6,21 @@ import { apiLogger } from '@/lib/logger'
 import type { Prisma } from '@/generated/prisma/client'
 
 export async function PATCH(request: NextRequest) {
+  // TEMP: Log every step for debugging
+  console.log('[PROFILE PATCH] Route hit')
+
   try {
     const session = await getServerSession(authOptions)
+    console.log('[PROFILE PATCH] Session:', JSON.stringify(session?.user || null))
+
     if (!session?.user?.id) {
+      console.log('[PROFILE PATCH] No session, returning 401')
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 
     const body = await request.json()
+    console.log('[PROFILE PATCH] Request body:', JSON.stringify(body))
+
     const { name, username, bio, image } = body
 
     // Validate username if provided
@@ -65,15 +73,32 @@ export async function PATCH(request: NextRequest) {
       updateData.image = (typeof image === 'string' && image.length > 0) ? image : null
     }
 
+    console.log('[PROFILE PATCH] Update data:', JSON.stringify(updateData))
+    console.log('[PROFILE PATCH] Updating user:', session.user.id)
+
     const updated = await prisma.user.update({
       where: { id: session.user.id },
       data: updateData,
       select: { id: true, name: true, username: true, bio: true, image: true },
     })
 
+    console.log('[PROFILE PATCH] Success:', JSON.stringify(updated))
     return NextResponse.json(updated)
   } catch (err) {
+    // TEMP: Exhaustive error logging for debugging
     const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+    const errorStack = err instanceof Error ? err.stack : undefined
+    const errorName = err instanceof Error ? err.name : typeof err
+    const errorCode = (err as Record<string, unknown>)?.code
+    const errorMeta = (err as Record<string, unknown>)?.meta
+
+    console.error('[PROFILE PATCH] ERROR name:', errorName)
+    console.error('[PROFILE PATCH] ERROR message:', errorMessage)
+    console.error('[PROFILE PATCH] ERROR code:', errorCode)
+    console.error('[PROFILE PATCH] ERROR meta:', JSON.stringify(errorMeta))
+    console.error('[PROFILE PATCH] ERROR stack:', errorStack)
+    console.error('[PROFILE PATCH] ERROR full:', JSON.stringify(err, Object.getOwnPropertyNames(err as object)))
+
     apiLogger.error({ err, message: errorMessage }, 'Failed to update user profile')
 
     // Surface Prisma unique constraint violations
@@ -82,7 +107,15 @@ export async function PATCH(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: 'Something went wrong. Please try again.', detail: errorMessage },
+      {
+        error: 'Something went wrong. Please try again.',
+        _debug: {
+          message: errorMessage,
+          name: errorName,
+          code: errorCode,
+          meta: errorMeta,
+        },
+      },
       { status: 500 }
     )
   }
