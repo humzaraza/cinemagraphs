@@ -13,7 +13,7 @@ export default function Navigation() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 md:h-20">
           <Link href="/" className="flex flex-col">
-            <span className="font-[family-name:var(--font-playfair)] text-xl md:text-3xl font-bold text-cinema-gold leading-tight">
+            <span className="font-[family-name:var(--font-playfair)] text-xl md:text-3xl font-bold text-cinema-gold leading-tight" style={{ borderBottom: '1px dashed rgba(200, 169, 81, 0.5)', paddingBottom: '2px' }}>
               Cinemagraphs
             </span>
             <span className="font-[family-name:var(--font-dm-sans)] text-xs leading-tight hidden md:block" style={{ color: 'rgba(255,255,255,0.4)' }}>
