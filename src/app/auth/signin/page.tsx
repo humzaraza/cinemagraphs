@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { signIn } from 'next-auth/react'
 
 type Mode = 'signin' | 'register' | 'verify'
@@ -17,6 +17,63 @@ export default function SignInPage() {
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [otpCode, setOtpCode] = useState('')
+  const [resendCooldown, setResendCooldown] = useState(0)
+  const [forgotMode, setForgotMode] = useState(false)
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return
+    const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [resendCooldown])
+
+  const handleResendCode = useCallback(async () => {
+    if (resendCooldown > 0) return
+    setResendCooldown(30)
+    setError(null)
+    try {
+      const res = await fetch('/api/auth/resend-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error)
+      } else {
+        setMessage('A new code has been sent to your email.')
+      }
+    } catch {
+      setError('Failed to resend code. Please try again.')
+    }
+  }, [email, resendCooldown])
+
+  async function handleForgotPassword() {
+    setError(null)
+    setMessage(null)
+    if (!email) {
+      setError('Please enter your email address first.')
+      return
+    }
+    setLoading(true)
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error)
+      } else {
+        setMessage(data.message)
+        setForgotMode(true)
+      }
+    } catch {
+      setError('Something went wrong. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   async function handleOAuthSignIn(provider: string) {
     if (honeypot) {
@@ -108,10 +165,12 @@ export default function SignInPage() {
       <div className="w-full max-w-sm bg-cinema-darker border border-cinema-border rounded-xl p-8">
         <div className="text-center mb-8">
           <h1 className="font-[family-name:var(--font-playfair)] text-3xl font-bold text-cinema-gold mb-2">
-            {mode === 'verify' ? 'Verify Email' : 'Welcome Back'}
+            {forgotMode ? 'Check Your Email' : mode === 'verify' ? 'Verify Email' : 'Welcome Back'}
           </h1>
           <p className="text-sm text-cinema-muted">
-            {mode === 'verify'
+            {forgotMode
+              ? 'If an account exists, a reset link has been sent.'
+              : mode === 'verify'
               ? 'Enter the 6-digit code sent to your email.'
               : 'Sign in to access your collections and more.'}
           </p>
@@ -243,6 +302,15 @@ export default function SignInPage() {
                   minLength={mode === 'register' ? 8 : undefined}
                   className="w-full bg-cinema-dark border border-cinema-border rounded-lg px-4 py-2.5 text-white placeholder:text-cinema-muted/40 focus:outline-none focus:border-cinema-gold/50 transition-colors"
                 />
+                {mode === 'signin' && (
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    className="text-xs text-cinema-muted hover:text-cinema-gold mt-1.5 float-right"
+                  >
+                    Forgot password?
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -278,7 +346,7 @@ export default function SignInPage() {
               <>
                 Don&apos;t have an account?{' '}
                 <button
-                  onClick={() => { setMode('register'); setError(null); setMessage(null) }}
+                  onClick={() => { setMode('register'); setError(null); setMessage(null); setForgotMode(false) }}
                   className="text-cinema-gold hover:underline"
                 >
                   Create one
@@ -288,7 +356,7 @@ export default function SignInPage() {
               <>
                 Already have an account?{' '}
                 <button
-                  onClick={() => { setMode('signin'); setError(null); setMessage(null) }}
+                  onClick={() => { setMode('signin'); setError(null); setMessage(null); setForgotMode(false) }}
                   className="text-cinema-gold hover:underline"
                 >
                   Sign in
@@ -299,12 +367,22 @@ export default function SignInPage() {
         )}
 
         {mode === 'verify' && (
-          <button
-            onClick={() => { setMode('register'); setError(null); setMessage(null); setOtpCode('') }}
-            className="text-xs text-cinema-muted hover:text-cinema-gold text-center mt-4 w-full"
-          >
-            Back to registration
-          </button>
+          <div className="flex flex-col items-center gap-2 mt-4">
+            <button
+              type="button"
+              onClick={handleResendCode}
+              disabled={resendCooldown > 0}
+              className="text-xs text-cinema-gold hover:underline disabled:text-cinema-muted disabled:no-underline"
+            >
+              {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend code'}
+            </button>
+            <button
+              onClick={() => { setMode('register'); setError(null); setMessage(null); setOtpCode(''); setResendCooldown(0) }}
+              className="text-xs text-cinema-muted hover:text-cinema-gold"
+            >
+              Back to registration
+            </button>
+          </div>
         )}
 
         <p className="text-xs text-cinema-muted text-center mt-6">

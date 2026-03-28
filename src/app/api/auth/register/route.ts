@@ -36,15 +36,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid email address' }, { status: 400 })
     }
 
-    // Check if user already exists with a password (email/password account)
+    // Check if user already exists
     const existingUser = await prisma.user.findUnique({
       where: { email: emailLower },
       select: { id: true, password: true, emailVerified: true },
     })
 
-    if (existingUser?.password) {
-      // Don't reveal whether the account exists
+    // If user exists with a verified email and password, don't allow re-registration
+    if (existingUser?.password && existingUser.emailVerified) {
       return NextResponse.json({ error: 'Unable to create account. Try signing in instead.' }, { status: 409 })
+    }
+
+    // If user exists but is unverified (stuck registration), delete and start fresh
+    if (existingUser && !existingUser.emailVerified && existingUser.password) {
+      await prisma.verificationToken.deleteMany({ where: { identifier: emailLower } })
+      await prisma.user.delete({ where: { id: existingUser.id } })
     }
 
     const hashedPassword = await bcrypt.hash(password, 12)
@@ -53,13 +59,13 @@ export async function POST(request: NextRequest) {
     const otp = Math.floor(100000 + Math.random() * 900000).toString()
     const expires = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
 
-    if (existingUser) {
+    if (existingUser && !existingUser.emailVerified && !existingUser.password) {
       // User exists via OAuth but no password — add password
       await prisma.user.update({
         where: { id: existingUser.id },
         data: { password: hashedPassword, name: name || undefined },
       })
-    } else {
+    } else if (!existingUser || (!existingUser.emailVerified && existingUser.password)) {
       // Create new user
       await prisma.user.create({
         data: {
