@@ -31,7 +31,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Cinemagraphs — Visualize Movie Sentiment",
     description:
-      "See how audience opinion moves through a film — not just the final verdict.",
+      "Movie reviews, visualized.",
     url: "https://cinemagraphs.ca",
     siteName: "Cinemagraphs",
     images: [
@@ -48,7 +48,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Cinemagraphs — Visualize Movie Sentiment",
     description:
-      "See how audience opinion moves through a film — not just the final verdict.",
+      "Movie reviews, visualized.",
     images: ["https://cinemagraphs.ca/og-image.png"],
   },
   icons: {
