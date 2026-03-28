@@ -86,8 +86,43 @@ export const authOptions: NextAuthOptions = {
     },
   },
   callbacks: {
-    async signIn({ user, account, profile }) {
+    async signIn({ user, account }) {
       apiLogger.info({ provider: account?.provider, userId: user?.id, email: user?.email }, 'signIn callback triggered')
+
+      // Auto-link OAuth accounts to existing users with the same email
+      if (account && account.provider !== 'credentials' && user?.email) {
+        const existingUser = await prisma.user.findUnique({
+          where: { email: user.email },
+        })
+        if (existingUser) {
+          const existingAccount = await prisma.account.findUnique({
+            where: {
+              provider_providerAccountId: {
+                provider: account.provider,
+                providerAccountId: account.providerAccountId,
+              },
+            },
+          })
+          if (!existingAccount) {
+            await prisma.account.create({
+              data: {
+                userId: existingUser.id,
+                type: account.type,
+                provider: account.provider,
+                providerAccountId: account.providerAccountId,
+                access_token: account.access_token as string | undefined,
+                refresh_token: account.refresh_token as string | undefined,
+                expires_at: account.expires_at as number | undefined,
+                token_type: account.token_type as string | undefined,
+                scope: account.scope as string | undefined,
+                id_token: account.id_token as string | undefined,
+              },
+            })
+            apiLogger.info({ provider: account.provider, email: user.email }, 'Linked OAuth account to existing user')
+          }
+        }
+      }
+
       return true
     },
     async jwt({ token, user, account }) {
