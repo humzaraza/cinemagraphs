@@ -86,9 +86,11 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
 
   useEffect(() => {
     if (isPaused || films.length <= 1) return
-    const timer = setInterval(next, 8000)
-    return () => clearInterval(timer)
-  }, [isPaused, next, films.length, resetKey])
+    const timer = setTimeout(() => {
+      setActiveIndex((i) => (i + 1) % films.length)
+    }, 8000)
+    return () => clearTimeout(timer)
+  }, [isPaused, films.length, activeIndex, resetKey])
 
   if (films.length === 0) return null
 
