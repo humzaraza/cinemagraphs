@@ -197,12 +197,12 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
           </div>
 
           {/* Right: Sentiment graph — wide landscape card */}
-          <div className="bg-cinema-darker/80 backdrop-blur-sm rounded-xl border border-cinema-border px-3 py-3 md:px-5 md:py-4">
-            <div className="mb-2">
+          <div className="bg-cinema-darker/80 backdrop-blur-sm rounded-xl border border-cinema-border px-2 py-3 md:px-3 md:py-4">
+            <div className="mb-2 px-1 md:px-2">
               <span className="text-xs text-cinema-muted uppercase tracking-wider">Sentiment Timeline</span>
             </div>
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={chartData} margin={{ top: 10, right: 35, left: 10, bottom: 10 }}>
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
                 <defs>
                   <linearGradient id="heroGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#C8A951" stopOpacity={0.3} />
