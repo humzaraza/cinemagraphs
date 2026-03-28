@@ -10,10 +10,16 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || process.env.CINEMA_ANTHROPIC_KEY || '',
 })
 
+export interface PlotContext {
+  text: string
+  source: 'wikipedia' | 'tmdb' | 'omdb' | 'reviews_only'
+}
+
 function buildAnalysisPrompt(
   film: Film,
   reviews: Review[],
-  anchorScores: AnchorScores
+  anchorScores: AnchorScores,
+  plotContext?: PlotContext
 ): string {
   const year = film.releaseDate ? new Date(film.releaseDate).getFullYear() : 'Unknown'
   const runtime = film.runtime || 120
@@ -39,6 +45,11 @@ function buildAnalysisPrompt(
   const segmentCount = Math.min(Math.max(14, Math.round(runtime / 8)), 18)
   const segmentDuration = runtime / segmentCount
 
+  // Build optional plot context section
+  const plotSection = plotContext && plotContext.source !== 'reviews_only'
+    ? `\n## Plot Synopsis (source: ${plotContext.source})\n\n${plotContext.text.slice(0, 4000)}\n\nUse this plot summary to generate beat labels that reference specific scenes, character names, and plot moments from this film. CRITICAL: Do NOT conflate emotionally dark or sad plot events with negative audience reception. A scene can be devastating or tragic but still be beloved by audiences. Always score based on reviewer sentiment toward the scene, not the emotional tone of the events themselves.\n`
+    : ''
+
   return `You are a film sentiment analyst. Analyze the following reviews for "${film.title}" (${year}) and generate a sentiment graph showing how audience opinion shifts across the film's ${runtime}-minute runtime.
 
 ## Film Information
@@ -51,7 +62,7 @@ function buildAnalysisPrompt(
 ## Aggregate Scores (ANCHOR — your overall must be within ±0.2 of the IMDb score)
 ${anchorString}
 Target overall sentiment: ${targetScore} (±0.2 variance allowed)
-
+${plotSection}
 ## Instructions
 
 1. Read ALL reviews carefully and identify what viewers praised and criticized at different points in the film.
@@ -114,9 +125,10 @@ Return ONLY valid JSON (no markdown, no code fences, no explanation) matching th
 export async function analyzeSentiment(
   film: Film,
   reviews: Review[],
-  anchorScores: AnchorScores
+  anchorScores: AnchorScores,
+  plotContext?: PlotContext
 ): Promise<SentimentGraphData> {
-  const prompt = buildAnalysisPrompt(film, reviews, anchorScores)
+  const prompt = buildAnalysisPrompt(film, reviews, anchorScores, plotContext)
 
   let lastError: Error | null = null
   let lastRawResponse: string | undefined

@@ -1,9 +1,10 @@
 import { prisma } from './prisma'
 import { fetchAnchorScores } from './omdb'
 import { fetchAllReviews } from './review-fetcher'
-import { analyzeSentiment } from './claude'
+import { analyzeSentiment, type PlotContext } from './claude'
 import type { AnchorScores } from './omdb'
 import { pipelineLogger } from './logger'
+import { fetchWikipediaPlot } from './sources/wikipedia'
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY!
 const TMDB_BASE_URL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3'
@@ -72,6 +73,70 @@ export async function filmNeedsReanalysis(filmId: string): Promise<{ needsAnalys
     filteredCount,
     reason: `Only ${newReviews} new reviews (need ${threshold})`,
   }
+}
+
+/**
+ * Fetch plot context using fallback chain:
+ * Wikipedia → TMDB overview+tagline → OMDB plot → reviews only
+ */
+export async function fetchPlotContext(
+  film: { title: string; tmdbId: number; imdbId: string | null; synopsis: string | null; releaseDate: Date | null }
+): Promise<PlotContext> {
+  const year = film.releaseDate ? new Date(film.releaseDate).getFullYear() : new Date().getFullYear()
+
+  // 1. Try Wikipedia
+  const wikiPlot = await fetchWikipediaPlot(film.title, year)
+  if (wikiPlot) {
+    return { text: wikiPlot, source: 'wikipedia' }
+  }
+
+  // 2. Try TMDB overview + tagline
+  try {
+    const tmdbRes = await fetch(`${TMDB_BASE_URL}/movie/${film.tmdbId}`, {
+      headers: { Authorization: `Bearer ${TMDB_API_KEY}` },
+    })
+    if (tmdbRes.ok) {
+      const tmdbData = await tmdbRes.json()
+      const overview = tmdbData.overview || ''
+      const tagline = tmdbData.tagline || ''
+      const combined = [tagline, overview].filter(Boolean).join(' — ')
+      if (combined.length >= 100) {
+        pipelineLogger.info({ filmTitle: film.title, source: 'tmdb', length: combined.length }, 'Plot context from TMDB')
+        return { text: combined, source: 'tmdb' }
+      }
+    }
+  } catch {
+    // Fall through
+  }
+
+  // 3. Try OMDB plot field
+  if (film.imdbId) {
+    try {
+      const omdbKey = process.env.OMDB_API_KEY
+      if (omdbKey) {
+        const omdbRes = await fetch(`https://www.omdbapi.com/?i=${encodeURIComponent(film.imdbId)}&plot=full&apikey=${omdbKey}`)
+        if (omdbRes.ok) {
+          const omdbData = await omdbRes.json()
+          if (omdbData.Response === 'True' && omdbData.Plot && omdbData.Plot !== 'N/A' && omdbData.Plot.length >= 100) {
+            pipelineLogger.info({ filmTitle: film.title, source: 'omdb', length: omdbData.Plot.length }, 'Plot context from OMDB')
+            return { text: omdbData.Plot, source: 'omdb' }
+          }
+        }
+      }
+    } catch {
+      // Fall through
+    }
+  }
+
+  // 4. Use film synopsis if available
+  if (film.synopsis && film.synopsis.length >= 100) {
+    pipelineLogger.info({ filmTitle: film.title, source: 'tmdb' }, 'Plot context from stored synopsis')
+    return { text: film.synopsis, source: 'tmdb' }
+  }
+
+  // 5. Final fallback — reviews only
+  pipelineLogger.info({ filmTitle: film.title }, 'No plot context found, using reviews only')
+  return { text: '', source: 'reviews_only' }
 }
 
 async function lookupImdbId(tmdbId: number): Promise<string | null> {
@@ -159,10 +224,14 @@ export async function generateSentimentGraph(filmId: string): Promise<void> {
 
   pipelineLogger.info({ filmId: film.id, filmTitle: film.title, totalReviews: allReviews.length, qualityReviews: filteredReviewCount }, 'Reviews available for analysis')
 
-  // 5. Send to Claude API for analysis
-  const graphData = await analyzeSentiment(film, reviews, anchorScores)
+  // 5. Fetch plot context (Wikipedia → TMDB → OMDB → reviews only)
+  const plotContext = await fetchPlotContext(film)
+  pipelineLogger.info({ filmId: film.id, filmTitle: film.title, plotSource: plotContext.source }, 'Plot context resolved')
 
-  // 6. Store result in SentimentGraph table
+  // 6. Send to Claude API for analysis
+  const graphData = await analyzeSentiment(film, reviews, anchorScores, plotContext)
+
+  // 7. Store result in SentimentGraph table
   const existing = await prisma.sentimentGraph.findUnique({ where: { filmId: film.id } })
 
   if (existing) {
