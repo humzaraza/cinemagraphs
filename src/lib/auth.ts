@@ -5,9 +5,19 @@ import CredentialsProvider from 'next-auth/providers/credentials'
 import { PrismaAdapter } from '@auth/prisma-adapter'
 import bcrypt from 'bcrypt'
 import { prisma } from './prisma'
+import { apiLogger } from './logger'
 import type { Adapter } from 'next-auth/adapters'
 
 export const authOptions: NextAuthOptions = {
+  debug: true,
+  logger: {
+    error(code, metadata) {
+      apiLogger.error({ code, ...metadata }, 'NextAuth error')
+    },
+    warn(code) {
+      apiLogger.warn({ code }, 'NextAuth warning')
+    },
+  },
   adapter: PrismaAdapter(prisma) as Adapter,
   providers: [
     GoogleProvider({
@@ -48,7 +58,16 @@ export const authOptions: NextAuthOptions = {
   pages: {
     signIn: '/auth/signin',
   },
+  events: {
+    async signIn({ user, account, profile }) {
+      apiLogger.info({ provider: account?.provider, userId: user?.id, email: user?.email, profile }, 'Sign-in event')
+    },
+  },
   callbacks: {
+    async signIn({ user, account, profile }) {
+      apiLogger.info({ provider: account?.provider, userId: user?.id, email: user?.email }, 'signIn callback triggered')
+      return true
+    },
     async jwt({ token, user, account }) {
       // On initial sign-in, persist user id and fetch role
       if (user) {
