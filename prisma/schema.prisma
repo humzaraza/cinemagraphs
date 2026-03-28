@@ -32,6 +32,7 @@ enum ReviewSource {
 model User {
   id                   String                @id @default(cuid())
   name                 String?
+  username             String?               @unique
   email                String                @unique
   emailVerified        DateTime?
   image                String?
@@ -50,6 +51,9 @@ model User {
   userReviews          UserReview[]
   liveReactions        LiveReaction[]
   liveReactionSessions LiveReactionSession[]
+  watchlistItems       Watchlist[]
+  followers            Follow[]              @relation("following")
+  following            Follow[]              @relation("follower")
 }
 
 model Account {
@@ -127,6 +131,7 @@ model Film {
   liveReactions        LiveReaction[]
   liveReactionSessions LiveReactionSession[]
   featuredFilm         FeaturedFilm?
+  watchlistItems       Watchlist[]
 
   @@index([tmdbId])
   @@index([title])
@@ -265,4 +270,30 @@ model Collection {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Watchlist {
+  id        String   @id @default(cuid())
+  userId    String
+  filmId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  film      Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, filmId])
+  @@index([userId])
+  @@index([filmId])
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+  follower    User     @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
 }

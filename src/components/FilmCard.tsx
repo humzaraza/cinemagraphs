@@ -2,6 +2,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { tmdbImageUrl, formatYear } from '@/lib/utils'
 import { FilmCardMiniGraph } from './FilmCardMiniGraph'
+import WatchlistButton from './WatchlistButton'
 import type { MiniGraphDataPoint } from '@/lib/types'
 
 interface FilmCardProps {
@@ -58,6 +59,10 @@ export default function FilmCard({
               </span>
             </div>
           )}
+
+          <div className="absolute top-2 left-2">
+            <WatchlistButton filmId={id} size="sm" className="bg-cinema-dark/70 backdrop-blur-sm rounded p-1.5 hover:bg-cinema-dark/90" />
+          </div>
         </div>
 
         {/* 2. Mini sentiment graph (or dashed placeholder) */}

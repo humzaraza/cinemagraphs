@@ -131,19 +131,34 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id
         const dbUser = await prisma.user.findUnique({
           where: { id: user.id },
-          select: { role: true },
+          select: { role: true, name: true, email: true, image: true },
         })
         token.role = dbUser?.role || 'USER'
+        if (dbUser?.name) token.name = dbUser.name
+        if (dbUser?.image) token.picture = dbUser.image
       }
       // For OAuth providers, the adapter creates the user — get id from DB
       if (account && account.provider !== 'credentials' && token.email) {
         const dbUser = await prisma.user.findUnique({
           where: { email: token.email },
-          select: { id: true, role: true },
+          select: { id: true, role: true, name: true, image: true },
         })
         if (dbUser) {
           token.id = dbUser.id
           token.role = dbUser.role
+          if (dbUser.name) token.name = dbUser.name
+          if (dbUser.image) token.picture = dbUser.image
+        }
+      }
+      // On every token refresh, fetch latest name/image from DB
+      if (token.id && !user && !account) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { name: true, email: true, image: true },
+        })
+        if (dbUser) {
+          token.name = dbUser.name || dbUser.email.split('@')[0]
+          if (dbUser.image) token.picture = dbUser.image
         }
       }
       return token
@@ -152,6 +167,8 @@ export const authOptions: NextAuthOptions = {
       if (session.user && token) {
         session.user.id = token.id as string
         session.user.role = (token.role as 'USER' | 'MODERATOR' | 'ADMIN' | 'BANNED') || 'USER'
+        session.user.name = (token.name as string) || session.user.email?.split('@')[0] || null
+        if (token.picture) session.user.image = token.picture as string
       }
       return session
     },

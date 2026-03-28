@@ -8,6 +8,7 @@ import { tmdbImageUrl, formatRuntime, formatDate } from '@/lib/utils'
 import { getMovieTrailerKey } from '@/lib/tmdb'
 import SentimentGraph from '@/components/SentimentGraph'
 import TrailerButton from '@/components/TrailerButton'
+import WatchlistButton from '@/components/WatchlistButton'
 import FilmCommunityTabs from '@/components/FilmCommunityTabs'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import type { CastMember, PeakLowMoment, SentimentDataPoint } from '@/lib/types'
@@ -108,7 +109,14 @@ export default async function FilmPage({
               <p className="text-cinema-cream/80 leading-relaxed mb-6">{film.synopsis}</p>
             )}
 
-            {trailerKey && <TrailerButton trailerKey={trailerKey} />}
+            <div className="flex items-center gap-3">
+              {trailerKey && <TrailerButton trailerKey={trailerKey} />}
+              <WatchlistButton
+                filmId={film.id}
+                size="md"
+                className="flex items-center gap-2 text-sm text-cinema-gold border border-cinema-gold/30 px-4 py-2 rounded-lg hover:bg-cinema-gold/10 transition-colors"
+              />
+            </div>
           </div>
         </div>
 

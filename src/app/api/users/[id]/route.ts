@@ -14,7 +14,10 @@ export async function GET(
       select: {
         id: true,
         name: true,
+        username: true,
+        email: true,
         image: true,
+        bio: true,
         createdAt: true,
         isPublic: true,
         userReviews: {
@@ -74,12 +77,47 @@ export async function GET(
     // Dedupe live reactions by film
     const reactedFilmIds = new Set(user.liveReactions.map((r) => r.filmId))
 
+    // Compute follower/following counts
+    const [followerCount, followingCount] = await Promise.all([
+      prisma.follow.count({ where: { followingId: user.id } }),
+      prisma.follow.count({ where: { followerId: user.id } }),
+    ])
+
+    // Get watchlist items
+    const watchlistItems = await prisma.watchlist.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        film: {
+          select: {
+            id: true,
+            title: true,
+            posterUrl: true,
+            releaseDate: true,
+            genres: true,
+            runtime: true,
+            sentimentGraph: {
+              select: { overallScore: true, dataPoints: true },
+            },
+          },
+        },
+      },
+    })
+
+    // Derive a display name: name > username > email prefix
+    const displayName = user.name || user.username || user.email.split('@')[0]
+
     return NextResponse.json({
       user: {
         id: user.id,
-        name: user.name,
+        name: displayName,
+        username: user.username,
+        email: user.email,
         image: user.image,
+        bio: user.bio,
         createdAt: user.createdAt,
+        followerCount,
+        followingCount,
       },
       stats: {
         totalReviews,
@@ -89,6 +127,7 @@ export async function GET(
       },
       reviews: user.userReviews,
       reactions: user.liveReactions,
+      watchlist: watchlistItems.map((w) => w.film),
     })
   } catch (err) {
     apiLogger.error({ err }, 'Failed to fetch user profile')

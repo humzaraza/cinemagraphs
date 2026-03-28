@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useParams } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import ShareModal from '@/components/ShareModal'
+import EditProfileModal from '@/components/EditProfileModal'
 
 interface FilmData {
   id: string
@@ -14,6 +15,7 @@ interface FilmData {
   releaseDate: string | null
   director: string | null
   runtime: number | null
+  genres?: string[]
   sentimentGraph: { overallScore: number; dataPoints: DataPoint[] } | null
 }
 
@@ -50,13 +52,24 @@ interface ReactionData {
 }
 
 interface ProfileData {
-  user: { id: string; name: string | null; image: string | null; createdAt: string }
+  user: {
+    id: string
+    name: string | null
+    username: string | null
+    email: string
+    image: string | null
+    bio: string | null
+    createdAt: string
+    followerCount: number
+    followingCount: number
+  }
   stats: { totalReviews: number; avgRating: number; graphsContributed: number; filmsReacted: number }
   reviews: ReviewData[]
   reactions: ReactionData[]
+  watchlist: FilmData[]
 }
 
-type Tab = 'reviews' | 'graphs' | 'reactions'
+type Tab = 'reviews' | 'graphs' | 'reactions' | 'watchlist'
 
 export default function ProfilePage() {
   const params = useParams()
@@ -66,11 +79,14 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('reviews')
   const [shareReview, setShareReview] = useState<ReviewData | null>(null)
+  const [editOpen, setEditOpen] = useState(false)
+  const [isFollowing, setIsFollowing] = useState(false)
+  const [followLoading, setFollowLoading] = useState(false)
 
   const userId = params.id as string
   const isOwnProfile = session?.user?.id === userId
 
-  useEffect(() => {
+  const fetchProfile = useCallback(() => {
     fetch(`/api/users/${userId}`)
       .then((r) => {
         if (!r.ok) throw new Error('Profile not found')
@@ -80,6 +96,46 @@ export default function ProfilePage() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
   }, [userId])
+
+  useEffect(() => {
+    fetchProfile()
+  }, [fetchProfile])
+
+  // Check follow status
+  useEffect(() => {
+    if (!session?.user?.id || isOwnProfile) return
+    fetch(`/api/users/${userId}/follow`)
+      .then((r) => r.json())
+      .then((data) => setIsFollowing(data.following))
+      .catch(() => {})
+  }, [session?.user?.id, userId, isOwnProfile])
+
+  const handleFollow = async () => {
+    if (!session?.user?.id) return
+    setFollowLoading(true)
+    try {
+      const res = await fetch(`/api/users/${userId}/follow`, {
+        method: isFollowing ? 'DELETE' : 'POST',
+      })
+      if (res.ok) {
+        setIsFollowing(!isFollowing)
+        // Update counts locally
+        if (profile) {
+          setProfile({
+            ...profile,
+            user: {
+              ...profile.user,
+              followerCount: profile.user.followerCount + (isFollowing ? -1 : 1),
+            },
+          })
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setFollowLoading(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -105,8 +161,9 @@ export default function ProfilePage() {
     )
   }
 
-  const { user, stats, reviews, reactions } = profile
-  const initial = (user.name || 'U')[0].toUpperCase()
+  const { user, stats, reviews, reactions, watchlist } = profile
+  const displayName = user.name || 'User'
+  const initial = displayName[0].toUpperCase()
   const memberSince = new Date(user.createdAt).toLocaleDateString('en-US', {
     month: 'long',
     year: 'numeric',
@@ -128,11 +185,11 @@ export default function ProfilePage() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
       {/* Profile Header */}
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex items-center gap-4 mb-2">
         {user.image ? (
           <Image
             src={user.image}
-            alt={user.name || 'User'}
+            alt={displayName}
             width={64}
             height={64}
             className="rounded-full"
@@ -148,12 +205,55 @@ export default function ProfilePage() {
             {initial}
           </div>
         )}
-        <div>
-          <h1 className="font-[family-name:var(--font-playfair)] text-2xl font-bold text-cinema-cream">
-            {user.name || 'Anonymous'}
-          </h1>
+        <div className="flex-1">
+          <div className="flex items-center gap-3">
+            <h1 className="font-[family-name:var(--font-playfair)] text-2xl font-bold text-cinema-cream">
+              {displayName}
+            </h1>
+            {isOwnProfile && (
+              <button
+                onClick={() => setEditOpen(true)}
+                className="text-xs px-3 py-1 rounded-full border border-cinema-border text-cinema-muted hover:border-cinema-gold/50 hover:text-cinema-cream transition-colors"
+              >
+                Edit Profile
+              </button>
+            )}
+            {!isOwnProfile && session?.user?.id && (
+              <button
+                onClick={handleFollow}
+                disabled={followLoading}
+                className={`text-xs px-4 py-1.5 rounded-full font-semibold transition-colors ${
+                  isFollowing
+                    ? 'bg-cinema-card border border-cinema-border text-cinema-cream hover:border-red-500/50 hover:text-red-400'
+                    : 'bg-cinema-gold text-cinema-dark hover:bg-cinema-gold/90'
+                }`}
+              >
+                {followLoading ? '...' : isFollowing ? 'Following' : 'Follow'}
+              </button>
+            )}
+          </div>
+          {user.username && (
+            <p className="text-sm text-cinema-muted">@{user.username}</p>
+          )}
           <p className="text-sm text-cinema-muted">Member since {memberSince}</p>
         </div>
+      </div>
+
+      {/* Bio */}
+      {user.bio && (
+        <p className="text-sm text-cinema-cream/70 mb-4 ml-20">{user.bio}</p>
+      )}
+
+      {/* Follower/Following counts */}
+      <div className="flex gap-4 mb-6 ml-20">
+        <span className="text-sm">
+          <span className="font-semibold text-cinema-cream">{user.followerCount}</span>{' '}
+          <span className="text-cinema-muted">followers</span>
+        </span>
+        <span className="text-sm">
+          <span className="font-semibold text-cinema-cream">{user.followingCount}</span>{' '}
+          <span className="text-cinema-muted">following</span>
+        </span>
       </div>
 
       {/* Stats Row */}
@@ -171,16 +271,17 @@ export default function ProfilePage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-cinema-border">
+      <div className="flex gap-1 mb-6 border-b border-cinema-border overflow-x-auto">
         {([
           ['reviews', `All Reviews (${reviews.length})`],
           ['graphs', `My Graphs (${graphReviews.length})`],
           ['reactions', `Live Reactions (${reactionsByFilm.size})`],
+          ['watchlist', `Watchlist (${watchlist.length})`],
         ] as [Tab, string][]).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
               tab === key
                 ? 'border-cinema-gold text-cinema-gold'
                 : 'border-transparent text-cinema-muted hover:text-cinema-cream'
@@ -199,6 +300,17 @@ export default function ProfilePage() {
           ))}
           {reactionsByFilm.size === 0 && (
             <p className="text-cinema-muted col-span-2 text-center py-8">No live reactions yet.</p>
+          )}
+        </div>
+      ) : tab === 'watchlist' ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          {watchlist.map((film) => (
+            <WatchlistCard key={film.id} film={film} />
+          ))}
+          {watchlist.length === 0 && (
+            <p className="text-cinema-muted col-span-full text-center py-8">
+              No films in watchlist yet.
+            </p>
           )}
         </div>
       ) : (
@@ -227,6 +339,21 @@ export default function ProfilePage() {
           onClose={() => setShareReview(null)}
         />
       )}
+
+      {/* Edit Profile Modal */}
+      {editOpen && (
+        <EditProfileModal
+          currentName={user.name || ''}
+          currentUsername={user.username || ''}
+          currentBio={user.bio || ''}
+          currentImage={user.image || ''}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => {
+            setEditOpen(false)
+            fetchProfile()
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -237,6 +364,47 @@ function StatBox({ label, value }: { label: string; value: string | number }) {
       <p className="font-[family-name:var(--font-bebas)] text-2xl text-cinema-gold">{value}</p>
       <p className="text-xs text-cinema-muted uppercase tracking-wider">{label}</p>
     </div>
+  )
+}
+
+function WatchlistCard({ film }: { film: FilmData }) {
+  return (
+    <Link href={`/films/${film.id}`} className="group block">
+      <div className="rounded-lg overflow-hidden bg-cinema-darker border border-cinema-border group-hover:border-cinema-gold/50 transition-all duration-300">
+        <div className="relative aspect-[2/3]">
+          {film.posterUrl ? (
+            <Image
+              src={`https://image.tmdb.org/t/p/w342${film.posterUrl}`}
+              alt={film.title}
+              fill
+              className="object-cover group-hover:scale-105 transition-transform duration-500"
+              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full text-cinema-muted text-xs">
+              No Poster
+            </div>
+          )}
+          {film.sentimentGraph && (
+            <div className="absolute top-2 right-2 bg-cinema-dark/90 backdrop-blur-sm rounded px-2 py-1">
+              <span className="font-[family-name:var(--font-bebas)] text-lg text-cinema-gold">
+                {film.sentimentGraph.overallScore.toFixed(1)}
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="px-3 py-2.5" style={{ backgroundColor: '#13131f' }}>
+          <h3 className="font-[family-name:var(--font-playfair)] text-sm font-semibold leading-tight text-white truncate">
+            {film.title}
+          </h3>
+          {film.releaseDate && (
+            <span className="text-xs text-cinema-muted">
+              {new Date(film.releaseDate).getFullYear()}
+            </span>
+          )}
+        </div>
+      </div>
+    </Link>
   )
 }
 
@@ -408,11 +576,11 @@ function ReactionCard({
   reactions: ReactionData[]
 }) {
   const emojiMap: Record<string, string> = {
-    up: '👍',
-    down: '👎',
-    wow: '🤩',
-    shock: '😱',
-    funny: '😂',
+    up: '\u{1F44D}',
+    down: '\u{1F44E}',
+    wow: '\u{1F929}',
+    shock: '\u{1F631}',
+    funny: '\u{1F602}',
   }
 
   const counts: Record<string, number> = {}
