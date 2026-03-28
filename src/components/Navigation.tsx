@@ -60,6 +60,13 @@ export default function Navigation() {
               <div className="flex items-center gap-2 md:gap-3">
                 <Link
                   href={`/profile/${session.user?.id}`}
+                  className="md:hidden flex items-center justify-center rounded-full font-semibold text-xs"
+                  style={{ width: 28, height: 28, backgroundColor: '#C8A951', color: '#0D0D1A' }}
+                >
+                  {(session.user?.name || session.user?.email || '?').charAt(0).toUpperCase()}
+                </Link>
+                <Link
+                  href={`/profile/${session.user?.id}`}
                   className="text-sm text-cinema-muted hover:text-cinema-gold transition-colors hidden md:inline"
                 >
                   {session.user?.name || session.user?.email}
