@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const TYPES = [
   { value: 'bug', label: 'Bug' },
@@ -14,6 +14,12 @@ export default function FeedbackWidget() {
   const [type, setType] = useState<string>('suggestion')
   const [message, setMessage] = useState('')
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+
+  useEffect(() => {
+    const handler = () => setOpen(true)
+    window.addEventListener('open-feedback', handler)
+    return () => window.removeEventListener('open-feedback', handler)
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

@@ -42,6 +42,16 @@ export default function Navigation() {
             >
               Categories
             </Link>
+            <Link
+              href="/about"
+              className={`text-sm transition-colors hidden md:inline ${
+                pathname === '/about'
+                  ? 'text-cinema-gold'
+                  : 'text-cinema-cream/70 hover:text-cinema-cream'
+              }`}
+            >
+              About
+            </Link>
 
             {session?.user?.role === 'ADMIN' && (
               <Link
