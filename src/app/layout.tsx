@@ -3,6 +3,7 @@ import { Playfair_Display, DM_Sans, Bebas_Neue } from "next/font/google";
 import "./globals.css";
 import Navigation from "@/components/Navigation";
 import SessionProvider from "@/components/SessionProvider";
+import FeedbackWidget from "@/components/FeedbackWidget";
 
 const playfair = Playfair_Display({
   variable: "--font-playfair",
@@ -70,6 +71,7 @@ export default function RootLayout({
         <SessionProvider>
           <Navigation />
           <main className="flex-1">{children}</main>
+          <FeedbackWidget />
         </SessionProvider>
       </body>
     </html>

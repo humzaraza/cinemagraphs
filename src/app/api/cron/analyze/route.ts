@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { generateSentimentGraph, filmNeedsReanalysis } from '@/lib/sentiment-pipeline'
 import { cronLogger } from '@/lib/logger'
+import { invalidateFilmCache, invalidateHomepageCache } from '@/lib/cache'
 
 export const maxDuration = 300
 
@@ -52,6 +53,7 @@ export async function GET(request: Request) {
     for (const film of filmsToProcess) {
       try {
         await generateSentimentGraph(film.id)
+        await invalidateFilmCache(film.id)
         results.push({ title: film.title, success: true, reason: film.reason })
         succeeded++
       } catch (err) {
@@ -64,6 +66,8 @@ export async function GET(request: Request) {
         failed++
       }
     }
+
+    if (succeeded > 0) await invalidateHomepageCache()
 
     cronLogger.info({ processed: results.length, succeeded, failed, durationMs: Date.now() - startTime }, 'Cron analysis complete')
 

@@ -46,6 +46,7 @@ model User {
   accounts             Account[]
   sessions             Session[]
   collections          Collection[]
+  feedback             Feedback[]
   userReviews          UserReview[]
   liveReactions        LiveReaction[]
   liveReactionSessions LiveReactionSession[]
@@ -230,6 +231,18 @@ model LiveReactionSession {
   film           Film           @relation(fields: [filmId], references: [id])
 
   @@index([userId, filmId])
+}
+
+model Feedback {
+  id        String   @id @default(cuid())
+  userId    String?
+  page      String
+  type      String   // "bug", "suggestion", "support", "other"
+  message   String   @db.Text
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
 }
 
 model Collection {

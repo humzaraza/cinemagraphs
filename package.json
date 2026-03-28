@@ -17,6 +17,8 @@
     "@neondatabase/serverless": "^1.0.2",
     "@prisma/adapter-neon": "^7.6.0",
     "@prisma/client": "^7.6.0",
+    "@vercel/kv": "^3.0.0",
+    "apify-client": "^2.22.3",
     "bcrypt": "^6.0.0",
     "cheerio": "^1.2.0",
     "dotenv": "^17.3.1",

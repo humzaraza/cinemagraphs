@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { generateSentimentGraph } from '@/lib/sentiment-pipeline'
 import { apiLogger } from '@/lib/logger'
+import { invalidateFilmCache, invalidateHomepageCache } from '@/lib/cache'
 
 export async function POST(
   _request: Request,
@@ -16,6 +17,7 @@ export async function POST(
 
   try {
     await generateSentimentGraph(id)
+    await Promise.all([invalidateFilmCache(id), invalidateHomepageCache()])
     return Response.json({ success: true, filmId: id })
   } catch (err) {
     apiLogger.error({ err, filmId: id }, 'Film analysis failed')

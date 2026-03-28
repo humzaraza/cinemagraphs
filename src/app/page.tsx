@@ -5,6 +5,7 @@ import HeroSection from '@/components/HeroSection'
 import TrailerCard from '@/components/TrailerCard'
 import Link from 'next/link'
 import { getMovieTrailerKey } from '@/lib/tmdb'
+import { cacheGet, cacheSet, KEYS } from '@/lib/cache'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,98 +23,194 @@ interface SectionVisibility {
 }
 
 export default async function HomePage() {
-  // Load section visibility settings
-  const settingsRow = await prisma.siteSettings.findUnique({ where: { key: 'homepage_sections' } })
-  const sections: SectionVisibility = (settingsRow?.value as unknown as SectionVisibility) ?? {
-    inTheaters: true,
-    topRated: true,
-    biggestSwings: true,
-    latestTrailers: true,
-    browseByGenre: true,
+  // Load section visibility settings (lightweight, not cached)
+  const cachedSections = await cacheGet<SectionVisibility>(KEYS.homepage('sections'))
+  let sections: SectionVisibility
+  if (cachedSections) {
+    sections = cachedSections
+  } else {
+    const settingsRow = await prisma.siteSettings.findUnique({ where: { key: 'homepage_sections' } })
+    sections = (settingsRow?.value as unknown as SectionVisibility) ?? {
+      inTheaters: true,
+      topRated: true,
+      biggestSwings: true,
+      latestTrailers: true,
+      browseByGenre: true,
+    }
+    await cacheSet(KEYS.homepage('sections'), sections)
   }
 
   // Load featured films from FeaturedFilm table (ordered by position)
-  const featuredRows = await prisma.featuredFilm.findMany({
-    orderBy: { position: 'asc' },
-    include: {
-      film: {
-        include: {
-          sentimentGraph: { select: { overallScore: true, dataPoints: true } },
-        },
-      },
-    },
-  })
-  const featuredFilms = featuredRows
-    .map((r) => r.film)
-    .filter((f) => f.status === 'ACTIVE' && f.sentimentGraph)
-
-  const [recentFilms, allGraphFilms, topRatedFilms, pinnedTopRated, allSwingFilms, pinnedSwings, pinnedInTheaters, allGenres] = await Promise.all([
-    // In Theaters: films with nowPlaying flag
-    sections.inTheaters
-      ? prisma.film.findMany({
-          where: { status: 'ACTIVE', nowPlaying: true },
-          include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
-          take: 20,
-          orderBy: { releaseDate: 'desc' },
-        })
-      : Promise.resolve([]),
-    // For ticker: now playing films with graphs
-    prisma.film.findMany({
-      where: { status: 'ACTIVE', nowPlaying: true, sentimentGraph: { isNot: null } },
+  type FeaturedFilm = Awaited<ReturnType<typeof prisma.featuredFilm.findMany<{
+    orderBy: { position: 'asc' }
+    include: { film: { include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } } } }
+  }>>>
+  const cachedFeatured = await cacheGet<FeaturedFilm>(KEYS.homepage('featured'))
+  let featuredFilms
+  if (cachedFeatured) {
+    featuredFilms = cachedFeatured
+      .map((r) => r.film)
+      .filter((f) => f.status === 'ACTIVE' && f.sentimentGraph)
+  } else {
+    const featuredRows = await prisma.featuredFilm.findMany({
+      orderBy: { position: 'asc' },
       include: {
-        sentimentGraph: { select: { overallScore: true, previousScore: true, dataPoints: true } },
-      },
-      take: 20,
-      orderBy: { updatedAt: 'desc' },
-    }),
-    // Top rated by sentiment
-    sections.topRated
-      ? prisma.film.findMany({
-          where: { status: 'ACTIVE', sentimentGraph: { isNot: null }, pinnedSection: { not: 'topRated' } },
+        film: {
           include: {
             sentimentGraph: { select: { overallScore: true, dataPoints: true } },
           },
-          take: 10,
-          orderBy: { sentimentGraph: { overallScore: 'desc' } },
-        })
-      : Promise.resolve([]),
-    // Pinned to top rated
-    sections.topRated
-      ? prisma.film.findMany({
-          where: { status: 'ACTIVE', pinnedSection: 'topRated', sentimentGraph: { isNot: null } },
-          include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
-        })
-      : Promise.resolve([]),
-    // For biggest swings calculation
-    sections.biggestSwings
-      ? prisma.film.findMany({
-          where: { status: 'ACTIVE', sentimentGraph: { isNot: null } },
-          include: {
-            sentimentGraph: { select: { overallScore: true, dataPoints: true, peakMoment: true, lowestMoment: true } },
-          },
-        })
-      : Promise.resolve([]),
-    // Pinned to biggest swings
-    sections.biggestSwings
-      ? prisma.film.findMany({
-          where: { status: 'ACTIVE', pinnedSection: 'biggestSwings', sentimentGraph: { isNot: null } },
-          include: {
-            sentimentGraph: { select: { overallScore: true, dataPoints: true, peakMoment: true, lowestMoment: true } },
-          },
-        })
-      : Promise.resolve([]),
-    // Pinned to in theaters
-    sections.inTheaters
-      ? prisma.film.findMany({
-          where: { status: 'ACTIVE', pinnedSection: 'inTheaters' },
-          include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
-        })
-      : Promise.resolve([]),
-    // All genres
-    sections.browseByGenre
-      ? prisma.film.findMany({ where: { status: 'ACTIVE' }, select: { genres: true } })
-      : Promise.resolve([]),
-  ])
+        },
+      },
+    })
+    await cacheSet(KEYS.homepage('featured'), featuredRows)
+    featuredFilms = featuredRows
+      .map((r) => r.film)
+      .filter((f) => f.status === 'ACTIVE' && f.sentimentGraph)
+  }
+
+  // Try to load cached homepage data sections
+  interface HomepageData {
+    recentFilms: typeof recentFilmsResult
+    allGraphFilms: typeof allGraphFilmsResult
+    topRatedFilms: typeof topRatedFilmsResult
+    pinnedTopRated: typeof pinnedTopRatedResult
+    allSwingFilms: typeof allSwingFilmsResult
+    pinnedSwings: typeof pinnedSwingsResult
+    pinnedInTheaters: typeof pinnedInTheatersResult
+    allGenres: typeof allGenresResult
+  }
+
+  // Declare result types for the parallel query
+  type InTheaterFilm = Awaited<ReturnType<typeof prisma.film.findMany<{
+    where: { status: 'ACTIVE', nowPlaying: true }
+    include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } }
+    take: 20
+    orderBy: { releaseDate: 'desc' }
+  }>>>
+  type TickerFilm = Awaited<ReturnType<typeof prisma.film.findMany<{
+    where: { status: 'ACTIVE', nowPlaying: true, sentimentGraph: { isNot: null } }
+    include: { sentimentGraph: { select: { overallScore: true, previousScore: true, dataPoints: true } } }
+    take: 20
+    orderBy: { updatedAt: 'desc' }
+  }>>>
+
+  let recentFilmsResult: InTheaterFilm
+  let allGraphFilmsResult: TickerFilm
+  let topRatedFilmsResult: any[]
+  let pinnedTopRatedResult: any[]
+  let allSwingFilmsResult: any[]
+  let pinnedSwingsResult: any[]
+  let pinnedInTheatersResult: any[]
+  let allGenresResult: { genres: string[] }[]
+
+  const cachedHomepage = await cacheGet<HomepageData>(KEYS.homepage('data'))
+  if (cachedHomepage) {
+    recentFilmsResult = cachedHomepage.recentFilms
+    allGraphFilmsResult = cachedHomepage.allGraphFilms
+    topRatedFilmsResult = cachedHomepage.topRatedFilms
+    pinnedTopRatedResult = cachedHomepage.pinnedTopRated
+    allSwingFilmsResult = cachedHomepage.allSwingFilms
+    pinnedSwingsResult = cachedHomepage.pinnedSwings
+    pinnedInTheatersResult = cachedHomepage.pinnedInTheaters
+    allGenresResult = cachedHomepage.allGenres
+  } else {
+    const results = await Promise.all([
+      // In Theaters: films with nowPlaying flag
+      sections.inTheaters
+        ? prisma.film.findMany({
+            where: { status: 'ACTIVE', nowPlaying: true },
+            include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
+            take: 20,
+            orderBy: { releaseDate: 'desc' },
+          })
+        : Promise.resolve([] as InTheaterFilm),
+      // For ticker: now playing films with graphs
+      prisma.film.findMany({
+        where: { status: 'ACTIVE', nowPlaying: true, sentimentGraph: { isNot: null } },
+        include: {
+          sentimentGraph: { select: { overallScore: true, previousScore: true, dataPoints: true } },
+        },
+        take: 20,
+        orderBy: { updatedAt: 'desc' },
+      }),
+      // Top rated by sentiment
+      sections.topRated
+        ? prisma.film.findMany({
+            where: { status: 'ACTIVE', sentimentGraph: { isNot: null }, pinnedSection: { not: 'topRated' } },
+            include: {
+              sentimentGraph: { select: { overallScore: true, dataPoints: true } },
+            },
+            take: 10,
+            orderBy: { sentimentGraph: { overallScore: 'desc' } },
+          })
+        : Promise.resolve([]),
+      // Pinned to top rated
+      sections.topRated
+        ? prisma.film.findMany({
+            where: { status: 'ACTIVE', pinnedSection: 'topRated', sentimentGraph: { isNot: null } },
+            include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
+          })
+        : Promise.resolve([]),
+      // For biggest swings calculation
+      sections.biggestSwings
+        ? prisma.film.findMany({
+            where: { status: 'ACTIVE', sentimentGraph: { isNot: null } },
+            include: {
+              sentimentGraph: { select: { overallScore: true, dataPoints: true, peakMoment: true, lowestMoment: true } },
+            },
+          })
+        : Promise.resolve([]),
+      // Pinned to biggest swings
+      sections.biggestSwings
+        ? prisma.film.findMany({
+            where: { status: 'ACTIVE', pinnedSection: 'biggestSwings', sentimentGraph: { isNot: null } },
+            include: {
+              sentimentGraph: { select: { overallScore: true, dataPoints: true, peakMoment: true, lowestMoment: true } },
+            },
+          })
+        : Promise.resolve([]),
+      // Pinned to in theaters
+      sections.inTheaters
+        ? prisma.film.findMany({
+            where: { status: 'ACTIVE', pinnedSection: 'inTheaters' },
+            include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
+          })
+        : Promise.resolve([]),
+      // All genres
+      sections.browseByGenre
+        ? prisma.film.findMany({ where: { status: 'ACTIVE' }, select: { genres: true } })
+        : Promise.resolve([]),
+    ])
+
+    recentFilmsResult = results[0] as InTheaterFilm
+    allGraphFilmsResult = results[1] as TickerFilm
+    topRatedFilmsResult = results[2]
+    pinnedTopRatedResult = results[3]
+    allSwingFilmsResult = results[4]
+    pinnedSwingsResult = results[5]
+    pinnedInTheatersResult = results[6]
+    allGenresResult = results[7] as { genres: string[] }[]
+
+    await cacheSet(KEYS.homepage('data'), {
+      recentFilms: recentFilmsResult,
+      allGraphFilms: allGraphFilmsResult,
+      topRatedFilms: topRatedFilmsResult,
+      pinnedTopRated: pinnedTopRatedResult,
+      allSwingFilms: allSwingFilmsResult,
+      pinnedSwings: pinnedSwingsResult,
+      pinnedInTheaters: pinnedInTheatersResult,
+      allGenres: allGenresResult,
+    })
+  }
+
+  const recentFilms = recentFilmsResult
+  const allGraphFilms = allGraphFilmsResult
+  const topRatedFilms = topRatedFilmsResult
+  const pinnedTopRated = pinnedTopRatedResult
+  const allSwingFilms = allSwingFilmsResult
+  const pinnedSwings = pinnedSwingsResult
+  const pinnedInTheaters = pinnedInTheatersResult
+  const allGenres = allGenresResult
 
   // Merge pinned + regular for In Theaters (pinned first, no duplicates)
   const pinnedInTheaterIds = new Set(pinnedInTheaters.map((f) => f.id))

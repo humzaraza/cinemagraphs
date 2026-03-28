@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
+import { invalidateFilmCache, invalidateHomepageCache } from '@/lib/cache'
 
 export async function PATCH(
   request: NextRequest,
@@ -29,6 +30,13 @@ export async function PATCH(
         flagReason: status === 'approved' ? null : undefined,
       },
     })
+
+    if (status === 'approved') {
+      await Promise.all([
+        invalidateFilmCache(review.filmId),
+        invalidateHomepageCache(),
+      ])
+    }
 
     return NextResponse.json(review)
   } catch (err) {
