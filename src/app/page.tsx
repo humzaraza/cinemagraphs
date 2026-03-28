@@ -22,6 +22,11 @@ interface SectionVisibility {
   browseByGenre: boolean
 }
 
+function toISO(date: Date | string | null | undefined): string | null {
+  if (!date) return null
+  return typeof date === 'string' ? date : date.toISOString()
+}
+
 export default async function HomePage() {
   // Load section visibility settings (lightweight, not cached)
   const cachedSections = await cacheGet<SectionVisibility>(KEYS.homepage('sections'))
@@ -262,7 +267,7 @@ export default async function HomePage() {
     .map((f, i) => ({
       id: f.id,
       title: f.title,
-      releaseDate: f.releaseDate?.toISOString() ?? null,
+      releaseDate: toISO(f.releaseDate),
       runtime: f.runtime,
       director: f.director,
       genres: f.genres,
@@ -371,7 +376,7 @@ export default async function HomePage() {
                   id={film.id}
                   title={film.title}
                   posterUrl={film.posterUrl}
-                  releaseDate={film.releaseDate?.toISOString() ?? null}
+                  releaseDate={toISO(film.releaseDate)}
                   genres={film.genres}
                   sentimentScore={film.sentimentGraph?.overallScore}
                   graphDataPoints={film.sentimentGraph?.dataPoints as unknown as { timeMidpoint: number; score: number }[] | null}
@@ -404,7 +409,7 @@ export default async function HomePage() {
                   id={film.id}
                   title={film.title}
                   posterUrl={film.posterUrl}
-                  releaseDate={film.releaseDate?.toISOString() ?? null}
+                  releaseDate={toISO(film.releaseDate)}
                   genres={film.genres}
                   sentimentScore={film.sentimentGraph?.overallScore}
                   graphDataPoints={film.sentimentGraph?.dataPoints as unknown as { timeMidpoint: number; score: number }[] | null}
@@ -461,7 +466,7 @@ export default async function HomePage() {
                   id={film.id}
                   title={film.title}
                   posterUrl={film.posterUrl}
-                  releaseDate={film.releaseDate?.toISOString() ?? null}
+                  releaseDate={toISO(film.releaseDate)}
                   genres={film.genres}
                   sentimentScore={film.sentimentGraph?.overallScore}
                   graphDataPoints={film.sentimentGraph?.dataPoints as unknown as { timeMidpoint: number; score: number }[] | null}
