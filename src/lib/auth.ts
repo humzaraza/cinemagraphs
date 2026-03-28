@@ -27,7 +27,6 @@ export const authOptions: NextAuthOptions = {
     AppleProvider({
       clientId: process.env.APPLE_ID!,
       clientSecret: process.env.APPLE_SECRET!,
-      checks: ['nonce'],
     }),
     CredentialsProvider({
       name: 'Email',
@@ -53,6 +52,28 @@ export const authOptions: NextAuthOptions = {
       },
     }),
   ],
+  cookies: {
+    pkceCodeVerifier: {
+      name: '__Secure-next-auth.pkce.code_verifier',
+      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+    },
+    state: {
+      name: '__Secure-next-auth.state',
+      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+    },
+    nonce: {
+      name: '__Secure-next-auth.nonce',
+      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+    },
+    callbackUrl: {
+      name: '__Secure-next-auth.callback-url',
+      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+    },
+    csrfToken: {
+      name: '__Host-next-auth.csrf-token',
+      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+    },
+  },
   session: {
     strategy: 'jwt',
   },
