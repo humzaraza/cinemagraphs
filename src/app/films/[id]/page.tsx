@@ -109,12 +109,12 @@ export default async function FilmPage({
               <p className="text-cinema-cream/80 leading-relaxed mb-6">{film.synopsis}</p>
             )}
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 mb-8">
               {trailerKey && <TrailerButton trailerKey={trailerKey} />}
               <WatchlistButton
                 filmId={film.id}
                 size="md"
-                className="flex items-center gap-2 text-sm text-cinema-gold border border-cinema-gold/30 px-4 py-2 rounded-lg hover:bg-cinema-gold/10 transition-colors"
+                className="inline-flex items-center justify-center border border-cinema-gold/30 text-cinema-gold px-3.5 py-2.5 rounded-lg hover:bg-cinema-gold/10 hover:border-cinema-gold transition-colors"
               />
             </div>
           </div>
