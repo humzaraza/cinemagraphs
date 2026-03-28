@@ -111,6 +111,7 @@ export async function GET(
       user: {
         id: user.id,
         name: displayName,
+        rawName: user.name,
         username: user.username,
         email: user.email,
         image: user.image,

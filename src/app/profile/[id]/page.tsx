@@ -55,6 +55,7 @@ interface ProfileData {
   user: {
     id: string
     name: string | null
+    rawName: string | null
     username: string | null
     email: string
     image: string | null
@@ -343,7 +344,7 @@ export default function ProfilePage() {
       {/* Edit Profile Modal */}
       {editOpen && (
         <EditProfileModal
-          currentName={user.name || ''}
+          currentName={user.rawName || ''}
           currentUsername={user.username || ''}
           currentBio={user.bio || ''}
           currentImage={user.image || ''}

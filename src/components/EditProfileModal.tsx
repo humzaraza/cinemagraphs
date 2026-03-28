@@ -70,15 +70,21 @@ export default function EditProfileModal({
         imageUrl = data.url
       }
 
+      // Only send fields that changed
+      const payload: Record<string, string | null> = {
+        name: name.trim() || null,
+        username: username.trim() || null,
+        bio: bio.trim() || null,
+      }
+      // Only include image if the user uploaded a new one
+      if (imageFile) {
+        payload.image = imageUrl || null
+      }
+
       const res = await fetch('/api/user/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim() || null,
-          username: username.trim() || null,
-          bio: bio.trim() || null,
-          image: imageUrl || null,
-        }),
+        body: JSON.stringify(payload),
       })
 
       if (!res.ok) {
