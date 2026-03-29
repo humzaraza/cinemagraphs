@@ -17,13 +17,26 @@ export default function ShareModal({ reviewId, filmTitle, onClose }: Props) {
     setError(null)
     try {
       const res = await fetch(`/api/share/review/${reviewId}?style=${style}`)
+      console.log('[ShareModal] Response:', res.status, res.headers.get('content-type'))
       if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        setError(data?.error || 'Failed to generate share image. Please try again.')
+        const text = await res.text()
+        console.error('[ShareModal] Error response body:', text)
+        let errorMsg = 'Failed to generate share image. Please try again.'
+        try { const data = JSON.parse(text); if (data?.error) errorMsg = data.error } catch {}
+        setError(errorMsg)
+        return
+      }
+
+      const contentType = res.headers.get('content-type') || ''
+      if (!contentType.includes('image')) {
+        const text = await res.text()
+        console.error('[ShareModal] Expected image, got:', contentType, text.slice(0, 200))
+        setError('Server returned unexpected response. Please try again.')
         return
       }
 
       const blob = await res.blob()
+      console.log('[ShareModal] Blob size:', blob.size, 'type:', blob.type)
       const file = new File([blob], 'my-review.png', { type: 'image/png' })
 
       if (navigator.share && navigator.canShare?.({ files: [file] })) {

@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: ".",
   },
-  serverExternalPackages: ["@vercel/og"],
+  serverExternalPackages: ["sharp"],
   images: {
     remotePatterns: [
       {
