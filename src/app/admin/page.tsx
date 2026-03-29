@@ -7,6 +7,7 @@ import AdminAnalyze from '@/components/AdminAnalyze'
 import AdminHomepageCuration from '@/components/AdminHomepageCuration'
 import AdminReviews from '@/components/AdminReviews'
 import AdminFeedback from '@/components/AdminFeedback'
+import AdminUsers from '@/components/AdminUsers'
 import AdminTabs from '@/components/AdminTabs'
 
 export const dynamic = 'force-dynamic'
@@ -18,12 +19,13 @@ export default async function AdminPage() {
     redirect('/auth/signin')
   }
 
-  const [filmCount, reviewCount, graphCount, flaggedReviewCount, feedbackCount] = await Promise.all([
+  const [filmCount, reviewCount, graphCount, flaggedReviewCount, feedbackCount, userCount] = await Promise.all([
     prisma.film.count(),
     prisma.review.count(),
     prisma.sentimentGraph.count(),
     prisma.userReview.count({ where: { status: 'flagged' } }),
     prisma.feedback.count(),
+    prisma.user.count(),
   ])
 
   const allFilms = await prisma.film.findMany({
@@ -104,6 +106,12 @@ export default async function AdminPage() {
                     {filmCount - graphCount}
                   </p>
                 </div>
+                <div className="bg-cinema-card border border-cinema-border rounded-lg p-4">
+                  <p className="text-sm text-cinema-muted">Total Users</p>
+                  <p className="font-[family-name:var(--font-bebas)] text-3xl text-cinema-teal">
+                    {userCount}
+                  </p>
+                </div>
               </div>
             ),
           },
@@ -147,6 +155,13 @@ export default async function AdminPage() {
             label: `Feedback${feedbackCount > 0 ? ` (${feedbackCount})` : ''}`,
             content: (
               <AdminFeedback />
+            ),
+          },
+          {
+            id: 'users',
+            label: `Users (${userCount})`,
+            content: (
+              <AdminUsers />
             ),
           },
         ]}

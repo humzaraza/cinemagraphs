@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { maybeBlendAndUpdate } from '@/lib/review-blender'
 import { apiLogger } from '@/lib/logger'
+import { checkSuspension } from '@/lib/middleware'
 
 const REACTION_WEIGHTS: Record<string, number> = {
   up: 0.5,
@@ -24,6 +25,9 @@ export async function POST(
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
+
+  const suspended = await checkSuspension(session.user.id)
+  if (suspended) return suspended
 
   const { id: filmId } = await params
   const body = await request.json()

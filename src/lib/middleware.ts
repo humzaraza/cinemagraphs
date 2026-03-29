@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from './auth'
+import { prisma } from './prisma'
 import type { UserRole } from '@/generated/prisma/client'
 
 export interface AuthResult {
@@ -81,4 +82,25 @@ export async function requireModerator(): Promise<AuthResult> {
  */
 export async function requireUser(): Promise<AuthResult> {
   return requireRole('USER' as UserRole)
+}
+
+/**
+ * Check if a user is currently suspended. Returns a Response if suspended, null otherwise.
+ */
+export async function checkSuspension(userId: string): Promise<Response | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { suspendedUntil: true },
+  })
+  if (user?.suspendedUntil && new Date(user.suspendedUntil) > new Date()) {
+    return Response.json(
+      {
+        error: 'Your account is temporarily suspended',
+        suspendedUntil: user.suspendedUntil.toISOString(),
+        code: 'SUSPENDED',
+      },
+      { status: 403 }
+    )
+  }
+  return null
 }

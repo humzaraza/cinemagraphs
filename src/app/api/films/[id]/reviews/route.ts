@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { extractSentiment } from '@/lib/sentiment-extract'
 import { maybeBlendAndUpdate } from '@/lib/review-blender'
 import { apiLogger } from '@/lib/logger'
+import { checkSuspension } from '@/lib/middleware'
 
 const GIBBERISH_REGEX = /(.)\1{5,}|^[a-z]{1,3}(\s[a-z]{1,3}){10,}$/i
 
@@ -62,6 +63,9 @@ export async function POST(
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
+
+    const suspended = await checkSuspension(session.user.id)
+    if (suspended) return suspended
 
     const { id: filmId } = await params
 
