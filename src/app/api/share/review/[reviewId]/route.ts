@@ -24,9 +24,9 @@ async function loadFonts(): Promise<{ playfair: ArrayBuffer; dmSans: ArrayBuffer
   }
 
   const [playfairRes, dmSansRes, dmSansItalicRes] = await Promise.all([
-    fetch('https://fonts.gstatic.com/s/playfairdisplay/v37/nuFvD-vYSZviVYUb_rj3ij__anPXJzDwcbmjWBN2PKdFvXDXbtM.woff'),
-    fetch('https://fonts.gstatic.com/s/dmsans/v15/rP2Hp2ywxg089UriCZOIHQ.woff'),
-    fetch('https://fonts.gstatic.com/s/dmsans/v15/rP2Fp2ywxg089UriCZaIGDWCBl0O8Q.woff'),
+    fetch('https://fonts.gstatic.com/s/playfairdisplay/v40/nuFvD-vYSZviVYUb_rj3ij__anPXJzDwcbmjWBN2PKeiukDQ.ttf'),
+    fetch('https://fonts.gstatic.com/s/dmsans/v17/rP2rp2ywxg089UriCZaSExd86J3t9jz86Mvy4qCRAL19DksVat-JDW3z.ttf'),
+    fetch('https://fonts.gstatic.com/s/dmsans/v17/rP2tp2ywxg089UriI5-g4vlH9VoD8CmcqZG40F9JadbnoEwAopxhTg.ttf'),
   ])
 
   fontCache.playfair = await playfairRes.arrayBuffer()
