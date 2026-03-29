@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { apiLogger } from '@/lib/logger'
-import { writeFile, mkdir } from 'fs/promises'
-import path from 'path'
-import crypto from 'crypto'
+import { put } from '@vercel/blob'
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,19 +29,21 @@ export async function POST(request: NextRequest) {
     }
 
     const ext = file.type === 'image/png' ? '.png' : '.jpg'
-    const filename = `avatar-${session.user.id}-${crypto.randomBytes(8).toString('hex')}${ext}`
+    const filename = `avatars/${session.user.id}${ext}`
 
-    // Save to public/avatars
-    const avatarDir = path.join(process.cwd(), 'public', 'avatars')
-    await mkdir(avatarDir, { recursive: true })
+    // Upload to Vercel Blob
+    const blob = await put(filename, file, {
+      access: 'public',
+      addRandomSuffix: true,
+    })
 
-    const buffer = Buffer.from(await file.arrayBuffer())
-    await writeFile(path.join(avatarDir, filename), buffer)
-
-    const url = `/avatars/${filename}`
-    return NextResponse.json({ url })
+    return NextResponse.json({ url: blob.url })
   } catch (err) {
     apiLogger.error({ err }, 'Failed to upload avatar')
-    return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json(
+      { error: 'Failed to upload image.', _debug: { message } },
+      { status: 500 }
+    )
   }
 }
