@@ -8,7 +8,7 @@ interface Props {
   onClose: () => void
 }
 
-type StyleOption = 'cinematic-card' | 'frosted-story'
+type StyleOption = 'cinematic-overlay' | 'graph-hero'
 
 export default function ShareModal({ reviewId, filmTitle, onClose }: Props) {
   const [sharing, setSharing] = useState<StyleOption | null>(null)
@@ -99,9 +99,9 @@ export default function ShareModal({ reviewId, filmTitle, onClose }: Props) {
         )}
 
         <div className="grid grid-cols-2 gap-4">
-          {/* Cinematic Card */}
+          {/* Cinematic Overlay */}
           <button
-            onClick={() => share('cinematic-card')}
+            onClick={() => share('cinematic-overlay')}
             disabled={sharing !== null}
             className="group rounded-lg overflow-hidden transition-all"
             style={{
@@ -110,47 +110,58 @@ export default function ShareModal({ reviewId, filmTitle, onClose }: Props) {
             }}
           >
             <div className="aspect-[9/16] flex flex-col relative" style={{ backgroundColor: '#0f1117' }}>
-              {/* Poster strip top */}
+              {/* Poster gradient background */}
               <div
-                className="w-full"
+                className="absolute inset-0"
                 style={{
-                  height: '25%',
-                  background: 'linear-gradient(to bottom, rgba(200,169,110,0.2), #0f1117)',
+                  background: 'linear-gradient(to bottom, rgba(200,169,110,0.15) 0%, rgba(15,17,23,0.5) 35%, rgba(15,17,23,0.9) 55%, rgba(15,17,23,0.98) 70%)',
                 }}
               />
-              {/* Title + score row */}
-              <div className="flex justify-between items-start px-3 mt-1">
-                <div>
-                  <div className="text-[8px] font-bold" style={{ color: '#f5f0e8' }}>Film Title</div>
-                  <div className="text-[6px] mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>2024 &middot; Director</div>
-                </div>
-                <span className="font-[family-name:var(--font-playfair)] text-lg font-bold" style={{ color: '#c8a96e' }}>
-                  8.5
-                </span>
+              {/* Top bar: branding + score */}
+              <div className="relative flex justify-between items-start px-3 pt-2">
+                <span className="text-[5px] font-bold tracking-widest" style={{ color: '#c8a96e' }}>CINEMAGRAPHS</span>
+                <span className="font-[family-name:var(--font-playfair)] text-sm font-bold" style={{ color: '#c8a96e' }}>8.5</span>
+              </div>
+              {/* Poster visible area (middle) */}
+              <div className="flex-1" />
+              {/* Title + meta in lower-middle */}
+              <div className="relative px-3">
+                <div className="text-[7px] font-bold leading-tight" style={{ color: '#f5f0e8' }}>Film Title</div>
+                <div className="text-[5px] mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>2024 &middot; Director</div>
               </div>
               {/* SENTIMENT ARC label */}
-              <div className="px-3 mt-1.5">
-                <div className="text-[5px] font-bold tracking-widest" style={{ color: '#c8a96e' }}>SENTIMENT ARC</div>
+              <div className="relative px-3 mt-1">
+                <div className="text-[4px] font-bold tracking-widest" style={{ color: '#c8a96e' }}>SENTIMENT ARC</div>
               </div>
-              {/* Graph panel */}
-              <div className="mx-2 mt-1 rounded flex-1 flex items-center justify-center" style={{ backgroundColor: '#181b24', border: '1px solid rgba(200,169,110,0.1)' }}>
+              {/* Graph in semi-transparent panel with gold glow */}
+              <div
+                className="relative mx-2 mt-0.5 rounded flex items-center justify-center"
+                style={{
+                  backgroundColor: 'rgba(15,17,23,0.75)',
+                  border: '1px solid rgba(200,169,110,0.2)',
+                  boxShadow: '0 0 8px rgba(200,169,110,0.1)',
+                  height: '20%',
+                }}
+              >
                 <svg viewBox="0 0 100 40" className="w-4/5 h-3/5">
                   <line x1="5" y1="20" x2="95" y2="20" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" strokeDasharray="3 2" />
-                  <path d="M5,32 L20,25 L40,15 L55,22 L70,10 L85,18 L95,14" fill="none" stroke="#c8a96e" strokeWidth="1.5" />
+                  <path d="M5,32 L20,25 L40,15 L55,22 L70,10 L85,18 L95,14" fill="rgba(200,169,110,0.08)" stroke="#c8a96e" strokeWidth="1.5" />
                 </svg>
               </div>
               {/* Quote */}
-              <div className="px-3 mt-1.5">
-                <div className="text-[6px] italic" style={{ color: 'rgba(255,255,255,0.5)' }}>&ldquo;Great film...&rdquo;</div>
-                <div className="text-[5px] text-right mt-0.5" style={{ color: '#c8a96e' }}>&mdash; User</div>
+              <div className="relative flex mx-3 mt-1">
+                <div className="w-0.5 rounded-full mr-1.5 flex-shrink-0" style={{ backgroundColor: '#c8a96e' }} />
+                <div>
+                  <div className="text-[5px] italic" style={{ color: 'rgba(255,255,255,0.5)' }}>&ldquo;Great film...&rdquo;</div>
+                  <div className="text-[4px] mt-0.5 text-right" style={{ color: '#c8a96e' }}>&mdash; User</div>
+                </div>
               </div>
               {/* Footer */}
-              <div className="flex justify-between items-center px-3 pb-1.5 mt-auto">
-                <span className="text-[6px] font-bold" style={{ color: '#c8a96e' }}>Cinemagraphs</span>
+              <div className="relative text-center py-1">
                 <span className="text-[5px]" style={{ color: 'rgba(255,255,255,0.3)' }}>cinemagraphs.ca</span>
               </div>
               <div className="w-full h-0.5" style={{ backgroundColor: '#c8a96e' }} />
-              {sharing === 'cinematic-card' && (
+              {sharing === 'cinematic-overlay' && (
                 <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                   <div className="w-6 h-6 border-2 border-cinema-gold border-t-transparent rounded-full animate-spin" />
                 </div>
@@ -158,14 +169,14 @@ export default function ShareModal({ reviewId, filmTitle, onClose }: Props) {
             </div>
             <div className="p-2 text-center border-t" style={{ borderColor: 'rgba(200,169,110,0.1)' }}>
               <span className="text-sm text-cinema-cream group-hover:text-cinema-gold transition-colors">
-                Cinematic Card
+                Cinematic Overlay
               </span>
             </div>
           </button>
 
-          {/* Frosted Story */}
+          {/* Graph Hero */}
           <button
-            onClick={() => share('frosted-story')}
+            onClick={() => share('graph-hero')}
             disabled={sharing !== null}
             className="group rounded-lg overflow-hidden transition-all"
             style={{
@@ -174,44 +185,67 @@ export default function ShareModal({ reviewId, filmTitle, onClose }: Props) {
             }}
           >
             <div className="aspect-[9/16] flex flex-col relative" style={{ backgroundColor: '#0f1117' }}>
-              {/* Full-bleed poster with gradient */}
+              {/* Lighter gradient — poster more visible */}
               <div
                 className="absolute inset-0"
                 style={{
-                  background: 'linear-gradient(to bottom, rgba(200,169,110,0.12), rgba(15,17,23,0.85) 45%, rgba(15,17,23,0.98) 65%)',
+                  background: 'linear-gradient(to bottom, rgba(200,169,110,0.08) 0%, rgba(15,17,23,0.3) 30%, rgba(15,17,23,0.7) 50%, rgba(15,17,23,0.95) 70%)',
                 }}
               />
-              {/* Top bar */}
-              <div className="relative flex justify-between items-start px-3 pt-2">
+              {/* Top branding centered */}
+              <div className="relative text-center pt-2">
                 <span className="text-[5px] font-bold tracking-widest" style={{ color: '#c8a96e' }}>CINEMAGRAPHS</span>
-                <span className="font-[family-name:var(--font-playfair)] text-xl font-bold" style={{ color: '#c8a96e' }}>8.5</span>
               </div>
-              {/* Title area */}
-              <div className="relative px-3 mt-auto mb-0">
-                <div className="text-[10px] font-bold leading-tight" style={{ color: '#f5f0e8' }}>Film Title</div>
-                <div className="text-[6px] mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>2024 &middot; Director</div>
+              {/* Poster visible area (larger) */}
+              <div className="flex-1" />
+              {/* Title + score on same row */}
+              <div className="relative flex justify-between items-baseline px-3">
+                <div>
+                  <div className="text-[8px] font-bold leading-tight" style={{ color: '#f5f0e8' }}>Film Title</div>
+                  <div className="text-[5px] mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>2024 &middot; Director</div>
+                </div>
+                <span className="font-[family-name:var(--font-playfair)] text-[8px] font-bold" style={{ color: '#c8a96e' }}>8.5</span>
               </div>
-              {/* Graph */}
-              <div className="relative mx-2 mt-1.5 rounded flex items-center justify-center" style={{ backgroundColor: 'rgba(24,27,36,0.85)', border: '1px solid rgba(200,169,110,0.12)', height: '22%' }}>
-                <svg viewBox="0 0 100 40" className="w-4/5 h-3/5">
-                  <line x1="5" y1="20" x2="95" y2="20" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" strokeDasharray="3 2" />
-                  <path d="M5,32 L20,25 L40,15 L55,22 L70,10 L85,18 L95,14" fill="none" stroke="#c8a96e" strokeWidth="1.5" />
+              {/* SENTIMENT ARC label */}
+              <div className="relative px-3 mt-1">
+                <div className="text-[4px] font-bold tracking-widest" style={{ color: '#c8a96e' }}>SENTIMENT ARC</div>
+              </div>
+              {/* Borderless graph — no container, floating */}
+              <div className="relative mx-2 mt-0.5 flex items-center justify-center" style={{ height: '24%' }}>
+                <svg viewBox="0 0 100 50" className="w-4/5 h-4/5">
+                  {/* Faint grid lines */}
+                  <line x1="5" y1="10" x2="95" y2="10" stroke="rgba(255,255,255,0.05)" strokeWidth="0.3" />
+                  <line x1="5" y1="20" x2="95" y2="20" stroke="rgba(255,255,255,0.05)" strokeWidth="0.3" />
+                  <line x1="5" y1="30" x2="95" y2="30" stroke="rgba(255,255,255,0.05)" strokeWidth="0.3" />
+                  <line x1="5" y1="40" x2="95" y2="40" stroke="rgba(255,255,255,0.05)" strokeWidth="0.3" />
+                  {/* Area fill + line */}
+                  <path d="M5,42 L20,33 L40,18 L55,28 L70,12 L85,22 L95,17 L95,50 L5,50 Z" fill="rgba(200,169,110,0.12)" />
+                  <path d="M5,42 L20,33 L40,18 L55,28 L70,12 L85,22 L95,17" fill="none" stroke="#c8a96e" strokeWidth="1.8" />
+                  {/* Dots with glow */}
+                  <circle cx="5" cy="42" r="2.5" fill="rgba(200,169,110,0.3)" />
+                  <circle cx="5" cy="42" r="1.5" fill="#c8a96e" />
+                  <circle cx="40" cy="18" r="2.5" fill="rgba(200,169,110,0.3)" />
+                  <circle cx="40" cy="18" r="1.5" fill="#c8a96e" />
+                  <circle cx="70" cy="12" r="2.5" fill="rgba(200,169,110,0.3)" />
+                  <circle cx="70" cy="12" r="1.5" fill="#c8a96e" />
+                  <circle cx="95" cy="17" r="2.5" fill="rgba(200,169,110,0.3)" />
+                  <circle cx="95" cy="17" r="1.5" fill="#c8a96e" />
                 </svg>
               </div>
-              {/* Quote card with gold border */}
-              <div className="relative flex mx-3 mt-1.5 mb-2">
+              {/* Compact quote */}
+              <div className="relative flex mx-3 mt-0.5 mb-1">
                 <div className="w-0.5 rounded-full mr-1.5 flex-shrink-0" style={{ backgroundColor: '#c8a96e' }} />
                 <div>
-                  <div className="text-[6px] italic" style={{ color: 'rgba(255,255,255,0.5)' }}>&ldquo;Great film...&rdquo;</div>
-                  <div className="text-[5px] mt-0.5" style={{ color: '#c8a96e' }}>&mdash; User</div>
+                  <div className="text-[5px] italic" style={{ color: 'rgba(255,255,255,0.45)' }}>&ldquo;Great film...&rdquo;</div>
+                  <div className="text-[4px] mt-0.5 text-right" style={{ color: '#c8a96e' }}>&mdash; User</div>
                 </div>
               </div>
-              {/* Bottom branding */}
-              <div className="relative text-center pb-1.5">
+              {/* Footer */}
+              <div className="relative text-center py-1">
                 <span className="text-[5px]" style={{ color: 'rgba(255,255,255,0.3)' }}>cinemagraphs.ca</span>
               </div>
               <div className="w-full h-0.5" style={{ backgroundColor: '#c8a96e' }} />
-              {sharing === 'frosted-story' && (
+              {sharing === 'graph-hero' && (
                 <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                   <div className="w-6 h-6 border-2 border-cinema-gold border-t-transparent rounded-full animate-spin" />
                 </div>
@@ -219,7 +253,7 @@ export default function ShareModal({ reviewId, filmTitle, onClose }: Props) {
             </div>
             <div className="p-2 text-center border-t" style={{ borderColor: 'rgba(200,169,110,0.1)' }}>
               <span className="text-sm text-cinema-cream group-hover:text-cinema-gold transition-colors">
-                Frosted Story
+                Graph Hero
               </span>
             </div>
           </button>

@@ -46,7 +46,6 @@ function truncateAtWord(text: string, maxLen: number): string {
 }
 
 // Build user's sentiment data points from their beatRatings
-// Uses sentimentGraph labels for ordering, maps to user's scores
 function buildUserDataPoints(
   beatRatings: Record<string, number> | null,
   graphLabels: { label: string; score: number }[]
@@ -78,7 +77,7 @@ function yForScore(score: number, h: number): number {
   return h - ((score - 1) / 9) * h
 }
 
-// Build graph panel: Y-axis labels as divs + SVG chart
+// Build graph panel with Y-axis labels + SVG chart (for Cinematic Overlay — with container)
 function buildGraphPanel(
   points: { score: number }[],
   gw: number,
@@ -98,7 +97,7 @@ function buildGraphPanel(
     })
   )
 
-  // Fill under curve
+  // Fill under curve with gold tint
   if (fillPath) {
     svgChildren.push(
       React.createElement('path', { key: 'fill', d: fillPath, fill: `${GOLD}18` })
@@ -147,6 +146,81 @@ function buildGraphPanel(
   )
 }
 
+// Build borderless graph (for Graph Hero — no container, faint grid lines, gold area gradient)
+function buildBorderlessGraph(
+  points: { score: number }[],
+  gw: number,
+  gh: number
+): React.ReactElement {
+  const linePath = buildLinePath(points, gw, gh)
+  const fillPath = buildFillPath(points, gw, gh)
+
+  const svgChildren: React.ReactElement[] = []
+
+  // Faint horizontal grid lines at scores 2, 4, 6, 8, 10
+  for (const score of [2, 4, 6, 8, 10]) {
+    const y = yForScore(score, gh)
+    svgChildren.push(
+      React.createElement('line', {
+        key: `grid${score}`, x1: 0, y1: y, x2: gw, y2: y,
+        stroke: 'rgba(255,255,255,0.06)', strokeWidth: 1,
+      })
+    )
+  }
+
+  // Gold area fill gradient (solid at bottom, fading up)
+  if (fillPath) {
+    svgChildren.push(
+      React.createElement('path', { key: 'fill', d: fillPath, fill: `${GOLD}20` })
+    )
+  }
+
+  // Gold line — slightly thicker
+  if (linePath) {
+    svgChildren.push(
+      React.createElement('path', { key: 'line', d: linePath, fill: 'none', stroke: GOLD, strokeWidth: 4 })
+    )
+  }
+
+  // Dots — slightly larger
+  points.forEach((dp, i) => {
+    const px = (i / (points.length - 1)) * gw
+    const py = gh - ((dp.score - 1) / 9) * gh
+    // Outer glow
+    svgChildren.push(
+      React.createElement('circle', { key: `glow${i}`, cx: px, cy: py, r: 10, fill: `${GOLD}30` })
+    )
+    svgChildren.push(
+      React.createElement('circle', { key: `d${i}`, cx: px, cy: py, r: 6, fill: GOLD })
+    )
+  })
+
+  // Y-axis labels
+  const yLabels = [10, 8, 6, 4, 2]
+  const labelEls = yLabels.map((val) => {
+    const topPct = ((10 - val) / 9) * 100
+    return React.createElement('div', {
+      key: `y${val}`,
+      style: {
+        position: 'absolute', left: 0, top: `${topPct}%`,
+        fontSize: 20, color: 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans',
+        width: 36, textAlign: 'right', marginTop: -10,
+      },
+    }, val.toString())
+  })
+
+  return React.createElement('div', {
+    style: { display: 'flex', flexDirection: 'row', width: '100%', height: '100%' },
+  },
+    React.createElement('div', {
+      style: { width: 48, position: 'relative', flexShrink: 0, display: 'flex', flexDirection: 'column' },
+    }, ...labelEls),
+    React.createElement('svg', {
+      width: gw, height: gh, viewBox: `0 0 ${gw} ${gh}`, style: { flex: 1 },
+    }, ...svgChildren)
+  )
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ reviewId: string }> }
@@ -159,7 +233,7 @@ export async function GET(
 
     const { reviewId } = await params
     const styleParam = request.nextUrl.searchParams.get('style')
-    const style = styleParam === 'frosted-story' ? 'frosted-story' : 'cinematic-card'
+    const style = styleParam === 'graph-hero' ? 'graph-hero' : 'cinematic-overlay'
 
     const review = await prisma.userReview.findUnique({
       where: { id: reviewId },
@@ -195,11 +269,11 @@ export async function GET(
     const username = review.user.name || review.user.email.split('@')[0]
     const beatRatings = review.beatRatings as Record<string, number> | null
     const graphLabels = (review.film.sentimentGraph?.dataPoints as { label: string; score: number }[]) || []
+    // Use portrait poster (2:3 ratio)
     const posterUrl = review.film.posterUrl
       ? `https://image.tmdb.org/t/p/w780${review.film.posterUrl}`
       : null
 
-    // Build user's sentiment data from their beat ratings
     const userPoints = buildUserDataPoints(beatRatings, graphLabels)
     const hasGraph = userPoints.length >= 2
 
@@ -207,16 +281,18 @@ export async function GET(
     let element: React.ReactElement
 
     const graphW = W - 200
-    const graphH = 360
 
-    // Helper: full-bleed poster + gradient overlay (shared by both styles)
-    function posterBg(): React.ReactElement[] {
+    // Shared poster background element
+    function posterBg(gradientStops: string): React.ReactElement[] {
       return [
         posterUrl
           ? React.createElement('img', {
               key: 'poster',
               src: posterUrl,
-              style: { position: 'absolute', top: 0, left: 0, width: W, height: H, objectFit: 'cover' },
+              style: {
+                position: 'absolute', top: 0, left: 0, width: W, height: H,
+                objectFit: 'cover', objectPosition: 'center top',
+              },
             })
           : React.createElement('div', {
               key: 'poster-fallback',
@@ -226,47 +302,53 @@ export async function GET(
           key: 'grad',
           style: {
             position: 'absolute', top: 0, left: 0, width: W, height: H,
-            background: 'linear-gradient(to bottom, rgba(15,17,23,0.2) 0%, rgba(15,17,23,0.55) 25%, rgba(15,17,23,0.85) 45%, rgba(15,17,23,0.95) 60%, rgba(15,17,23,0.98) 75%)',
+            background: gradientStops,
           },
         }),
       ]
     }
 
-    if (style === 'cinematic-card') {
+    if (style === 'cinematic-overlay') {
       // ──────────────────────────────────────────────
-      // Style A — Cinematic Card
-      // Full-bleed poster, "CINEMAGRAPHS" top-left, score top-right
-      // Title + meta in upper-middle, large graph lower-middle
-      // Quote with gold border below graph, cinemagraphs.ca bottom
+      // Style A — Cinematic Overlay
+      // Branding top-left, score 42px top-right
+      // Poster visible in middle section
+      // Title 24px + meta lower-middle
+      // Graph in semi-transparent panel with gold glow
+      // Quote below, "cinemagraphs.ca" centered bottom
       // ──────────────────────────────────────────────
+
+      const graphH = 360
 
       element = React.createElement('div', {
         style: { width: W, height: H, display: 'flex', flexDirection: 'column', backgroundColor: DARK, position: 'relative' },
       },
-        ...posterBg(),
+        ...posterBg(
+          'linear-gradient(to bottom, rgba(15,17,23,0.15) 0%, rgba(15,17,23,0.3) 20%, rgba(15,17,23,0.6) 40%, rgba(15,17,23,0.88) 55%, rgba(15,17,23,0.96) 70%, rgba(15,17,23,0.99) 85%)'
+        ),
 
         // Top bar: branding left, score right
         React.createElement('div', {
           style: { position: 'absolute', top: 60, left: 60, right: 60, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' },
         },
           React.createElement('div', {
-            style: { fontSize: 18, fontWeight: 700, color: GOLD, letterSpacing: 5, fontFamily: 'DM Sans', marginTop: 20 },
+            style: { fontSize: 18, fontWeight: 700, color: GOLD, letterSpacing: 5, fontFamily: 'DM Sans', marginTop: 12 },
           }, 'CINEMAGRAPHS'),
           React.createElement('div', {
-            style: { fontSize: 110, fontWeight: 700, color: GOLD, fontFamily: 'Playfair Display', lineHeight: 1 },
+            style: { fontSize: 42, fontWeight: 700, color: GOLD, fontFamily: 'Playfair Display', lineHeight: 1 },
           }, score.toFixed(1))
         ),
 
-        // Film title
+        // Film title + meta — lower middle area
         React.createElement('div', {
-          style: { position: 'absolute', top: 320, left: 60, right: 60, display: 'flex', flexDirection: 'column' },
+          style: { position: 'absolute', top: 960, left: 60, right: 60, display: 'flex', flexDirection: 'column' },
         },
           React.createElement('div', {
-            style: { fontSize: 56, fontWeight: 700, color: IVORY, fontFamily: 'Playfair Display', lineHeight: 1.15 },
+            style: { fontSize: 24, fontWeight: 700, color: IVORY, fontFamily: 'Playfair Display', lineHeight: 1.2 },
           }, filmTitle),
           (year || director)
             ? React.createElement('div', {
-                style: { fontSize: 26, color: 'rgba(255,255,255,0.5)', marginTop: 16, fontFamily: 'DM Sans' },
+                style: { fontSize: 20, color: 'rgba(255,255,255,0.45)', marginTop: 10, fontFamily: 'DM Sans' },
               }, [year, director].filter(Boolean).join('  \u00b7  '))
             : null
         ),
@@ -274,17 +356,18 @@ export async function GET(
         // "SENTIMENT ARC" label
         hasGraph
           ? React.createElement('div', {
-              style: { position: 'absolute', top: 580, left: 60, fontSize: 16, fontWeight: 700, color: GOLD, letterSpacing: 4, fontFamily: 'DM Sans' },
+              style: { position: 'absolute', top: 1060, left: 60, fontSize: 14, fontWeight: 700, color: GOLD, letterSpacing: 4, fontFamily: 'DM Sans' },
             }, 'SENTIMENT ARC')
           : null,
 
-        // Graph panel
+        // Graph in semi-transparent panel with gold glow border
         hasGraph
           ? React.createElement('div', {
               style: {
-                position: 'absolute', top: 620, left: 40, right: 40, height: graphH + 60,
-                backgroundColor: 'rgba(24,27,36,0.8)', borderRadius: 16,
-                border: '1px solid rgba(200,169,110,0.15)',
+                position: 'absolute', top: 1100, left: 40, right: 40, height: graphH + 60,
+                backgroundColor: 'rgba(15,17,23,0.75)', borderRadius: 16,
+                border: `1px solid ${GOLD}35`,
+                boxShadow: `0 0 30px ${GOLD}15, inset 0 0 20px ${GOLD}08`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '30px 20px',
               },
             }, buildGraphPanel(userPoints, graphW, graphH))
@@ -294,7 +377,7 @@ export async function GET(
         quoteText
           ? React.createElement('div', {
               style: {
-                position: 'absolute', top: hasGraph ? 1080 : 620, left: 60, right: 60,
+                position: 'absolute', top: hasGraph ? 1540 : 1100, left: 60, right: 60,
                 display: 'flex', flexDirection: 'row',
               },
             },
@@ -305,21 +388,21 @@ export async function GET(
                 style: { display: 'flex', flexDirection: 'column', flex: 1 },
               },
                 React.createElement('div', {
-                  style: { fontSize: 28, fontStyle: 'italic', color: 'rgba(255,255,255,0.6)', lineHeight: 1.5, fontFamily: 'DM Sans' },
+                  style: { fontSize: 26, fontStyle: 'italic', color: 'rgba(255,255,255,0.55)', lineHeight: 1.5, fontFamily: 'DM Sans' },
                 }, `\u201c${quoteText}\u201d`),
                 React.createElement('div', {
-                  style: { fontSize: 24, color: GOLD, marginTop: 16, fontFamily: 'DM Sans', alignSelf: 'flex-end' },
+                  style: { fontSize: 22, color: GOLD, marginTop: 12, fontFamily: 'DM Sans', alignSelf: 'flex-end' },
                 }, `\u2014 ${username}`)
               )
             )
           : null,
 
-        // Bottom branding
+        // Bottom: "cinemagraphs.ca" centered
         React.createElement('div', {
           style: { position: 'absolute', bottom: 55, left: 0, width: W, display: 'flex', justifyContent: 'center' },
         },
           React.createElement('div', {
-            style: { fontSize: 22, color: 'rgba(255,255,255,0.35)', fontFamily: 'DM Sans' },
+            style: { fontSize: 20, color: 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans' },
           }, 'cinemagraphs.ca')
         ),
 
@@ -331,70 +414,89 @@ export async function GET(
 
     } else {
       // ──────────────────────────────────────────────
-      // Style B — Frosted Story
-      // Full-bleed poster, title + score at top
-      // Larger graph sits lower, quote below, branding at bottom
+      // Style B — Graph Hero
+      // Lighter gradient (poster more visible)
+      // Branding at top, title + score same baseline row (28px)
+      // Borderless graph floating over poster — no container box
+      // Larger graph with faint grid lines and gold area fill
+      // Compact quote below
       // ──────────────────────────────────────────────
 
-      const graphHB = 400
+      const graphH = 480
 
       element = React.createElement('div', {
         style: { width: W, height: H, display: 'flex', flexDirection: 'column', backgroundColor: DARK, position: 'relative' },
       },
-        ...posterBg(),
+        ...posterBg(
+          'linear-gradient(to bottom, rgba(15,17,23,0.1) 0%, rgba(15,17,23,0.2) 25%, rgba(15,17,23,0.5) 45%, rgba(15,17,23,0.8) 60%, rgba(15,17,23,0.93) 75%, rgba(15,17,23,0.98) 90%)'
+        ),
 
-        // Top: title left, score right
+        // Top branding
         React.createElement('div', {
-          style: { position: 'absolute', top: 70, left: 60, right: 60, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' },
+          style: { position: 'absolute', top: 60, left: 60, right: 60, display: 'flex', justifyContent: 'center' },
         },
           React.createElement('div', {
-            style: { display: 'flex', flexDirection: 'column', flex: 1, marginRight: 30 },
+            style: { fontSize: 16, fontWeight: 700, color: GOLD, letterSpacing: 6, fontFamily: 'DM Sans' },
+          }, 'CINEMAGRAPHS')
+        ),
+
+        // Title + score on same baseline row
+        React.createElement('div', {
+          style: { position: 'absolute', top: 920, left: 60, right: 60, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' },
+        },
+          React.createElement('div', {
+            style: { display: 'flex', flexDirection: 'column', flex: 1, marginRight: 20 },
           },
             React.createElement('div', {
-              style: { fontSize: 52, fontWeight: 700, color: IVORY, fontFamily: 'Playfair Display', lineHeight: 1.15 },
+              style: { fontSize: 28, fontWeight: 700, color: IVORY, fontFamily: 'Playfair Display', lineHeight: 1.2 },
             }, filmTitle),
             (year || director)
               ? React.createElement('div', {
-                  style: { fontSize: 24, color: 'rgba(255,255,255,0.5)', marginTop: 14, fontFamily: 'DM Sans' },
+                  style: { fontSize: 18, color: 'rgba(255,255,255,0.4)', marginTop: 8, fontFamily: 'DM Sans' },
                 }, [year, director].filter(Boolean).join('  \u00b7  '))
               : null
           ),
           React.createElement('div', {
-            style: { fontSize: 110, fontWeight: 700, color: GOLD, fontFamily: 'Playfair Display', lineHeight: 1 },
+            style: { fontSize: 28, fontWeight: 700, color: GOLD, fontFamily: 'Playfair Display', lineHeight: 1 },
           }, score.toFixed(1))
         ),
 
-        // Graph panel — larger and lower
+        // "SENTIMENT ARC" label
+        hasGraph
+          ? React.createElement('div', {
+              style: { position: 'absolute', top: 1030, left: 60, fontSize: 14, fontWeight: 700, color: GOLD, letterSpacing: 4, fontFamily: 'DM Sans' },
+            }, 'SENTIMENT ARC')
+          : null,
+
+        // Borderless graph — floating, no container box
         hasGraph
           ? React.createElement('div', {
               style: {
-                position: 'absolute', top: 740, left: 40, right: 40, height: graphHB + 60,
-                backgroundColor: 'rgba(24,27,36,0.8)', borderRadius: 16,
-                border: `1px solid ${GOLD}30`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '30px 20px',
+                position: 'absolute', top: 1070, left: 40, right: 40, height: graphH,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               },
-            }, buildGraphPanel(userPoints, graphW, graphHB))
+            }, buildBorderlessGraph(userPoints, graphW, graphH))
           : null,
 
-        // Quote with gold left border
+        // Compact quote
         quoteText
           ? React.createElement('div', {
               style: {
-                position: 'absolute', top: hasGraph ? 1280 : 740, left: 60, right: 60,
+                position: 'absolute', top: hasGraph ? 1600 : 1070, left: 60, right: 60,
                 display: 'flex', flexDirection: 'row',
               },
             },
               React.createElement('div', {
-                style: { width: 4, backgroundColor: GOLD, borderRadius: 2, marginRight: 24, flexShrink: 0 },
+                style: { width: 3, backgroundColor: GOLD, borderRadius: 2, marginRight: 20, flexShrink: 0 },
               }),
               React.createElement('div', {
                 style: { display: 'flex', flexDirection: 'column', flex: 1 },
               },
                 React.createElement('div', {
-                  style: { fontSize: 28, fontStyle: 'italic', color: 'rgba(255,255,255,0.6)', lineHeight: 1.5, fontFamily: 'DM Sans' },
+                  style: { fontSize: 24, fontStyle: 'italic', color: 'rgba(255,255,255,0.5)', lineHeight: 1.5, fontFamily: 'DM Sans' },
                 }, `\u201c${quoteText}\u201d`),
                 React.createElement('div', {
-                  style: { fontSize: 24, color: GOLD, marginTop: 16, fontFamily: 'DM Sans', alignSelf: 'flex-end' },
+                  style: { fontSize: 20, color: GOLD, marginTop: 10, fontFamily: 'DM Sans', alignSelf: 'flex-end' },
                 }, `\u2014 ${username}`)
               )
             )
@@ -402,13 +504,10 @@ export async function GET(
 
         // Bottom branding
         React.createElement('div', {
-          style: { position: 'absolute', bottom: 55, left: 60, right: 60, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+          style: { position: 'absolute', bottom: 55, left: 0, width: W, display: 'flex', justifyContent: 'center' },
         },
           React.createElement('div', {
-            style: { fontSize: 30, fontWeight: 700, color: GOLD, fontFamily: 'Playfair Display' },
-          }, 'Cinemagraphs'),
-          React.createElement('div', {
-            style: { fontSize: 22, color: 'rgba(255,255,255,0.35)', fontFamily: 'DM Sans' },
+            style: { fontSize: 20, color: 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans' },
           }, 'cinemagraphs.ca')
         ),
 
