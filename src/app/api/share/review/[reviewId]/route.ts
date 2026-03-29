@@ -123,89 +123,106 @@ export async function GET(
     let element: React.ReactElement
 
     // Shared graph dimensions
-    const graphPadLeft = 55
-    const graphPadRight = 20
-    const graphInnerW = W - 140 - graphPadLeft - graphPadRight
+    const graphInnerW = W - 200
     const graphInnerH = 320
 
-    // Build graph SVG children (shared between styles)
-    function graphSvgChildren(gw: number, gh: number, ox: number, oy: number): React.ReactElement[] {
-      const goldPath = buildGoldPath(dataPoints, gw, gh, ox, oy)
-      const fillPath = buildFillPath(dataPoints, gw, gh, ox, oy)
-      const children: React.ReactElement[] = []
+    // Build the graph panel element: a wrapper with Y-axis labels (as divs) + SVG chart
+    function buildGraphPanel(gw: number, gh: number): React.ReactElement {
+      const goldPath = buildGoldPath(dataPoints, gw, gh, 0, 0)
+      const fillPath = buildFillPath(dataPoints, gw, gh, 0, 0)
+
+      const svgChildren: React.ReactElement[] = []
 
       // Dashed midline at score 5
-      const midY = yForScore(5, gh, oy)
-      children.push(
+      const midY = yForScore(5, gh, 0)
+      svgChildren.push(
         React.createElement('line', {
           key: 'mid',
-          x1: ox,
-          y1: midY,
-          x2: ox + gw,
-          y2: midY,
+          x1: 0, y1: midY, x2: gw, y2: midY,
           stroke: 'rgba(255,255,255,0.12)',
           strokeWidth: 1,
           strokeDasharray: '8 6',
         })
       )
 
-      // Y-axis labels
-      const yLabels = [10, 7, 5, 1]
-      yLabels.forEach((val) => {
-        const ly = yForScore(val, gh, oy)
-        children.push(
-          React.createElement('text', {
-            key: `y-${val}`,
-            x: ox - 12,
-            y: ly + 5,
-            fill: 'rgba(255,255,255,0.35)',
-            fontSize: 20,
-            textAnchor: 'end',
-            fontFamily: 'DM Sans',
-          }, val.toString())
-        )
-      })
-
       // Fill area under curve
       if (fillPath) {
-        children.push(
-          React.createElement('path', {
-            key: 'fill',
-            d: fillPath,
-            fill: `${GOLD}18`,
-          })
+        svgChildren.push(
+          React.createElement('path', { key: 'fill', d: fillPath, fill: `${GOLD}18` })
         )
       }
 
       // Gold line
       if (goldPath) {
-        children.push(
-          React.createElement('path', {
-            key: 'line',
-            d: goldPath,
-            fill: 'none',
-            stroke: GOLD,
-            strokeWidth: 3.5,
-          })
+        svgChildren.push(
+          React.createElement('path', { key: 'line', d: goldPath, fill: 'none', stroke: GOLD, strokeWidth: 3.5 })
         )
       }
 
       // Dots at each data point
       dataPoints.forEach((dp, i) => {
-        const px = ox + (i / (dataPoints.length - 1)) * gw
-        const py = oy + gh - ((dp.score - 1) / 9) * gh
-        children.push(
-          React.createElement('circle', {
-            key: `dot-${i}`,
-            cx: px,
-            cy: py,
-            r: 4,
-            fill: GOLD,
-          })
+        const px = (i / (dataPoints.length - 1)) * gw
+        const py = gh - ((dp.score - 1) / 9) * gh
+        svgChildren.push(
+          React.createElement('circle', { key: `dot-${i}`, cx: px, cy: py, r: 4, fill: GOLD })
         )
       })
 
-      return children
+      // Y-axis labels as positioned divs
+      const yLabels = [10, 7, 5, 1]
+      const labelElements = yLabels.map((val) => {
+        const topPercent = ((10 - val) / 9) * 100
+        return React.createElement(
+          'div',
+          {
+            key: `y-${val}`,
+            style: {
+              position: 'absolute',
+              left: 0,
+              top: `${topPercent}%`,
+              transform: 'translateY(-50%)',
+              fontSize: 18,
+              color: 'rgba(255,255,255,0.35)',
+              fontFamily: 'DM Sans',
+              width: 40,
+              textAlign: 'right',
+            },
+          },
+          val.toString()
+        )
+      })
+
+      return React.createElement(
+        'div',
+        {
+          style: {
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'stretch',
+            width: '100%',
+            height: '100%',
+            position: 'relative',
+          },
+        },
+        // Y-axis label column
+        React.createElement(
+          'div',
+          {
+            style: {
+              width: 50,
+              position: 'relative',
+              flexShrink: 0,
+            },
+          },
+          ...labelElements
+        ),
+        // SVG chart
+        React.createElement(
+          'svg',
+          { width: gw, height: gh, viewBox: `0 0 ${gw} ${gh}`, style: { flex: 1 } },
+          ...svgChildren
+        )
+      )
     }
 
     if (style === 'cinematic-card') {
@@ -217,8 +234,6 @@ export async function GET(
       const graphY = graphLabelY + 50
       const graphBoxH = graphInnerH + 60
       const quoteY = graphY + graphBoxH + 40
-      const svgW = graphInnerW + graphPadLeft + graphPadRight
-      const svgH = graphInnerH
 
       element = React.createElement(
         'div',
@@ -355,15 +370,7 @@ export async function GET(
                   padding: '30px 20px',
                 },
               },
-              React.createElement(
-                'svg',
-                {
-                  width: svgW,
-                  height: svgH,
-                  viewBox: `0 0 ${svgW} ${svgH}`,
-                },
-                ...graphSvgChildren(graphInnerW, graphInnerH, graphPadLeft, 0)
-              )
+              buildGraphPanel(graphInnerW, graphInnerH)
             )
           : null,
         // Quote
@@ -455,9 +462,6 @@ export async function GET(
       )
     } else {
       // Style B — Frosted Story
-      const svgW = graphInnerW + graphPadLeft + graphPadRight
-      const svgH = graphInnerH
-
       element = React.createElement(
         'div',
         {
@@ -607,15 +611,7 @@ export async function GET(
                   padding: '30px 20px',
                 },
               },
-              React.createElement(
-                'svg',
-                {
-                  width: svgW,
-                  height: svgH,
-                  viewBox: `0 0 ${svgW} ${svgH}`,
-                },
-                ...graphSvgChildren(graphInnerW, graphInnerH, graphPadLeft, 0)
-              )
+              buildGraphPanel(graphInnerW, graphInnerH)
             )
           : null,
         // Quote card with gold left border
