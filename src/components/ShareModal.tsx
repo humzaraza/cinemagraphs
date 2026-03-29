@@ -10,13 +10,16 @@ interface Props {
 
 export default function ShareModal({ reviewId, filmTitle, onClose }: Props) {
   const [sharing, setSharing] = useState<'full' | 'minimal' | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const share = async (style: 'full' | 'minimal') => {
     setSharing(style)
+    setError(null)
     try {
       const res = await fetch(`/api/share/review/${reviewId}?style=${style}`)
       if (!res.ok) {
-        alert('Failed to generate share image')
+        const data = await res.json().catch(() => null)
+        setError(data?.error || 'Failed to generate share image. Please try again.')
         return
       }
 
@@ -40,6 +43,7 @@ export default function ShareModal({ reviewId, filmTitle, onClose }: Props) {
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
         console.error('Share failed:', err)
+        setError('Something went wrong. Please try again.')
       }
     } finally {
       setSharing(null)
@@ -75,6 +79,12 @@ export default function ShareModal({ reviewId, filmTitle, onClose }: Props) {
         <p className="text-sm text-cinema-muted mb-4">
           Choose a style for your shareable image:
         </p>
+
+        {error && (
+          <div className="mb-4 p-3 rounded-lg text-sm text-red-400" style={{ backgroundColor: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+            {error}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           {/* Full Style Preview */}

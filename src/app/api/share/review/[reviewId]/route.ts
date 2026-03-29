@@ -3,7 +3,6 @@ import { ImageResponse } from '@vercel/og'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { apiLogger } from '@/lib/logger'
 import React from 'react'
 
 export const dynamic = 'force-dynamic'
@@ -88,7 +87,8 @@ export async function GET(
       return NextResponse.json({ error: 'You can only share your own reviews' }, { status: 403 })
     }
 
-    const filmTitle = review.film.title
+    const rawTitle = review.film.title
+    const filmTitle = rawTitle.length > 60 ? rawTitle.slice(0, 57) + '...' : rawTitle
     const year = review.film.releaseDate
       ? new Date(review.film.releaseDate).getFullYear().toString()
       : ''
@@ -202,10 +202,6 @@ export async function GET(
                   marginTop: 20,
                   lineHeight: 1.2,
                   maxWidth: W - 120,
-                  overflow: 'hidden',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
                 },
               },
               filmTitle
@@ -552,7 +548,8 @@ export async function GET(
       )
     }
   } catch (err) {
-    apiLogger.error({ err }, 'Failed to generate share image')
-    return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    console.error('Share image generation failed:', message, err)
+    return NextResponse.json({ error: 'Failed to generate share image.', _debug: message }, { status: 500 })
   }
 }
