@@ -212,6 +212,8 @@ export async function GET(
               width: 50,
               position: 'relative',
               flexShrink: 0,
+              display: 'flex',
+              flexDirection: 'column',
             },
           },
           ...labelElements
