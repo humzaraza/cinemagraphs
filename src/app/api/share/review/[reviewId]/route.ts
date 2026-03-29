@@ -5,35 +5,48 @@ import { prisma } from '@/lib/prisma'
 import satori from 'satori'
 import sharp from 'sharp'
 import React from 'react'
-import { readFile } from 'fs/promises'
-import { join } from 'path'
 
 export const dynamic = 'force-dynamic'
 
 const W = 1080
 const H = 1920
+const GOLD = '#c8a96e'
+const DARK = '#0f1117'
+const GRAPH_BG = '#181b24'
+const IVORY = '#f5f0e8'
 
-let fontData: ArrayBuffer | null = null
-async function loadFont(): Promise<ArrayBuffer> {
-  if (fontData) return fontData
-  // Try to load from @vercel/og's bundled font, fall back to system
-  try {
-    const fontPath = join(process.cwd(), 'node_modules/@vercel/og/dist/Geist-Regular.ttf')
-    const buf = await readFile(fontPath)
-    fontData = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
-  } catch {
-    // Fallback: fetch a Google Font
-    const res = await fetch('https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfAZ9hiA.woff')
-    fontData = await res.arrayBuffer()
+// Font cache
+const fontCache: Record<string, ArrayBuffer> = {}
+
+async function loadFonts(): Promise<{ playfair: ArrayBuffer; dmSans: ArrayBuffer; dmSansItalic: ArrayBuffer }> {
+  if (fontCache.playfair && fontCache.dmSans && fontCache.dmSansItalic) {
+    return { playfair: fontCache.playfair, dmSans: fontCache.dmSans, dmSansItalic: fontCache.dmSansItalic }
   }
-  return fontData
+
+  const [playfairRes, dmSansRes, dmSansItalicRes] = await Promise.all([
+    fetch('https://fonts.gstatic.com/s/playfairdisplay/v37/nuFvD-vYSZviVYUb_rj3ij__anPXJzDwcbmjWBN2PKdFvXDXbtM.woff'),
+    fetch('https://fonts.gstatic.com/s/dmsans/v15/rP2Hp2ywxg089UriCZOIHQ.woff'),
+    fetch('https://fonts.gstatic.com/s/dmsans/v15/rP2Fp2ywxg089UriCZaIGDWCBl0O8Q.woff'),
+  ])
+
+  fontCache.playfair = await playfairRes.arrayBuffer()
+  fontCache.dmSans = await dmSansRes.arrayBuffer()
+  fontCache.dmSansItalic = await dmSansItalicRes.arrayBuffer()
+
+  return { playfair: fontCache.playfair, dmSans: fontCache.dmSans, dmSansItalic: fontCache.dmSansItalic }
 }
 
-function ratingColor(score: number): string {
-  return score >= 7 ? '#C8A951' : '#ef4444'
+function truncateAtWord(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text
+  const truncated = text.slice(0, maxLen)
+  const lastSpace = truncated.lastIndexOf(' ')
+  if (lastSpace > maxLen * 0.5) {
+    return truncated.slice(0, lastSpace) + '...'
+  }
+  return truncated + '...'
 }
 
-function buildSvgPath(dataPoints: { score: number }[], w: number, h: number, x: number, y: number): string {
+function buildGoldPath(dataPoints: { score: number }[], w: number, h: number, x: number, y: number): string {
   if (dataPoints.length < 2) return ''
   return dataPoints
     .map((dp, i) => {
@@ -46,27 +59,13 @@ function buildSvgPath(dataPoints: { score: number }[], w: number, h: number, x: 
 
 function buildFillPath(dataPoints: { score: number }[], w: number, h: number, x: number, y: number): string {
   if (dataPoints.length < 2) return ''
-  const linePath = buildSvgPath(dataPoints, w, h, x, y)
+  const linePath = buildGoldPath(dataPoints, w, h, x, y)
   return `${linePath} L${(x + w).toFixed(1)},${(y + h).toFixed(1)} L${x.toFixed(1)},${(y + h).toFixed(1)} Z`
 }
 
-function buildUserPath(
-  dataPoints: { label: string; score: number }[],
-  beatRatings: Record<string, number>,
-  w: number, h: number, x: number, y: number
-): string {
-  const matched = dataPoints
-    .map((dp, i) => {
-      const rating = beatRatings[dp.label]
-      if (rating === undefined) return null
-      const px = x + (i / (dataPoints.length - 1)) * w
-      const py = y + h - ((rating - 1) / 9) * h
-      return { px, py }
-    })
-    .filter(Boolean) as { px: number; py: number }[]
-
-  if (matched.length < 2) return ''
-  return matched.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.px.toFixed(1)},${p.py.toFixed(1)}`).join(' ')
+// Y-axis label positions: 10, 7, 5, 1
+function yForScore(score: number, h: number, y: number): number {
+  return y + h - ((score - 1) / 9) * h
 }
 
 export async function GET(
@@ -80,7 +79,8 @@ export async function GET(
     }
 
     const { reviewId } = await params
-    const style = request.nextUrl.searchParams.get('style') === 'minimal' ? 'minimal' : 'full'
+    const styleParam = request.nextUrl.searchParams.get('style')
+    const style = styleParam === 'frosted-story' ? 'frosted-story' : 'cinematic-card'
 
     const review = await prisma.userReview.findUnique({
       where: { id: reviewId },
@@ -106,31 +106,119 @@ export async function GET(
       return NextResponse.json({ error: 'You can only share your own reviews' }, { status: 403 })
     }
 
-    const rawTitle = review.film.title
-    const filmTitle = rawTitle.length > 60 ? rawTitle.slice(0, 57) + '...' : rawTitle
+    const filmTitle = truncateAtWord(review.film.title, 50)
     const year = review.film.releaseDate
       ? new Date(review.film.releaseDate).getFullYear().toString()
       : ''
     const director = review.film.director || ''
     const score = review.overallRating
-    const quoteText = review.combinedText?.slice(0, 120) || ''
+    const quoteText = review.combinedText ? truncateAtWord(review.combinedText, 140) : ''
     const username = review.user.name || review.user.email.split('@')[0]
     const dataPoints = (review.film.sentimentGraph?.dataPoints as { label: string; score: number }[]) || []
-    const beatRatings = review.beatRatings as Record<string, number> | null
     const posterUrl = review.film.posterUrl
-      ? `https://image.tmdb.org/t/p/w500${review.film.posterUrl}`
+      ? `https://image.tmdb.org/t/p/w780${review.film.posterUrl}`
       : null
 
-    // Graph dimensions
-    const gx = 60, gw = W - 120, gh = 160
-
-    const font = await loadFont()
+    const fonts = await loadFonts()
     let element: React.ReactElement
 
-    if (style === 'full') {
-      const goldPath = buildSvgPath(dataPoints, gw, gh, gx, 0)
-      const fillPath = buildFillPath(dataPoints, gw, gh, gx, 0)
-      const userPath = beatRatings ? buildUserPath(dataPoints, beatRatings, gw, gh, gx, 0) : ''
+    // Shared graph dimensions
+    const graphPadLeft = 55
+    const graphPadRight = 20
+    const graphInnerW = W - 140 - graphPadLeft - graphPadRight
+    const graphInnerH = 320
+
+    // Build graph SVG children (shared between styles)
+    function graphSvgChildren(gw: number, gh: number, ox: number, oy: number): React.ReactElement[] {
+      const goldPath = buildGoldPath(dataPoints, gw, gh, ox, oy)
+      const fillPath = buildFillPath(dataPoints, gw, gh, ox, oy)
+      const children: React.ReactElement[] = []
+
+      // Dashed midline at score 5
+      const midY = yForScore(5, gh, oy)
+      children.push(
+        React.createElement('line', {
+          key: 'mid',
+          x1: ox,
+          y1: midY,
+          x2: ox + gw,
+          y2: midY,
+          stroke: 'rgba(255,255,255,0.12)',
+          strokeWidth: 1,
+          strokeDasharray: '8 6',
+        })
+      )
+
+      // Y-axis labels
+      const yLabels = [10, 7, 5, 1]
+      yLabels.forEach((val) => {
+        const ly = yForScore(val, gh, oy)
+        children.push(
+          React.createElement('text', {
+            key: `y-${val}`,
+            x: ox - 12,
+            y: ly + 5,
+            fill: 'rgba(255,255,255,0.35)',
+            fontSize: 20,
+            textAnchor: 'end',
+            fontFamily: 'DM Sans',
+          }, val.toString())
+        )
+      })
+
+      // Fill area under curve
+      if (fillPath) {
+        children.push(
+          React.createElement('path', {
+            key: 'fill',
+            d: fillPath,
+            fill: `${GOLD}18`,
+          })
+        )
+      }
+
+      // Gold line
+      if (goldPath) {
+        children.push(
+          React.createElement('path', {
+            key: 'line',
+            d: goldPath,
+            fill: 'none',
+            stroke: GOLD,
+            strokeWidth: 3.5,
+          })
+        )
+      }
+
+      // Dots at each data point
+      dataPoints.forEach((dp, i) => {
+        const px = ox + (i / (dataPoints.length - 1)) * gw
+        const py = oy + gh - ((dp.score - 1) / 9) * gh
+        children.push(
+          React.createElement('circle', {
+            key: `dot-${i}`,
+            cx: px,
+            cy: py,
+            r: 4,
+            fill: GOLD,
+          })
+        )
+      })
+
+      return children
+    }
+
+    if (style === 'cinematic-card') {
+      // Style A — Cinematic Card
+      const posterH = Math.floor(H * 0.25)
+      const titleRowY = posterH + 50
+      const metaY = titleRowY + 80
+      const graphLabelY = metaY + 60
+      const graphY = graphLabelY + 50
+      const graphBoxH = graphInnerH + 60
+      const quoteY = graphY + graphBoxH + 40
+      const svgW = graphInnerW + graphPadLeft + graphPadRight
+      const svgH = graphInnerH
 
       element = React.createElement(
         'div',
@@ -140,13 +228,11 @@ export async function GET(
             height: H,
             display: 'flex',
             flexDirection: 'column',
-            alignItems: 'center',
-            backgroundColor: '#0D0D1A',
-            fontFamily: 'Geist, sans-serif',
+            backgroundColor: DARK,
             position: 'relative',
           },
         },
-        // Poster background top
+        // Poster strip at top
         posterUrl
           ? React.createElement('img', {
               src: posterUrl,
@@ -155,210 +241,222 @@ export async function GET(
                 top: 0,
                 left: 0,
                 width: W,
-                height: Math.floor(H * 0.58),
+                height: posterH,
                 objectFit: 'cover',
               },
             })
           : null,
-        // Gradient fade
+        // Poster fade to dark
         React.createElement('div', {
           style: {
             position: 'absolute',
-            top: Math.floor(H * 0.58) - 300,
+            top: posterH - 120,
             left: 0,
             width: W,
-            height: 300,
-            background: 'linear-gradient(to bottom, rgba(13,13,26,0), #0D0D1A)',
+            height: 120,
+            background: `linear-gradient(to bottom, transparent, ${DARK})`,
           },
         }),
-        // Dark below poster
-        React.createElement('div', {
-          style: {
-            position: 'absolute',
-            top: Math.floor(H * 0.58),
-            left: 0,
-            width: W,
-            height: H - Math.floor(H * 0.58),
-            backgroundColor: '#0D0D1A',
-          },
-        }),
-        // Content area
+        // Title row: film title left, score right
         React.createElement(
           'div',
           {
             style: {
               position: 'absolute',
-              top: Math.floor(H * 0.58) + 20,
-              left: 0,
-              width: W,
+              top: titleRowY,
+              left: 60,
+              right: 60,
               display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              padding: '0 60px',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
             },
           },
-          // Rating
           React.createElement(
             'div',
             {
               style: {
-                fontSize: 120,
-                fontWeight: 'bold',
-                color: ratingColor(score),
-                lineHeight: 1,
-              },
-            },
-            score.toFixed(1)
-          ),
-          // Film title
-          React.createElement(
-            'div',
-            {
-              style: {
-                fontSize: 48,
-                fontWeight: 'bold',
-                color: '#F0E6D3',
-                textAlign: 'center',
-                marginTop: 20,
-                lineHeight: 1.2,
-                maxWidth: W - 120,
+                fontSize: 52,
+                fontWeight: 700,
+                color: IVORY,
+                fontFamily: 'Playfair Display',
+                lineHeight: 1.15,
+                maxWidth: W - 320,
               },
             },
             filmTitle
           ),
-          // Year / Director
-          (year || director)
-            ? React.createElement(
-                'div',
-                {
-                  style: {
-                    fontSize: 28,
-                    color: 'rgba(255,255,255,0.4)',
-                    marginTop: 20,
-                  },
-                },
-                [year, director].filter(Boolean).join(' \u00b7 ')
-              )
-            : null,
-          // Sentiment graph
-          dataPoints.length >= 2
-            ? React.createElement(
-                'div',
-                {
-                  style: {
-                    width: gw + 40,
-                    height: gh + 20,
-                    marginTop: 30,
-                    borderRadius: 12,
-                    backgroundColor: 'rgba(255,255,255,0.04)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '10px 20px',
-                  },
-                },
-                React.createElement(
-                  'svg',
-                  { width: gw, height: gh, viewBox: `0 0 ${gw} ${gh}` },
-                  React.createElement('path', {
-                    d: fillPath,
-                    fill: 'rgba(200,169,81,0.15)',
-                  }),
-                  React.createElement('path', {
-                    d: goldPath,
-                    fill: 'none',
-                    stroke: '#C8A951',
-                    strokeWidth: 3,
-                  }),
-                  userPath
-                    ? React.createElement('path', {
-                        d: userPath,
-                        fill: 'none',
-                        stroke: '#2DD4A8',
-                        strokeWidth: 2,
-                        strokeDasharray: '8 6',
-                      })
-                    : null
-                )
-              )
-            : null,
-          // Quote
-          quoteText
-            ? React.createElement(
-                'div',
-                {
-                  style: {
-                    fontSize: 30,
-                    fontStyle: 'italic',
-                    color: 'rgba(255,255,255,0.55)',
-                    textAlign: 'center',
-                    marginTop: 30,
-                    maxWidth: W - 120,
-                    lineHeight: 1.4,
-                  },
-                },
-                `\u201c${quoteText}${quoteText.length >= 120 ? '...' : ''}\u201d`
-              )
-            : null,
-          // Attribution
-          quoteText
-            ? React.createElement(
-                'div',
-                {
-                  style: {
-                    fontSize: 26,
-                    color: 'rgba(200,169,81,0.7)',
-                    marginTop: 15,
-                    alignSelf: 'flex-end',
-                  },
-                },
-                `\u2014 ${username}`
-              )
-            : null
+          React.createElement(
+            'div',
+            {
+              style: {
+                fontSize: 96,
+                fontWeight: 700,
+                color: GOLD,
+                fontFamily: 'Playfair Display',
+                lineHeight: 1,
+              },
+            },
+            score.toFixed(1)
+          )
         ),
-        // Branding at bottom
+        // Year + Director
+        (year || director)
+          ? React.createElement(
+              'div',
+              {
+                style: {
+                  position: 'absolute',
+                  top: metaY,
+                  left: 60,
+                  fontSize: 26,
+                  color: 'rgba(255,255,255,0.45)',
+                  fontFamily: 'DM Sans',
+                },
+              },
+              [year, director].filter(Boolean).join('  \u00b7  ')
+            )
+          : null,
+        // "SENTIMENT ARC" label
+        dataPoints.length >= 2
+          ? React.createElement(
+              'div',
+              {
+                style: {
+                  position: 'absolute',
+                  top: graphLabelY,
+                  left: 60,
+                  fontSize: 18,
+                  fontWeight: 700,
+                  color: GOLD,
+                  letterSpacing: 4,
+                  fontFamily: 'DM Sans',
+                },
+              },
+              'SENTIMENT ARC'
+            )
+          : null,
+        // Graph panel
+        dataPoints.length >= 2
+          ? React.createElement(
+              'div',
+              {
+                style: {
+                  position: 'absolute',
+                  top: graphY,
+                  left: 50,
+                  right: 50,
+                  height: graphBoxH,
+                  backgroundColor: GRAPH_BG,
+                  borderRadius: 16,
+                  border: '1px solid rgba(200,169,110,0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '30px 20px',
+                },
+              },
+              React.createElement(
+                'svg',
+                {
+                  width: svgW,
+                  height: svgH,
+                  viewBox: `0 0 ${svgW} ${svgH}`,
+                },
+                ...graphSvgChildren(graphInnerW, graphInnerH, graphPadLeft, 0)
+              )
+            )
+          : null,
+        // Quote
+        quoteText
+          ? React.createElement(
+              'div',
+              {
+                style: {
+                  position: 'absolute',
+                  top: quoteY,
+                  left: 60,
+                  right: 60,
+                  fontSize: 28,
+                  fontStyle: 'italic',
+                  color: 'rgba(255,255,255,0.55)',
+                  lineHeight: 1.5,
+                  fontFamily: 'DM Sans',
+                },
+              },
+              `\u201c${quoteText}\u201d`
+            )
+          : null,
+        // Attribution
+        quoteText
+          ? React.createElement(
+              'div',
+              {
+                style: {
+                  position: 'absolute',
+                  top: quoteY + (quoteText.length > 80 ? 130 : 80),
+                  right: 60,
+                  fontSize: 24,
+                  color: GOLD,
+                  fontFamily: 'DM Sans',
+                },
+              },
+              `\u2014 ${username}`
+            )
+          : null,
+        // Footer bar
         React.createElement(
           'div',
           {
             style: {
               position: 'absolute',
-              bottom: 40,
-              left: 0,
-              width: W,
+              bottom: 50,
+              left: 60,
+              right: 60,
               display: 'flex',
-              flexDirection: 'column',
+              justifyContent: 'space-between',
               alignItems: 'center',
             },
           },
           React.createElement(
             'div',
-            { style: { fontSize: 36, fontWeight: 'bold', color: '#C8A951' } },
+            {
+              style: {
+                fontSize: 30,
+                fontWeight: 700,
+                color: GOLD,
+                fontFamily: 'Playfair Display',
+              },
+            },
             'Cinemagraphs'
           ),
           React.createElement(
             'div',
-            { style: { fontSize: 22, color: 'rgba(255,255,255,0.35)', marginTop: 4 } },
+            {
+              style: {
+                fontSize: 22,
+                color: 'rgba(255,255,255,0.35)',
+                fontFamily: 'DM Sans',
+              },
+            },
             'cinemagraphs.ca'
           )
         ),
-        // Gold bar at bottom
+        // Gold accent line at very bottom
         React.createElement('div', {
           style: {
             position: 'absolute',
             bottom: 0,
             left: 0,
             width: W,
-            height: 6,
-            backgroundColor: '#C8A951',
+            height: 4,
+            backgroundColor: GOLD,
           },
         })
       )
     } else {
-      // Minimal style
-      const graphH2 = 180
-      const goldPath = buildSvgPath(dataPoints, gw, graphH2, gx, 0)
-      const fillPath = buildFillPath(dataPoints, gw, graphH2, gx, 0)
-      const userPath = beatRatings ? buildUserPath(dataPoints, beatRatings, gw, graphH2, gx, 0) : ''
+      // Style B — Frosted Story
+      const svgW = graphInnerW + graphPadLeft + graphPadRight
+      const svgH = graphInnerH
 
       element = React.createElement(
         'div',
@@ -368,12 +466,11 @@ export async function GET(
             height: H,
             display: 'flex',
             flexDirection: 'column',
-            backgroundColor: '#0D0D1A',
-            fontFamily: 'Geist, sans-serif',
+            backgroundColor: DARK,
             position: 'relative',
           },
         },
-        // Full poster background
+        // Full-bleed poster
         posterUrl
           ? React.createElement('img', {
               src: posterUrl,
@@ -387,183 +484,248 @@ export async function GET(
               },
             })
           : null,
-        // Dark overlay
+        // Heavy dark gradient overlay
         React.createElement('div', {
           style: {
             position: 'absolute',
-            top: Math.floor(H * 0.35),
+            top: 0,
             left: 0,
             width: W,
-            height: H - Math.floor(H * 0.35),
-            background: 'linear-gradient(to bottom, rgba(13,13,26,0), rgba(13,13,26,0.92) 40%)',
+            height: H,
+            background: `linear-gradient(to bottom, rgba(15,17,23,0.15) 0%, rgba(15,17,23,0.5) 30%, rgba(15,17,23,0.92) 50%, rgba(15,17,23,0.98) 65%)`,
           },
         }),
-        // Score top right
+        // Top bar: "CINEMAGRAPHS" left, score right
         React.createElement(
           'div',
           {
             style: {
               position: 'absolute',
-              top: 50,
+              top: 55,
+              left: 60,
               right: 60,
               display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-end',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
             },
           },
           React.createElement(
             'div',
-            { style: { fontSize: 100, fontWeight: 'bold', color: ratingColor(score), lineHeight: 1 } },
-            score.toFixed(1)
+            {
+              style: {
+                fontSize: 18,
+                fontWeight: 700,
+                color: GOLD,
+                letterSpacing: 5,
+                fontFamily: 'DM Sans',
+              },
+            },
+            'CINEMAGRAPHS'
           ),
           React.createElement(
             'div',
-            { style: { fontSize: 18, color: 'rgba(200,169,81,0.6)', letterSpacing: 3, marginTop: 8 } },
-            'CINEMAGRAPHS SCORE'
-          )
-        ),
-        // Graph
-        dataPoints.length >= 2
-          ? React.createElement(
+            {
+              style: {
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-end',
+              },
+            },
+            React.createElement(
               'div',
               {
                 style: {
-                  position: 'absolute',
-                  top: H - 550,
-                  left: 0,
-                  width: W,
-                  display: 'flex',
-                  justifyContent: 'center',
+                  fontSize: 96,
+                  fontWeight: 700,
+                  color: GOLD,
+                  fontFamily: 'Playfair Display',
+                  lineHeight: 1,
                 },
               },
-              React.createElement(
-                'svg',
-                { width: gw, height: graphH2, viewBox: `0 0 ${gw} ${graphH2}` },
-                React.createElement('path', { d: fillPath, fill: 'rgba(200,169,81,0.15)' }),
-                React.createElement('path', { d: goldPath, fill: 'none', stroke: '#C8A951', strokeWidth: 3 }),
-                userPath
-                  ? React.createElement('path', { d: userPath, fill: 'none', stroke: '#2DD4A8', strokeWidth: 2, strokeDasharray: '8 6' })
-                  : null
-              )
+              score.toFixed(1)
             )
-          : null,
-        // Bottom content
+          )
+        ),
+        // Film title (middle area)
         React.createElement(
           'div',
           {
             style: {
               position: 'absolute',
-              bottom: 80,
+              top: 520,
               left: 60,
               right: 60,
               display: 'flex',
               flexDirection: 'column',
             },
           },
-          // Quote
-          quoteText
-            ? React.createElement(
-                'div',
-                {
-                  style: {
-                    fontSize: 28,
-                    fontStyle: 'italic',
-                    color: 'rgba(255,255,255,0.55)',
-                    lineHeight: 1.4,
-                    marginBottom: 12,
-                  },
-                },
-                `\u201c${quoteText}${quoteText.length >= 120 ? '...' : ''}\u201d`
-              )
-            : null,
-          quoteText
-            ? React.createElement(
-                'div',
-                { style: { fontSize: 24, color: 'rgba(200,169,81,0.7)', marginBottom: 30 } },
-                `\u2014 ${username}`
-              )
-            : null,
-          // Film title
           React.createElement(
             'div',
             {
               style: {
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-end',
+                fontSize: 56,
+                fontWeight: 700,
+                color: IVORY,
+                fontFamily: 'Playfair Display',
+                lineHeight: 1.15,
               },
             },
-            React.createElement(
+            filmTitle
+          ),
+          (year || director)
+            ? React.createElement(
+                'div',
+                {
+                  style: {
+                    fontSize: 26,
+                    color: 'rgba(255,255,255,0.45)',
+                    marginTop: 16,
+                    fontFamily: 'DM Sans',
+                  },
+                },
+                [year, director].filter(Boolean).join('  \u00b7  ')
+              )
+            : null
+        ),
+        // Graph panel with semi-transparent dark bg
+        dataPoints.length >= 2
+          ? React.createElement(
               'div',
-              { style: { display: 'flex', flexDirection: 'column', flex: 1 } },
+              {
+                style: {
+                  position: 'absolute',
+                  top: 780,
+                  left: 50,
+                  right: 50,
+                  height: graphInnerH + 60,
+                  backgroundColor: 'rgba(24,27,36,0.85)',
+                  borderRadius: 16,
+                  border: `1px solid ${GOLD}30`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '30px 20px',
+                },
+              },
+              React.createElement(
+                'svg',
+                {
+                  width: svgW,
+                  height: svgH,
+                  viewBox: `0 0 ${svgW} ${svgH}`,
+                },
+                ...graphSvgChildren(graphInnerW, graphInnerH, graphPadLeft, 0)
+              )
+            )
+          : null,
+        // Quote card with gold left border
+        quoteText
+          ? React.createElement(
+              'div',
+              {
+                style: {
+                  position: 'absolute',
+                  top: dataPoints.length >= 2 ? 1200 : 820,
+                  left: 60,
+                  right: 60,
+                  display: 'flex',
+                  flexDirection: 'row',
+                },
+              },
+              // Gold left border accent
+              React.createElement('div', {
+                style: {
+                  width: 4,
+                  backgroundColor: GOLD,
+                  borderRadius: 2,
+                  marginRight: 24,
+                  flexShrink: 0,
+                },
+              }),
               React.createElement(
                 'div',
                 {
                   style: {
-                    fontSize: 44,
-                    fontWeight: 'bold',
-                    color: '#F0E6D3',
-                    lineHeight: 1.2,
-                    maxWidth: W - 360,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    flex: 1,
                   },
                 },
-                filmTitle
-              ),
-              year
-                ? React.createElement(
-                    'div',
-                    { style: { fontSize: 26, color: 'rgba(255,255,255,0.4)', marginTop: 8 } },
-                    year
-                  )
-                : null
-            ),
-            React.createElement(
-              'div',
-              {
-                style: {
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'flex-end',
-                },
-              },
-              React.createElement(
-                'div',
-                { style: { fontSize: 28, fontWeight: 'bold', color: '#C8A951' } },
-                'Cinemagraphs'
-              ),
-              React.createElement(
-                'div',
-                { style: { fontSize: 18, color: 'rgba(255,255,255,0.35)', marginTop: 4 } },
-                'cinemagraphs.ca'
+                React.createElement(
+                  'div',
+                  {
+                    style: {
+                      fontSize: 28,
+                      fontStyle: 'italic',
+                      color: 'rgba(255,255,255,0.6)',
+                      lineHeight: 1.5,
+                      fontFamily: 'DM Sans',
+                    },
+                  },
+                  `\u201c${quoteText}\u201d`
+                ),
+                React.createElement(
+                  'div',
+                  {
+                    style: {
+                      fontSize: 24,
+                      color: GOLD,
+                      marginTop: 16,
+                      fontFamily: 'DM Sans',
+                    },
+                  },
+                  `\u2014 ${username}`
+                )
               )
             )
+          : null,
+        // Bottom branding
+        React.createElement(
+          'div',
+          {
+            style: {
+              position: 'absolute',
+              bottom: 55,
+              left: 0,
+              width: W,
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+            },
+          },
+          React.createElement(
+            'div',
+            {
+              style: {
+                fontSize: 22,
+                color: 'rgba(255,255,255,0.35)',
+                fontFamily: 'DM Sans',
+              },
+            },
+            'cinemagraphs.ca'
           )
         ),
-        // Gold bar
+        // Gold accent line at very bottom
         React.createElement('div', {
           style: {
             position: 'absolute',
             bottom: 0,
             left: 0,
             width: W,
-            height: 6,
-            backgroundColor: '#C8A951',
+            height: 4,
+            backgroundColor: GOLD,
           },
         })
       )
     }
 
-    // Use satori to render React element to SVG, then sharp to convert to PNG
     const svg = await satori(element, {
       width: W,
       height: H,
       fonts: [
-        {
-          name: 'Geist',
-          data: font,
-          style: 'normal',
-          weight: 400,
-        },
+        { name: 'Playfair Display', data: fonts.playfair, style: 'normal', weight: 700 },
+        { name: 'DM Sans', data: fonts.dmSans, style: 'normal', weight: 400 },
+        { name: 'DM Sans', data: fonts.dmSansItalic, style: 'italic', weight: 400 },
       ],
     })
 
