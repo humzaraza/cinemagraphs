@@ -4,6 +4,8 @@ import "./globals.css";
 import Navigation from "@/components/Navigation";
 import SessionProvider from "@/components/SessionProvider";
 import FeedbackWidget from "@/components/FeedbackWidget";
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const playfair = Playfair_Display({
   variable: "--font-playfair",
@@ -72,6 +74,8 @@ export default function RootLayout({
           <Navigation />
           <main className="flex-1">{children}</main>
           <FeedbackWidget />
+          <Analytics />
+          <SpeedInsights />
         </SessionProvider>
       </body>
     </html>
