@@ -8,6 +8,7 @@ import AdminHomepageCuration from '@/components/AdminHomepageCuration'
 import AdminReviews from '@/components/AdminReviews'
 import AdminFeedback from '@/components/AdminFeedback'
 import AdminUsers from '@/components/AdminUsers'
+import AdminAnnouncements from '@/components/AdminAnnouncements'
 import AdminTabs from '@/components/AdminTabs'
 
 export const dynamic = 'force-dynamic'
@@ -162,6 +163,13 @@ export default async function AdminPage() {
             label: `Users (${userCount})`,
             content: (
               <AdminUsers />
+            ),
+          },
+          {
+            id: 'announcements',
+            label: 'Announcements',
+            content: (
+              <AdminAnnouncements />
             ),
           },
         ]}

@@ -55,6 +55,7 @@ model User {
   watchlistItems       Watchlist[]
   followers            Follow[]              @relation("following")
   following            Follow[]              @relation("follower")
+  announcements        Announcement[]
 }
 
 model Account {
@@ -284,6 +285,18 @@ model Watchlist {
   @@unique([userId, filmId])
   @@index([userId])
   @@index([filmId])
+}
+
+model Announcement {
+  id        String   @id @default(cuid())
+  message   String   @db.VarChar(500)
+  pinned    Boolean  @default(true)
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([pinned])
 }
 
 model Follow {

@@ -3,6 +3,7 @@ import FilmCard from '@/components/FilmCard'
 import MovieTicker from '@/components/MovieTicker'
 import HeroSection from '@/components/HeroSection'
 import TrailerCard from '@/components/TrailerCard'
+import AnnouncementBar from '@/components/AnnouncementBar'
 import Link from 'next/link'
 import { getMovieTrailerKey, getNowPlayingMovies } from '@/lib/tmdb'
 import { cacheGet, cacheSet, KEYS } from '@/lib/cache'
@@ -367,6 +368,9 @@ export default async function HomePage() {
 
       {/* Hero Section — Featured Film Spotlight */}
       <HeroSection films={heroFilms} />
+
+      {/* Pinned Announcement */}
+      <AnnouncementBar />
 
       {/* In Theaters */}
       {sections.inTheaters && inTheaterFilms.length > 0 && (
