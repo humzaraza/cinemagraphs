@@ -243,7 +243,7 @@ export default function SentimentGraph({
     <div className="space-y-6">
       {/* Main Graph */}
       <div className="bg-cinema-darker rounded-lg border border-cinema-border p-4 md:p-6">
-        <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center justify-between mb-4">
           <h3 className="font-[family-name:var(--font-playfair)] text-lg text-cinema-cream">
             Audience Sentiment
           </h3>
@@ -257,9 +257,6 @@ export default function SentimentGraph({
             </span>
           </div>
         </div>
-        {anchoredFrom && (
-          <p className="text-xs text-cinema-muted mb-4">Anchored from {anchoredFrom}</p>
-        )}
 
         <ResponsiveContainer width="100%" height={320}>
           <AreaChart data={chartData} margin={{ top: 10, right: 35, left: 10, bottom: 30 }}>
