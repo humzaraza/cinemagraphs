@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
-import { cacheGet, cacheSet, KEYS } from '@/lib/cache'
+import { cachedQuery, KEYS, TTL } from '@/lib/cache'
 
 export async function GET(
   _request: Request,
@@ -9,19 +9,16 @@ export async function GET(
   try {
     const { id } = await params
 
-    const cached = await cacheGet(KEYS.graph(id))
-    if (cached) return Response.json(cached)
-
-    const graph = await prisma.sentimentGraph.findUnique({
-      where: { filmId: id },
+    const payload = await cachedQuery(KEYS.graph(id), TTL.GRAPH, async () => {
+      const graph = await prisma.sentimentGraph.findUnique({
+        where: { filmId: id },
+      })
+      return graph ? { graph } : null
     })
 
-    if (!graph) {
+    if (!payload) {
       return Response.json({ error: 'No sentiment graph found for this film', code: 'NOT_FOUND' }, { status: 404 })
     }
-
-    const payload = { graph }
-    await cacheSet(KEYS.graph(id), payload)
 
     return Response.json(payload)
   } catch (err) {

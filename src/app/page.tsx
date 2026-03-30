@@ -6,7 +6,7 @@ import TrailerCard from '@/components/TrailerCard'
 import AnnouncementBar from '@/components/AnnouncementBar'
 import Link from 'next/link'
 import { getMovieTrailerKey, getNowPlayingMovies } from '@/lib/tmdb'
-import { cacheGet, cacheSet, KEYS } from '@/lib/cache'
+import { cacheGet, cacheSet, KEYS, TTL } from '@/lib/cache'
 
 export const dynamic = 'force-dynamic'
 

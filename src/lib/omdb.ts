@@ -1,3 +1,5 @@
+import { cachedQuery, KEYS, TTL } from './cache'
+
 const OMDB_API_KEY = process.env.OMDB_API_KEY
 const OMDB_BASE_URL = 'https://www.omdbapi.com'
 
@@ -16,7 +18,7 @@ interface OMDBResponse {
   Error?: string
 }
 
-export async function fetchAnchorScores(imdbId: string): Promise<AnchorScores> {
+async function fetchAnchorScoresRaw(imdbId: string): Promise<AnchorScores> {
   if (!OMDB_API_KEY) {
     console.warn('[OMDB] No API key configured, skipping anchor score fetch')
     return { imdbRating: null, rtCriticsScore: null, rtAudienceScore: null, metacriticScore: null }
@@ -55,4 +57,9 @@ export async function fetchAnchorScores(imdbId: string): Promise<AnchorScores> {
     : null
 
   return { imdbRating, rtCriticsScore, rtAudienceScore, metacriticScore }
+}
+
+/** Fetch anchor scores with 24-hour Redis cache */
+export async function fetchAnchorScores(imdbId: string): Promise<AnchorScores> {
+  return cachedQuery(KEYS.omdb(imdbId), TTL.OMDB, () => fetchAnchorScoresRaw(imdbId))
 }

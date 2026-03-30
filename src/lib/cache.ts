@@ -1,46 +1,94 @@
-import { kv } from '@vercel/kv'
+import { redis, REDIS_AVAILABLE } from './redis'
+import { logger } from './logger'
 
-const KV_AVAILABLE = !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN)
+const cacheLogger = logger.child({ module: 'cache' })
 
-const DEFAULT_TTL = 3600 // 1 hour in seconds
+// ── TTL constants (seconds) ──
+export const TTL = {
+  FILM: 3600,           // 1 hour
+  GRAPH: 3600,          // 1 hour
+  HOMEPAGE: 3600,       // 1 hour
+  TICKER: 1800,         // 30 minutes
+  TMDB_NOW_PLAYING: 21600, // 6 hours
+  OMDB: 86400,          // 24 hours
+} as const
 
-// Key prefixes
-const KEYS = {
+// ── Key builders ──
+export const KEYS = {
   film: (id: string) => `film:${id}`,
   graph: (id: string) => `graph:${id}`,
   homepage: (section: string) => `homepage:${section}`,
+  ticker: () => 'ticker:data',
+  tmdbNowPlaying: (region: string) => `tmdb:now_playing:${region}`,
+  omdb: (imdbId: string) => `omdb:${imdbId}`,
 } as const
 
+// ── Low-level get/set/del ──
+
 export async function cacheGet<T>(key: string): Promise<T | null> {
-  if (!KV_AVAILABLE) return null
+  if (!REDIS_AVAILABLE || !redis) return null
   try {
-    return await kv.get<T>(key)
-  } catch {
+    const value = await redis.get<T>(key)
+    if (value !== null && value !== undefined) {
+      cacheLogger.debug({ key }, 'cache HIT')
+    } else {
+      cacheLogger.debug({ key }, 'cache MISS')
+    }
+    return value ?? null
+  } catch (err) {
+    cacheLogger.warn({ key, err }, 'cache GET failed, falling back to source')
     return null
   }
 }
 
-export async function cacheSet<T>(key: string, value: T, ttl = DEFAULT_TTL): Promise<void> {
-  if (!KV_AVAILABLE) return
+export async function cacheSet<T>(key: string, value: T, ttl: number = TTL.FILM): Promise<void> {
+  if (!REDIS_AVAILABLE || !redis) return
   try {
-    await kv.set(key, value, { ex: ttl })
-  } catch {
-    // Silently fail — DB is the source of truth
+    await redis.set(key, value, { ex: ttl })
+    cacheLogger.debug({ key, ttl }, 'cache SET')
+  } catch (err) {
+    cacheLogger.warn({ key, err }, 'cache SET failed')
   }
 }
 
 export async function cacheDel(...keys: string[]): Promise<void> {
-  if (!KV_AVAILABLE || keys.length === 0) return
+  if (!REDIS_AVAILABLE || !redis || keys.length === 0) return
   try {
-    await kv.del(...keys)
-  } catch {
-    // Silently fail
+    await redis.del(...keys)
+    cacheLogger.debug({ keys }, 'cache DEL')
+  } catch (err) {
+    cacheLogger.warn({ keys, err }, 'cache DEL failed')
   }
 }
+
+// ── cachedQuery wrapper ──
+// Checks Redis first, falls back to fetchFn, stores result.
+// Never lets a Redis failure break the site.
+
+export async function cachedQuery<T>(
+  key: string,
+  ttlSeconds: number,
+  fetchFn: () => Promise<T>,
+): Promise<T> {
+  // Try cache first
+  const cached = await cacheGet<T>(key)
+  if (cached !== null) return cached
+
+  // Cache miss or Redis down -- run the fetch function
+  const result = await fetchFn()
+
+  // Store in cache (fire-and-forget, don't block on it)
+  cacheSet(key, result, ttlSeconds).catch(() => {})
+
+  return result
+}
+
+// ── Invalidation helpers ──
 
 /** Invalidate all cached data for a specific film */
 export async function invalidateFilmCache(filmId: string): Promise<void> {
   await cacheDel(KEYS.film(filmId), KEYS.graph(filmId))
+  cacheLogger.info({ filmId }, 'invalidated film cache')
 }
 
 /** Invalidate all homepage section caches */
@@ -50,9 +98,19 @@ export async function invalidateHomepageCache(): Promise<void> {
     KEYS.homepage('biggestSwings'),
     KEYS.homepage('inTheaters'),
     KEYS.homepage('featured'),
-    KEYS.homepage('ticker'),
     KEYS.homepage('sections'),
+    KEYS.homepage('data'),
+    KEYS.ticker(),
   )
+  cacheLogger.info('invalidated homepage cache')
 }
 
-export { KEYS }
+/** Invalidate ticker data specifically */
+export async function invalidateTickerCache(): Promise<void> {
+  await cacheDel(KEYS.ticker())
+}
+
+/** Invalidate TMDB now_playing cache */
+export async function invalidateTmdbNowPlaying(region: string = 'CA'): Promise<void> {
+  await cacheDel(KEYS.tmdbNowPlaying(region))
+}

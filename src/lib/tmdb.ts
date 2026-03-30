@@ -1,4 +1,5 @@
 import { prisma } from './prisma'
+import { cachedQuery, KEYS, TTL } from './cache'
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY!
 const TMDB_BASE_URL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3'
@@ -90,8 +91,10 @@ export async function getMovieTrailerKey(tmdbId: number): Promise<string | null>
 }
 
 export async function getNowPlayingMovies(region: string = 'CA'): Promise<TMDBMovie[]> {
-  const data = await tmdbFetch<{ results: TMDBMovie[] }>('/movie/now_playing', { region })
-  return data.results
+  return cachedQuery(KEYS.tmdbNowPlaying(region), TTL.TMDB_NOW_PLAYING, async () => {
+    const data = await tmdbFetch<{ results: TMDBMovie[] }>('/movie/now_playing', { region })
+    return data.results
+  })
 }
 
 export async function importMovie(tmdbId: number) {

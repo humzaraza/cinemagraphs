@@ -6,6 +6,7 @@ import { extractSentiment } from '@/lib/sentiment-extract'
 import { maybeBlendAndUpdate } from '@/lib/review-blender'
 import { apiLogger } from '@/lib/logger'
 import { checkSuspension } from '@/lib/middleware'
+import { invalidateFilmCache } from '@/lib/cache'
 
 const GIBBERISH_REGEX = /(.)\1{5,}|^[a-z]{1,3}(\s[a-z]{1,3}){10,}$/i
 
@@ -137,6 +138,7 @@ export async function POST(
         },
       })
 
+      invalidateFilmCache(filmId).catch(() => {})
       maybeBlendAndUpdate(filmId).catch(() => {})
       return NextResponse.json(review)
     }
@@ -161,6 +163,7 @@ export async function POST(
       },
     })
 
+    invalidateFilmCache(filmId).catch(() => {})
     maybeBlendAndUpdate(filmId).catch(() => {})
 
     return NextResponse.json(review, { status: 201 })
