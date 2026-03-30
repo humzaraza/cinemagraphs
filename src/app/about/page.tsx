@@ -252,6 +252,98 @@ export default function AboutPage() {
         </div>
       </section>
 
+      {/* ── 3b. The Movie Market ── */}
+      <section className="max-w-5xl mx-auto px-4 pb-16 md:pb-24">
+        <div className="text-center mb-12 md:mb-16">
+          <h2 className="font-[family-name:var(--font-playfair)] text-2xl md:text-3xl font-bold text-cinema-cream mb-4">
+            The Movie Market
+          </h2>
+        </div>
+
+        <div className="max-w-3xl mx-auto space-y-4 text-sm md:text-base text-cinema-muted leading-relaxed mb-12">
+          <p>
+            At the top of the homepage you will find the Movie Market, a live ticker showing films currently playing in theaters. Each film displays its Cinemagraphs Score, a mini sentiment sparkline, and a daily score change indicator so you can see which films are gaining momentum and which are losing it.
+          </p>
+          <p>
+            Think of it as a stock market ticker, but for audience sentiment. Check back daily to see how scores shift as more people watch and react.
+          </p>
+        </div>
+
+        {/* Ticker mockup */}
+        <div className="rounded-xl border border-cinema-border bg-cinema-darker p-4 md:p-6 mb-12 overflow-x-auto">
+          <div className="flex gap-4 md:gap-6 min-w-[640px]">
+            {/* Film 1: Project Hail Mary — upward, green */}
+            <div className="flex-1 rounded-lg bg-cinema-dark/60 border border-cinema-border/50 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs md:text-sm font-semibold text-cinema-cream truncate mr-2">Project Hail Mary</span>
+                <span className="font-[family-name:var(--font-bebas)] text-lg" style={{ color: '#4ade80' }}>8.4</span>
+              </div>
+              <svg viewBox="0 0 120 32" className="w-full h-8 mb-2" aria-hidden="true">
+                <path d="M0,28 L15,26 L30,24 L45,22 L60,18 L75,14 L90,10 L105,8 L120,4" fill="none" stroke="#4ade80" strokeWidth="1.5" />
+                <path d="M0,28 L15,26 L30,24 L45,22 L60,18 L75,14 L90,10 L105,8 L120,4 V32 H0 Z" fill="#4ade80" fillOpacity="0.08" />
+              </svg>
+              <span className="text-xs font-semibold" style={{ color: '#4ade80' }}>&#9650; +0.2</span>
+            </div>
+
+            {/* Film 2: Scream 7 — downward, red */}
+            <div className="flex-1 rounded-lg bg-cinema-dark/60 border border-cinema-border/50 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs md:text-sm font-semibold text-cinema-cream truncate mr-2">Scream 7</span>
+                <span className="font-[family-name:var(--font-bebas)] text-lg" style={{ color: '#ef4444' }}>5.1</span>
+              </div>
+              <svg viewBox="0 0 120 32" className="w-full h-8 mb-2" aria-hidden="true">
+                <path d="M0,6 L15,8 L30,10 L45,14 L60,16 L75,20 L90,22 L105,26 L120,28" fill="none" stroke="#ef4444" strokeWidth="1.5" />
+                <path d="M0,6 L15,8 L30,10 L45,14 L60,16 L75,20 L90,22 L105,26 L120,28 V32 H0 Z" fill="#ef4444" fillOpacity="0.08" />
+              </svg>
+              <span className="text-xs font-semibold" style={{ color: '#ef4444' }}>&#9660; -0.1</span>
+            </div>
+
+            {/* Film 3: Reminders of Him — flat, gold */}
+            <div className="flex-1 rounded-lg bg-cinema-dark/60 border border-cinema-border/50 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs md:text-sm font-semibold text-cinema-cream truncate mr-2">Reminders of Him</span>
+                <span className="font-[family-name:var(--font-bebas)] text-lg" style={{ color: '#C8A951' }}>7.3</span>
+              </div>
+              <svg viewBox="0 0 120 32" className="w-full h-8 mb-2" aria-hidden="true">
+                <path d="M0,16 L15,17 L30,15 L45,16 L60,16 L75,15 L90,16 L105,15 L120,16" fill="none" stroke="#C8A951" strokeWidth="1.5" />
+                <path d="M0,16 L15,17 L30,15 L45,16 L60,16 L75,15 L90,16 L105,15 L120,16 V32 H0 Z" fill="#C8A951" fillOpacity="0.08" />
+              </svg>
+              <span className="text-xs font-semibold" style={{ color: '#C8A951' }}>&mdash;</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Feature cards — 2-column grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {[
+            {
+              title: 'Only films in theaters',
+              desc: 'The ticker shows only Canadian theater releases, updated weekly.',
+            },
+            {
+              title: 'Daily score updates',
+              desc: 'Green means the score went up, red means down, gold means no change.',
+            },
+            {
+              title: 'Mini sentiment sparkline',
+              desc: 'A small version of the sentiment curve visible at a glance.',
+            },
+            {
+              title: 'Click to explore',
+              desc: 'Click any film to go to its full graph and story beat breakdown.',
+            },
+          ].map((card) => (
+            <div
+              key={card.title}
+              className="rounded-lg border border-cinema-border bg-cinema-darker px-5 py-4"
+            >
+              <h4 className="text-sm font-semibold text-cinema-cream mb-1">{card.title}</h4>
+              <p className="text-xs text-cinema-muted leading-relaxed">{card.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* ── 4. How the Cinemagraphs Score works ── */}
       <section className="max-w-3xl mx-auto px-4 pb-16 md:pb-24">
         <h2 className="font-[family-name:var(--font-playfair)] text-2xl md:text-3xl font-bold text-cinema-cream mb-4 text-center">
