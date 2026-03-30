@@ -53,7 +53,7 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
     <div className="border-b border-cinema-border bg-cinema-darker/90 backdrop-blur-sm">
       <div className="flex items-center">
         {/* Static label */}
-        <div className="flex-shrink-0 flex items-center gap-2 md:gap-3 px-3 py-3 md:px-8 md:py-5 border-r border-cinema-border bg-cinema-darker z-10">
+        <div className="flex-shrink-0 flex items-center gap-2 md:gap-3 px-3 py-4 md:px-8 md:py-7 border-r border-cinema-border bg-cinema-darker z-10">
           <span className="relative flex h-2.5 w-2.5 md:h-3.5 md:w-3.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cinema-gold opacity-75" />
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 md:h-3.5 md:w-3.5 bg-cinema-gold" />
@@ -90,13 +90,13 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
                 <Link
                   key={`${film.id}-${i}`}
                   href={`/films/${film.id}`}
-                  className="flex-shrink-0 flex items-center gap-2 md:gap-4 px-3 py-3 md:px-5 md:py-5 border-r border-cinema-border/50 hover:bg-cinema-card/50 transition-colors"
+                  className="flex-shrink-0 flex items-center gap-2 md:gap-4 px-3 py-4 md:px-6 md:py-7 border-r border-cinema-border/50 hover:bg-cinema-card/50 transition-colors"
                 >
-                  <span className="text-sm md:text-base font-medium text-cinema-cream whitespace-nowrap max-w-[100px] md:max-w-[160px] truncate">
+                  <span className="text-sm md:text-base font-medium text-cinema-cream whitespace-nowrap max-w-[110px] md:max-w-[180px] truncate">
                     {film.title}
                   </span>
                   {/* Mini sparkline — sentiment curve colored by score direction */}
-                  <div className="w-16 h-8 md:w-28 md:h-12">
+                  <div className="w-16 h-9 md:w-32 md:h-14">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={film.dataPoints} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
                         <defs>
