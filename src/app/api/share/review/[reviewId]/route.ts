@@ -97,10 +97,10 @@ function buildGraphPanel(
     })
   )
 
-  // Fill under curve with gold tint
+  // Fill under curve with very subtle gold tint
   if (fillPath) {
     svgChildren.push(
-      React.createElement('path', { key: 'fill', d: fillPath, fill: `${GOLD}18` })
+      React.createElement('path', { key: 'fill', d: fillPath, fill: `${GOLD}0D` })
     )
   }
 
@@ -168,10 +168,10 @@ function buildBorderlessGraph(
     )
   }
 
-  // Gold area fill gradient (solid at bottom, fading up)
+  // Gold area fill — very subtle so poster bleeds through
   if (fillPath) {
     svgChildren.push(
-      React.createElement('path', { key: 'fill', d: fillPath, fill: `${GOLD}20` })
+      React.createElement('path', { key: 'fill', d: fillPath, fill: `${GOLD}0D` })
     )
   }
 
@@ -324,7 +324,7 @@ export async function GET(
         style: { width: W, height: H, display: 'flex', flexDirection: 'column', backgroundColor: DARK, position: 'relative' },
       },
         ...posterBg(
-          'linear-gradient(to bottom, rgba(15,17,23,0.15) 0%, rgba(15,17,23,0.3) 20%, rgba(15,17,23,0.6) 40%, rgba(15,17,23,0.88) 55%, rgba(15,17,23,0.96) 70%, rgba(15,17,23,0.99) 85%)'
+          'linear-gradient(to bottom, rgba(15,17,23,0.15) 0%, rgba(15,17,23,0.2) 30%, rgba(15,17,23,0.45) 50%, rgba(15,17,23,0.75) 60%, rgba(15,17,23,0.9) 70%, rgba(15,17,23,0.97) 80%)'
         ),
 
         // Top bar: branding left, score right
@@ -335,20 +335,20 @@ export async function GET(
             style: { fontSize: 18, fontWeight: 700, color: GOLD, letterSpacing: 5, fontFamily: 'DM Sans', marginTop: 12 },
           }, 'CINEMAGRAPHS'),
           React.createElement('div', {
-            style: { fontSize: 42, fontWeight: 700, color: GOLD, fontFamily: 'Playfair Display', lineHeight: 1 },
+            style: { fontSize: 60, fontWeight: 700, color: GOLD, fontFamily: 'Playfair Display', lineHeight: 1 },
           }, score.toFixed(1))
         ),
 
-        // Film title + meta — lower middle area
+        // Film title + meta — lower middle area, pushed down to show more poster
         React.createElement('div', {
-          style: { position: 'absolute', top: 960, left: 60, right: 60, display: 'flex', flexDirection: 'column' },
+          style: { position: 'absolute', top: 1140, left: 60, right: 60, display: 'flex', flexDirection: 'column' },
         },
           React.createElement('div', {
-            style: { fontSize: 24, fontWeight: 700, color: IVORY, fontFamily: 'Playfair Display', lineHeight: 1.2 },
+            style: { fontSize: 30, fontWeight: 700, color: IVORY, fontFamily: 'Playfair Display', lineHeight: 1.2 },
           }, filmTitle),
           (year || director)
             ? React.createElement('div', {
-                style: { fontSize: 20, color: 'rgba(255,255,255,0.45)', marginTop: 10, fontFamily: 'DM Sans' },
+                style: { fontSize: 13, color: 'rgba(255,255,255,0.45)', marginTop: 10, fontFamily: 'DM Sans' },
               }, [year, director].filter(Boolean).join('  \u00b7  '))
             : null
         ),
@@ -356,16 +356,16 @@ export async function GET(
         // "SENTIMENT ARC" label
         hasGraph
           ? React.createElement('div', {
-              style: { position: 'absolute', top: 1060, left: 60, fontSize: 14, fontWeight: 700, color: GOLD, letterSpacing: 4, fontFamily: 'DM Sans' },
+              style: { position: 'absolute', top: 1240, left: 60, fontSize: 12, fontWeight: 700, color: GOLD, letterSpacing: 5, fontFamily: 'DM Sans' },
             }, 'SENTIMENT ARC')
           : null,
 
-        // Graph in semi-transparent panel with gold glow border
+        // Graph in semi-transparent panel — bottom 30% of image
         hasGraph
           ? React.createElement('div', {
               style: {
-                position: 'absolute', top: 1100, left: 40, right: 40, height: graphH + 60,
-                backgroundColor: 'rgba(15,17,23,0.75)', borderRadius: 16,
+                position: 'absolute', top: 1280, left: 40, right: 40, height: graphH + 60,
+                backgroundColor: 'rgba(15,17,23,0.65)', borderRadius: 16,
                 border: `1px solid ${GOLD}35`,
                 boxShadow: `0 0 30px ${GOLD}15, inset 0 0 20px ${GOLD}08`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '30px 20px',
@@ -377,7 +377,7 @@ export async function GET(
         quoteText
           ? React.createElement('div', {
               style: {
-                position: 'absolute', top: hasGraph ? 1540 : 1100, left: 60, right: 60,
+                position: 'absolute', top: hasGraph ? 1710 : 1280, left: 60, right: 60,
                 display: 'flex', flexDirection: 'row',
               },
             },
@@ -391,7 +391,7 @@ export async function GET(
                   style: { fontSize: 26, fontStyle: 'italic', color: 'rgba(255,255,255,0.55)', lineHeight: 1.5, fontFamily: 'DM Sans' },
                 }, `\u201c${quoteText}\u201d`),
                 React.createElement('div', {
-                  style: { fontSize: 22, color: GOLD, marginTop: 12, fontFamily: 'DM Sans', alignSelf: 'flex-end' },
+                  style: { fontSize: 22, color: GOLD, marginTop: 5, fontFamily: 'DM Sans', alignSelf: 'flex-end' },
                 }, `\u2014 ${username}`)
               )
             )
@@ -428,7 +428,7 @@ export async function GET(
         style: { width: W, height: H, display: 'flex', flexDirection: 'column', backgroundColor: DARK, position: 'relative' },
       },
         ...posterBg(
-          'linear-gradient(to bottom, rgba(15,17,23,0.1) 0%, rgba(15,17,23,0.2) 25%, rgba(15,17,23,0.5) 45%, rgba(15,17,23,0.8) 60%, rgba(15,17,23,0.93) 75%, rgba(15,17,23,0.98) 90%)'
+          'linear-gradient(to bottom, rgba(15,17,23,0.1) 0%, rgba(15,17,23,0.15) 35%, rgba(15,17,23,0.4) 50%, rgba(15,17,23,0.7) 60%, rgba(15,17,23,0.88) 70%, rgba(15,17,23,0.96) 80%)'
         ),
 
         // Top branding
@@ -440,39 +440,39 @@ export async function GET(
           }, 'CINEMAGRAPHS')
         ),
 
-        // Title + score on same baseline row
+        // Title + score on same baseline row — pushed down for more poster visibility
         React.createElement('div', {
-          style: { position: 'absolute', top: 920, left: 60, right: 60, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' },
+          style: { position: 'absolute', top: 1120, left: 60, right: 60, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' },
         },
           React.createElement('div', {
             style: { display: 'flex', flexDirection: 'column', flex: 1, marginRight: 20 },
           },
             React.createElement('div', {
-              style: { fontSize: 28, fontWeight: 700, color: IVORY, fontFamily: 'Playfair Display', lineHeight: 1.2 },
+              style: { fontSize: 30, fontWeight: 700, color: IVORY, fontFamily: 'Playfair Display', lineHeight: 1.2 },
             }, filmTitle),
             (year || director)
               ? React.createElement('div', {
-                  style: { fontSize: 18, color: 'rgba(255,255,255,0.4)', marginTop: 8, fontFamily: 'DM Sans' },
+                  style: { fontSize: 13, color: 'rgba(255,255,255,0.4)', marginTop: 8, fontFamily: 'DM Sans' },
                 }, [year, director].filter(Boolean).join('  \u00b7  '))
               : null
           ),
           React.createElement('div', {
-            style: { fontSize: 28, fontWeight: 700, color: GOLD, fontFamily: 'Playfair Display', lineHeight: 1 },
+            style: { fontSize: 56, fontWeight: 700, color: GOLD, fontFamily: 'Playfair Display', lineHeight: 1 },
           }, score.toFixed(1))
         ),
 
         // "SENTIMENT ARC" label
         hasGraph
           ? React.createElement('div', {
-              style: { position: 'absolute', top: 1030, left: 60, fontSize: 14, fontWeight: 700, color: GOLD, letterSpacing: 4, fontFamily: 'DM Sans' },
+              style: { position: 'absolute', top: 1220, left: 60, fontSize: 12, fontWeight: 700, color: GOLD, letterSpacing: 5, fontFamily: 'DM Sans' },
             }, 'SENTIMENT ARC')
           : null,
 
-        // Borderless graph — floating, no container box
+        // Borderless graph — floating in bottom 30%
         hasGraph
           ? React.createElement('div', {
               style: {
-                position: 'absolute', top: 1070, left: 40, right: 40, height: graphH,
+                position: 'absolute', top: 1260, left: 40, right: 40, height: graphH,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               },
             }, buildBorderlessGraph(userPoints, graphW, graphH))
@@ -482,7 +482,7 @@ export async function GET(
         quoteText
           ? React.createElement('div', {
               style: {
-                position: 'absolute', top: hasGraph ? 1600 : 1070, left: 60, right: 60,
+                position: 'absolute', top: hasGraph ? 1760 : 1260, left: 60, right: 60,
                 display: 'flex', flexDirection: 'row',
               },
             },
@@ -496,7 +496,7 @@ export async function GET(
                   style: { fontSize: 24, fontStyle: 'italic', color: 'rgba(255,255,255,0.5)', lineHeight: 1.5, fontFamily: 'DM Sans' },
                 }, `\u201c${quoteText}\u201d`),
                 React.createElement('div', {
-                  style: { fontSize: 20, color: GOLD, marginTop: 10, fontFamily: 'DM Sans', alignSelf: 'flex-end' },
+                  style: { fontSize: 20, color: GOLD, marginTop: 5, fontFamily: 'DM Sans', alignSelf: 'flex-end' },
                 }, `\u2014 ${username}`)
               )
             )

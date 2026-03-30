@@ -89,6 +89,11 @@ export async function getMovieTrailerKey(tmdbId: number): Promise<string | null>
   }
 }
 
+export async function getNowPlayingMovies(region: string = 'CA'): Promise<TMDBMovie[]> {
+  const data = await tmdbFetch<{ results: TMDBMovie[] }>('/movie/now_playing', { region })
+  return data.results
+}
+
 export async function importMovie(tmdbId: number) {
   const existing = await prisma.film.findUnique({ where: { tmdbId } })
   if (existing) return existing

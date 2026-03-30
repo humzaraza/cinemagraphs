@@ -4,7 +4,7 @@ import MovieTicker from '@/components/MovieTicker'
 import HeroSection from '@/components/HeroSection'
 import TrailerCard from '@/components/TrailerCard'
 import Link from 'next/link'
-import { getMovieTrailerKey } from '@/lib/tmdb'
+import { getMovieTrailerKey, getNowPlayingMovies } from '@/lib/tmdb'
 import { cacheGet, cacheSet, KEYS } from '@/lib/cache'
 
 export const dynamic = 'force-dynamic'
@@ -318,27 +318,40 @@ export default async function HomePage() {
   }
   const swingFilms = [...pinnedSwingEntries, ...unpinnedSwings].slice(0, 10)
 
-  // Latest trailers: recently added films with TMDB trailers
+  // Latest trailers: films currently in theaters (TMDB now_playing, region=CA)
   const trailerCards: { id: string; title: string; genres: string[]; backdropUrl: string; trailerKey: string }[] = []
   if (sections.latestTrailers) {
-    const recentForTrailers = await prisma.film.findMany({
-      where: { status: 'ACTIVE', backdropUrl: { not: null } },
-      select: { id: true, tmdbId: true, title: true, genres: true, backdropUrl: true },
-      take: 15,
-      orderBy: { createdAt: 'desc' },
-    })
-    for (const film of recentForTrailers) {
-      if (trailerCards.length >= 3) break
-      const key = await getMovieTrailerKey(film.tmdbId)
-      if (key && film.backdropUrl) {
-        trailerCards.push({
-          id: film.id,
-          title: film.title,
-          genres: film.genres,
-          backdropUrl: film.backdropUrl,
-          trailerKey: key,
+    try {
+      const nowPlaying = await getNowPlayingMovies('CA')
+      // Sort by release date descending (newest first)
+      const sorted = nowPlaying
+        .filter((m) => m.backdrop_path)
+        .sort((a, b) => {
+          const da = a.release_date ? new Date(a.release_date).getTime() : 0
+          const db = b.release_date ? new Date(b.release_date).getTime() : 0
+          return db - da
         })
+
+      for (const movie of sorted) {
+        if (trailerCards.length >= 3) break
+        const key = await getMovieTrailerKey(movie.id)
+        if (key && movie.backdrop_path) {
+          // Try to find the film in our DB for a local link, otherwise use tmdb id as key
+          const localFilm = await prisma.film.findUnique({
+            where: { tmdbId: movie.id },
+            select: { id: true, genres: true },
+          })
+          trailerCards.push({
+            id: localFilm?.id ?? `tmdb-${movie.id}`,
+            title: movie.title,
+            genres: localFilm?.genres ?? (movie.genres?.map((g) => g.name) ?? []),
+            backdropUrl: movie.backdrop_path,
+            trailerKey: key,
+          })
+        }
       }
+    } catch (err) {
+      console.error('Failed to fetch now_playing trailers:', err)
     }
   }
 
