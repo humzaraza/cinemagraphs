@@ -11,8 +11,8 @@ export default function Navigation() {
   return (
     <nav className="border-b border-cinema-border bg-cinema-darker/80 backdrop-blur-sm sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-14 md:h-20">
-          <Link href="/" className="flex flex-col">
+        <div className="flex items-center justify-between h-14 md:h-20 gap-4 md:gap-0">
+          <Link href="/" className="flex flex-col flex-shrink-0">
             <span className="font-[family-name:var(--font-playfair)] text-xl md:text-3xl font-bold text-cinema-gold leading-tight" style={{ borderBottom: '1px dashed rgba(200, 169, 81, 0.5)', paddingBottom: '2px' }}>
               Cinemagraphs
             </span>

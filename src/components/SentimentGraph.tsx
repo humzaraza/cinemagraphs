@@ -129,6 +129,14 @@ export default function SentimentGraph({
   const [spoilersRevealed, setSpoilersRevealed] = useState(false)
   const [userLineData, setUserLineData] = useState<Record<string, number> | null>(null)
   const [userReviewCount, setUserReviewCount] = useState(0)
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   useEffect(() => {
     const stored = localStorage.getItem('cinemagraphs-spoilers')
@@ -258,8 +266,8 @@ export default function SentimentGraph({
           </div>
         </div>
 
-        <ResponsiveContainer width="100%" height={320}>
-          <AreaChart data={chartData} margin={{ top: 10, right: 35, left: 10, bottom: 30 }}>
+        <ResponsiveContainer width="100%" height={isMobile ? 420 : 320}>
+          <AreaChart data={chartData} margin={{ top: 10, right: isMobile ? 25 : 35, left: isMobile ? 5 : 10, bottom: 30 }}>
             <defs>
               <linearGradient id="sentimentGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#C8A951" stopOpacity={0.3} />
@@ -276,8 +284,9 @@ export default function SentimentGraph({
               dataKey="timeMidpoint"
               tickFormatter={formatTime}
               stroke="#666"
-              fontSize={11}
-              label={{ value: runtime ? `Runtime: ${formatTime(runtime)}` : '', position: 'bottom', offset: 10, fill: '#666', fontSize: 11 }}
+              fontSize={isMobile ? 10 : 11}
+              interval={isMobile ? 2 : 0}
+              label={isMobile ? undefined : { value: runtime ? `Runtime: ${formatTime(runtime)}` : '', position: 'bottom', offset: 10, fill: '#666', fontSize: 11 }}
             />
             {/* Left Y-axis (default) */}
             <YAxis
@@ -446,19 +455,19 @@ export default function SentimentGraph({
         </ResponsiveContainer>
 
         {/* Scale labels */}
-        <div className="flex justify-between text-[10px] text-cinema-muted/60 mt-1 px-8">
+        <div className="flex justify-between text-[10px] text-cinema-muted/60 mt-1 px-4 md:px-8">
           <span>1 — Hated it</span>
           <span>5 — Neutral</span>
           <span>10 — Masterpiece</span>
         </div>
 
         {/* Story beat pills with spoiler protection */}
-        <div className="mt-4">
-          <div className="flex justify-center mb-3">
+        <div className="mt-3 md:mt-4">
+          <div className="flex justify-center mb-2 md:mb-3">
             <button
               type="button"
               onClick={toggleSpoilers}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-md border text-sm font-medium transition-all duration-200"
+              className="inline-flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-md border text-xs md:text-sm font-medium transition-all duration-200"
               style={{
                 borderColor: '#C8A951',
                 color: spoilersRevealed ? '#1a1a2e' : '#C8A951',
@@ -492,10 +501,12 @@ export default function SentimentGraph({
             </button>
           </div>
           <div
-            className="flex flex-wrap gap-1.5 transition-all duration-300"
+            className="flex gap-1.5 transition-all duration-300 overflow-x-auto md:flex-wrap md:overflow-x-visible pb-2 md:pb-0"
             style={{
               filter: spoilersRevealed ? 'none' : 'blur(4px)',
               opacity: spoilersRevealed ? 1 : 0.6,
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
             }}
           >
             {chartData.slice(1).map((dp, i) => {
@@ -506,7 +517,7 @@ export default function SentimentGraph({
                 <button
                   key={i}
                   type="button"
-                  className="text-[10px] px-2 py-0.5 rounded-full border transition-all duration-200"
+                  className="text-[10px] px-2 py-0.5 rounded-full border transition-all duration-200 flex-shrink-0 md:flex-shrink whitespace-nowrap"
                   style={{
                     color: isActive ? '#1a1a2e' : color,
                     borderColor: isActive ? color : color + '40',
