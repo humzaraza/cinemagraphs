@@ -14,9 +14,15 @@ import {
 } from 'recharts'
 import type { SentimentDataPoint, PeakLowMoment } from '@/lib/types'
 
-interface UserLinePoint {
-  timeMidpoint: number
-  userScore: number | null
+// ── Types ───────────────────────────────────────────────
+
+type GraphView = 'critics' | 'audience' | 'both' | 'merged'
+
+interface AudienceData {
+  userReviewCount: number
+  beatAverages: Record<string, number>
+  liveSessionCount: number
+  reactionScores: { index: number; score: number }[]
 }
 
 interface SentimentGraphProps {
@@ -34,6 +40,8 @@ interface SentimentGraphProps {
   generatedAt?: string | null
 }
 
+// ── Helpers ─────────────────────────────────────────────
+
 function formatTime(minutes: number): string {
   const h = Math.floor(minutes / 60)
   const m = Math.round(minutes % 60)
@@ -42,9 +50,9 @@ function formatTime(minutes: number): string {
 }
 
 function scoreColor(score: number): string {
-  if (score >= 8) return '#2DD4A8' // teal
-  if (score >= 6) return '#C8A951' // gold
-  return '#ef4444' // red
+  if (score >= 8) return '#2DD4A8'
+  if (score >= 6) return '#C8A951'
+  return '#ef4444'
 }
 
 function confidenceRadius(confidence: string): number {
@@ -52,54 +60,6 @@ function confidenceRadius(confidence: string): number {
   if (confidence === 'medium') return 6
   return 4
 }
-
-function CustomTooltip({ active, payload, spoilersRevealed }: { active?: boolean; payload?: any[]; spoilersRevealed?: boolean }) {
-  if (!active || !payload?.length) return null
-  const data = payload[0].payload as SentimentDataPoint & { userScore?: number | null }
-  const showSpoilers = spoilersRevealed === true
-  return (
-    <div className="bg-[#1a1a2e] border border-[#2a2a3e] rounded-lg p-3 max-w-xs shadow-xl">
-      <div className="flex items-center justify-between gap-3 mb-1">
-        {showSpoilers && (
-          <span className="text-cinema-cream font-semibold text-sm">{data.label}</span>
-        )}
-        <span
-          className="font-[family-name:var(--font-bebas)] text-xl"
-          style={{ color: scoreColor(data.score) }}
-        >
-          {data.score.toFixed(1)}
-        </span>
-      </div>
-      {data.userScore != null && (
-        <div className="flex items-center gap-2 mb-1">
-          <span className="w-2 h-2 rounded-full bg-[#2DD4A8]" />
-          <span className="text-xs text-cinema-muted">Users:</span>
-          <span className="font-[family-name:var(--font-bebas)] text-sm text-[#2DD4A8]">
-            {data.userScore.toFixed(1)}
-          </span>
-        </div>
-      )}
-      <div className="text-xs text-cinema-muted mb-1">
-        {formatTime(data.timeStart)} – {formatTime(data.timeEnd)}
-      </div>
-      <div className="flex items-center gap-1 mb-2">
-        <span
-          className="w-2 h-2 rounded-full"
-          style={{
-            backgroundColor:
-              data.confidence === 'high' ? '#2DD4A8' : data.confidence === 'medium' ? '#C8A951' : '#666',
-          }}
-        />
-        <span className="text-xs text-cinema-muted capitalize">{data.confidence} confidence</span>
-      </div>
-      {showSpoilers && data.reviewEvidence && (
-        <p className="text-xs text-cinema-cream/70 italic leading-relaxed">{data.reviewEvidence}</p>
-      )}
-    </div>
-  )
-}
-
-// ── Main Graph ──
 
 function relativeTime(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -113,6 +73,128 @@ function relativeTime(dateStr: string): string {
   const months = Math.floor(days / 30)
   return `${months}mo ago`
 }
+
+function getMergedWeights(reviewCount: number, sessionCount: number) {
+  if (reviewCount === 0 && sessionCount < 20) {
+    return { external: 1, audience: 0, reaction: 0 }
+  }
+
+  let ext: number
+  let aud: number
+
+  if (reviewCount >= 5) {
+    ext = 0.4
+    aud = 0.6
+  } else if (reviewCount >= 1) {
+    ext = 0.6
+    aud = 0.4
+  } else {
+    ext = 1
+    aud = 0
+  }
+
+  let react = 0
+  if (sessionCount >= 20) {
+    react = 0.2
+    ext *= 0.8
+    aud *= 0.8
+  }
+
+  return { external: ext, audience: aud, reaction: react }
+}
+
+// ── Tooltip ─────────────────────────────────────────────
+
+function CustomTooltip({
+  active,
+  payload,
+  spoilersRevealed,
+  graphView,
+}: {
+  active?: boolean
+  payload?: any[]
+  spoilersRevealed?: boolean
+  graphView?: GraphView
+}) {
+  if (!active || !payload?.length) return null
+  const data = payload[0].payload
+  const showSpoilers = spoilersRevealed === true
+  const view = graphView ?? 'critics'
+
+  return (
+    <div className="bg-[#1a1a2e] border border-[#2a2a3e] rounded-lg p-3 max-w-xs shadow-xl">
+      {showSpoilers && data.label && (
+        <span className="text-cinema-cream font-semibold text-sm block mb-1.5">{data.label}</span>
+      )}
+
+      {/* Critics score */}
+      {(view === 'critics' || view === 'both') && (
+        <div className="flex items-center gap-2 mb-1">
+          <span className="w-3 h-[2px] rounded bg-[#C8A951] inline-block" />
+          <span className="text-xs text-cinema-muted">Critics:</span>
+          <span
+            className="font-[family-name:var(--font-bebas)] text-lg"
+            style={{ color: scoreColor(data.score) }}
+          >
+            {data.score.toFixed(1)}
+          </span>
+        </div>
+      )}
+
+      {/* Audience score */}
+      {(view === 'audience' || view === 'both') && data.userScore != null && (
+        <div className="flex items-center gap-2 mb-1">
+          <span className="w-3 h-[2px] rounded bg-[#2DD4A8] inline-block" />
+          <span className="text-xs text-cinema-muted">Audience:</span>
+          <span className="font-[family-name:var(--font-bebas)] text-lg text-[#2DD4A8]">
+            {data.userScore.toFixed(1)}
+          </span>
+        </div>
+      )}
+
+      {/* Audience-only fallback when no data at this beat */}
+      {view === 'audience' && data.userScore == null && (
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-xs text-cinema-muted/50 italic">No audience data for this beat</span>
+        </div>
+      )}
+
+      {/* Merged score */}
+      {view === 'merged' && data.mergedScore != null && (
+        <div className="flex items-center gap-2 mb-1">
+          <span className="w-3 h-[2px] rounded bg-[#F5F0E8] inline-block" />
+          <span className="text-xs text-cinema-muted">Merged:</span>
+          <span className="font-[family-name:var(--font-bebas)] text-lg" style={{ color: '#F5F0E8' }}>
+            {data.mergedScore.toFixed(1)}
+          </span>
+        </div>
+      )}
+
+      <div className="text-xs text-cinema-muted mb-1">
+        {formatTime(data.timeStart)} – {formatTime(data.timeEnd)}
+      </div>
+
+      {(view === 'critics' || view === 'both' || view === 'merged') && data.confidence && (
+        <div className="flex items-center gap-1 mb-2">
+          <span
+            className="w-2 h-2 rounded-full"
+            style={{
+              backgroundColor:
+                data.confidence === 'high' ? '#2DD4A8' : data.confidence === 'medium' ? '#C8A951' : '#666',
+            }}
+          />
+          <span className="text-xs text-cinema-muted capitalize">{data.confidence} confidence</span>
+        </div>
+      )}
+
+      {showSpoilers && data.reviewEvidence && (
+        <p className="text-xs text-cinema-cream/70 italic leading-relaxed">{data.reviewEvidence}</p>
+      )}
+    </div>
+  )
+}
+
+// ── Main Component ──────────────────────────────────────
 
 export default function SentimentGraph({
   dataPoints,
@@ -128,12 +210,14 @@ export default function SentimentGraph({
   filmId,
   generatedAt,
 }: SentimentGraphProps) {
+  const [graphView, setGraphView] = useState<GraphView>('critics')
+  const [audienceData, setAudienceData] = useState<AudienceData | null>(null)
+  const [audienceLoaded, setAudienceLoaded] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null)
   const [spoilersRevealed, setSpoilersRevealed] = useState(false)
-  const [userLineData, setUserLineData] = useState<Record<string, number> | null>(null)
-  const [userReviewCount, setUserReviewCount] = useState(0)
   const [isMobile, setIsMobile] = useState(false)
 
+  // Mobile detection
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768)
     check()
@@ -141,61 +225,42 @@ export default function SentimentGraph({
     return () => window.removeEventListener('resize', check)
   }, [])
 
+  // Spoiler state from localStorage
   useEffect(() => {
     const stored = localStorage.getItem('cinemagraphs-spoilers')
     if (stored === 'true') setSpoilersRevealed(true)
   }, [])
 
-  // Fetch user review data to build the teal line
-  const fetchUserData = useCallback(async () => {
-    if (!filmId || !dataPoints || dataPoints.length === 0) return
+  // Fetch audience data (user reviews + live reactions)
+  const fetchAudienceData = useCallback(async () => {
+    if (!filmId) {
+      setAudienceLoaded(true)
+      return
+    }
     try {
-      const res = await fetch(`/api/films/${filmId}/reviews?page=1`)
-      if (!res.ok) return
-      const data = await res.json()
-      setUserReviewCount(data.summary?.totalReviews ?? 0)
-
-      // Only show user line if 5+ reviews
-      if (data.summary?.totalReviews < 5) return
-
-      // Fetch all reviews to aggregate beat ratings
-      const allPages = Math.ceil(data.total / 5)
-      let allReviews = data.reviews
-      for (let p = 2; p <= allPages; p++) {
-        const r = await fetch(`/api/films/${filmId}/reviews?page=${p}`)
-        if (r.ok) {
-          const d = await r.json()
-          allReviews = [...allReviews, ...d.reviews]
-        }
+      const res = await fetch(`/api/films/${filmId}/audience-data`)
+      if (!res.ok) {
+        setAudienceLoaded(true)
+        return
       }
+      const data: AudienceData = await res.json()
+      setAudienceData(data)
 
-      // Average beat ratings per label
-      const beatTotals: Record<string, { total: number; count: number }> = {}
-      for (const review of allReviews) {
-        if (!review.beatRatings) continue
-        for (const [label, score] of Object.entries(review.beatRatings as Record<string, number>)) {
-          if (!beatTotals[label]) beatTotals[label] = { total: 0, count: 0 }
-          beatTotals[label].total += score
-          beatTotals[label].count++
-        }
-      }
-
-      const averages: Record<string, number> = {}
-      for (const [label, { total, count }] of Object.entries(beatTotals)) {
-        averages[label] = Math.round((total / count) * 10) / 10
-      }
-
-      if (Object.keys(averages).length > 0) {
-        setUserLineData(averages)
+      // Set default view: "Both" if audience data exists, "Critics" if not
+      const hasData = Object.keys(data.beatAverages).length > 0 || data.liveSessionCount >= 20
+      if (hasData) {
+        setGraphView('both')
       }
     } catch {
       // silently fail
+    } finally {
+      setAudienceLoaded(true)
     }
-  }, [filmId, dataPoints])
+  }, [filmId])
 
   useEffect(() => {
-    fetchUserData()
-  }, [fetchUserData])
+    fetchAudienceData()
+  }, [fetchAudienceData])
 
   function toggleSpoilers() {
     const next = !spoilersRevealed
@@ -203,6 +268,7 @@ export default function SentimentGraph({
     localStorage.setItem('cinemagraphs-spoilers', String(next))
   }
 
+  // ── Empty state ──
   if (!dataPoints || dataPoints.length === 0) {
     return (
       <div className="space-y-6">
@@ -213,7 +279,6 @@ export default function SentimentGraph({
             </h3>
           </div>
           <div className="relative" style={{ height: 320 }}>
-            {/* Flat dashed midline placeholder */}
             <svg className="w-full h-full" preserveAspectRatio="none">
               <line
                 x1="5%"
@@ -236,24 +301,90 @@ export default function SentimentGraph({
     )
   }
 
-  // Map data for the chart — compute timeMidpoint if missing
-  // Prepend a synthetic neutral point so the line starts from y=5
-  const hasUserLine = userLineData != null && Object.keys(userLineData).length > 0
-  const realData = dataPoints.map((dp) => ({
-    ...dp,
-    timeMidpoint: dp.timeMidpoint ?? Math.round((dp.timeStart + dp.timeEnd) / 2),
-    fill: scoreColor(dp.score),
-    userScore: hasUserLine ? (userLineData[dp.label] ?? null) : null,
-  }))
+  // ── Audience data computed values ──
+  const hasAudienceData = audienceData != null && (
+    Object.keys(audienceData.beatAverages).length > 0 || audienceData.liveSessionCount >= 20
+  )
+
+  const mergedWeights = audienceData
+    ? getMergedWeights(audienceData.userReviewCount, audienceData.liveSessionCount)
+    : { external: 1, audience: 0, reaction: 0 }
+
+  // Reaction score lookup by data point index
+  const reactionLookup: Record<number, number> = {}
+  if (audienceData?.reactionScores) {
+    for (const rs of audienceData.reactionScores) {
+      reactionLookup[rs.index] = rs.score
+    }
+  }
+
+  // ── Chart data ──
+  const realData = dataPoints.map((dp, i) => {
+    const timeMidpoint = dp.timeMidpoint ?? Math.round((dp.timeStart + dp.timeEnd) / 2)
+    const userScore = audienceData?.beatAverages[dp.label] ?? null
+
+    // Compute merged score
+    let mergedScore: number | null = null
+    if (hasAudienceData) {
+      const audScore = userScore ?? dp.score // fallback to critics if no audience data for this beat
+      mergedScore = dp.score * mergedWeights.external + audScore * mergedWeights.audience
+      if (reactionLookup[i] !== undefined) {
+        mergedScore += reactionLookup[i] * mergedWeights.reaction
+      }
+      mergedScore = Math.max(1, Math.min(10, Math.round(mergedScore * 10) / 10))
+    }
+
+    return {
+      ...dp,
+      timeMidpoint,
+      fill: scoreColor(dp.score),
+      userScore,
+      mergedScore,
+    }
+  })
+
+  // Prepend synthetic neutral starting point
   const chartData = [
-    { timeMidpoint: 0, timeStart: 0, timeEnd: 0, score: 5, label: '', confidence: 'low', fill: scoreColor(5), userScore: hasUserLine ? 5 : null } as typeof realData[0],
+    {
+      timeMidpoint: 0,
+      timeStart: 0,
+      timeEnd: 0,
+      score: 5,
+      label: '',
+      confidence: 'low' as const,
+      reviewEvidence: '',
+      fill: scoreColor(5),
+      userScore: hasAudienceData ? 5 : null,
+      mergedScore: hasAudienceData ? 5 : null,
+    } as (typeof realData)[0],
     ...realData,
   ]
+
+  // ── Visibility flags ──
+  const showCritics = graphView === 'critics' || graphView === 'both'
+  const showAudience = (graphView === 'audience' || graphView === 'both') && hasAudienceData
+  const showMerged = graphView === 'merged' && hasAudienceData
+
+  // ── Toggle options ──
+  const toggleOptions: { value: GraphView; label: string; disabled: boolean; color: string }[] = [
+    { value: 'critics', label: 'Critics', disabled: false, color: '#C8A951' },
+    { value: 'audience', label: 'Audience', disabled: !hasAudienceData, color: '#2DD4A8' },
+    { value: 'both', label: 'Both', disabled: !hasAudienceData, color: '#C8A951' },
+    { value: 'merged', label: 'Merged', disabled: !hasAudienceData, color: '#F5F0E8' },
+  ]
+
+  // Score for beat pills — corresponds to visible line(s)
+  const getPillScore = (dp: (typeof chartData)[0]) => {
+    if (graphView === 'audience') return dp.userScore
+    if (graphView === 'merged') return dp.mergedScore
+    return dp.score // critics or both
+  }
 
   return (
     <div className="space-y-6">
       {/* Main Graph */}
       <div className="bg-cinema-darker rounded-lg border border-cinema-border p-4 md:p-6">
+        {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-[family-name:var(--font-playfair)] text-lg text-cinema-cream">
             Audience Sentiment
@@ -269,6 +400,67 @@ export default function SentimentGraph({
           </div>
         </div>
 
+        {/* Toggle Controls */}
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <div className="inline-flex items-center gap-1 bg-cinema-dark/60 rounded-full p-1 border border-cinema-border">
+            {toggleOptions.map((opt) => {
+              const isActive = graphView === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  disabled={opt.disabled}
+                  onClick={() => !opt.disabled && setGraphView(opt.value)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${
+                    opt.disabled ? 'cursor-not-allowed' : 'cursor-pointer'
+                  }`}
+                  style={
+                    isActive
+                      ? {
+                          backgroundColor: opt.color + '20',
+                          color: opt.color,
+                          boxShadow: `inset 0 0 0 1px ${opt.color}40`,
+                        }
+                      : opt.disabled
+                        ? { color: 'rgba(102,102,102,0.3)' }
+                        : { color: '#888' }
+                  }
+                  onMouseEnter={(e) => {
+                    if (!opt.disabled && !isActive) {
+                      e.currentTarget.style.color = '#ccc'
+                      e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!opt.disabled && !isActive) {
+                      e.currentTarget.style.color = '#888'
+                      e.currentTarget.style.backgroundColor = 'transparent'
+                    }
+                  }}
+                >
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* No audience data message */}
+          {audienceLoaded && !hasAudienceData && (
+            <span className="text-xs text-cinema-muted/60">
+              No audience data yet —{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  document.getElementById('community-tabs')?.scrollIntoView({ behavior: 'smooth' })
+                }}
+                className="text-cinema-gold/70 hover:text-cinema-gold underline transition-colors"
+              >
+                be the first to review
+              </button>
+            </span>
+          )}
+        </div>
+
+        {/* Chart */}
         <ResponsiveContainer width="100%" height={isMobile ? 420 : 320}>
           <AreaChart data={chartData} margin={{ top: 10, right: isMobile ? 25 : 35, left: isMobile ? 5 : 10, bottom: 30 }}>
             <defs>
@@ -278,8 +470,12 @@ export default function SentimentGraph({
                 <stop offset="95%" stopColor="#C8A951" stopOpacity={0} />
               </linearGradient>
               <linearGradient id="userGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#2DD4A8" stopOpacity={0.15} />
+                <stop offset="5%" stopColor="#2DD4A8" stopOpacity={0.2} />
                 <stop offset="95%" stopColor="#2DD4A8" stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="mergedGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#F5F0E8" stopOpacity={0.15} />
+                <stop offset="95%" stopColor="#F5F0E8" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3e" />
@@ -289,9 +485,19 @@ export default function SentimentGraph({
               stroke="#666"
               fontSize={isMobile ? 10 : 11}
               interval={isMobile ? 2 : 0}
-              label={isMobile ? undefined : { value: runtime ? `Runtime: ${formatTime(runtime)}` : '', position: 'bottom', offset: 10, fill: '#666', fontSize: 11 }}
+              label={
+                isMobile
+                  ? undefined
+                  : {
+                      value: runtime ? `Runtime: ${formatTime(runtime)}` : '',
+                      position: 'bottom',
+                      offset: 10,
+                      fill: '#666',
+                      fontSize: 11,
+                    }
+              }
             />
-            {/* Left Y-axis (default) */}
+            {/* Left Y-axis */}
             <YAxis
               domain={[1, 10]}
               ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
@@ -320,75 +526,94 @@ export default function SentimentGraph({
               activeDot={false}
               isAnimationActive={false}
             />
-            <Tooltip content={<CustomTooltip spoilersRevealed={spoilersRevealed} />} cursor={{ stroke: '#C8A951', strokeOpacity: 0.3, strokeDasharray: '4 4' }} />
+
+            <Tooltip
+              content={<CustomTooltip spoilersRevealed={spoilersRevealed} graphView={graphView} />}
+              cursor={{ stroke: '#C8A951', strokeOpacity: 0.3, strokeDasharray: '4 4' }}
+            />
 
             {/* Neutral reference line */}
             <ReferenceLine y={5} stroke="#666" strokeDasharray="6 4" />
 
-            <Area
-              type="monotone"
-              dataKey="score"
-              stroke="#C8A951"
-              strokeWidth={2.5}
-              fill="url(#sentimentGradient)"
-              isAnimationActive={false}
-              dot={(props: any) => {
-                const { cx, cy, payload, index } = props
-                if (cx == null || cy == null) return <circle r={0} />
-                const isHighlighted = highlightedIndex === index
-                const baseR = confidenceRadius(payload.confidence)
-                const r = isHighlighted ? baseR + 4 : baseR
-                const color = scoreColor(payload.score)
-                return (
-                  <g key={`dot-${index}`}>
-                    {isHighlighted && (
+            {/* ── Critics line (Gold, solid) ── */}
+            {showCritics && (
+              <Area
+                type="monotone"
+                dataKey="score"
+                stroke="#C8A951"
+                strokeWidth={2.5}
+                fill="url(#sentimentGradient)"
+                isAnimationActive={false}
+                dot={(props: any) => {
+                  const { cx, cy, payload, index } = props
+                  if (cx == null || cy == null) return <circle r={0} />
+                  const isHighlighted = highlightedIndex === index
+                  const baseR = confidenceRadius(payload.confidence)
+                  const r = isHighlighted ? baseR + 4 : baseR
+                  const color = scoreColor(payload.score)
+                  return (
+                    <g key={`dot-${index}`}>
+                      {isHighlighted && (
+                        <circle
+                          cx={cx}
+                          cy={cy}
+                          r={r + 4}
+                          fill="none"
+                          stroke="#fff"
+                          strokeWidth={2}
+                          opacity={0.6}
+                        >
+                          <animate
+                            attributeName="r"
+                            from={String(r + 2)}
+                            to={String(r + 6)}
+                            dur="1s"
+                            repeatCount="indefinite"
+                          />
+                          <animate
+                            attributeName="opacity"
+                            from="0.6"
+                            to="0"
+                            dur="1s"
+                            repeatCount="indefinite"
+                          />
+                        </circle>
+                      )}
                       <circle
                         cx={cx}
                         cy={cy}
-                        r={r + 4}
-                        fill="none"
-                        stroke="#fff"
-                        strokeWidth={2}
-                        opacity={0.6}
-                      >
-                        <animate attributeName="r" from={String(r + 2)} to={String(r + 6)} dur="1s" repeatCount="indefinite" />
-                        <animate attributeName="opacity" from="0.6" to="0" dur="1s" repeatCount="indefinite" />
-                      </circle>
-                    )}
+                        r={r}
+                        fill={color}
+                        stroke={isHighlighted ? '#fff' : '#1a1a2e'}
+                        strokeWidth={isHighlighted ? 3 : 2}
+                        style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
+                      />
+                    </g>
+                  )
+                }}
+                activeDot={(props: any) => {
+                  const { cx, cy, payload, index } = props
+                  if (cx == null || cy == null) return <circle r={0} />
+                  const r = confidenceRadius(payload.confidence) + 3
+                  const color = scoreColor(payload.score)
+                  return (
                     <circle
+                      key={`activedot-${index}`}
                       cx={cx}
                       cy={cy}
                       r={r}
                       fill={color}
-                      stroke={isHighlighted ? '#fff' : '#1a1a2e'}
-                      strokeWidth={isHighlighted ? 3 : 2}
-                      style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
+                      stroke="#F0E6D3"
+                      strokeWidth={2}
+                      style={{ cursor: 'pointer' }}
                     />
-                  </g>
-                )
-              }}
-              activeDot={(props: any) => {
-                const { cx, cy, payload, index } = props
-                if (cx == null || cy == null) return <circle r={0} />
-                const r = confidenceRadius(payload.confidence) + 3
-                const color = scoreColor(payload.score)
-                return (
-                  <circle
-                    key={`activedot-${index}`}
-                    cx={cx}
-                    cy={cy}
-                    r={r}
-                    fill={color}
-                    stroke="#F0E6D3"
-                    strokeWidth={2}
-                    style={{ cursor: 'pointer' }}
-                  />
-                )
-              }}
-            />
+                  )
+                }}
+              />
+            )}
 
-            {/* Peak moment */}
-            {peakMoment && (
+            {/* Peak moment (shown with critics line) */}
+            {showCritics && peakMoment && (
               <ReferenceDot
                 x={peakMoment.time}
                 y={peakMoment.score}
@@ -399,8 +624,8 @@ export default function SentimentGraph({
               />
             )}
 
-            {/* Lowest moment */}
-            {lowestMoment && (
+            {/* Lowest moment (shown with critics line) */}
+            {showCritics && lowestMoment && (
               <ReferenceDot
                 x={lowestMoment.time}
                 y={lowestMoment.score}
@@ -411,14 +636,13 @@ export default function SentimentGraph({
               />
             )}
 
-            {/* User sentiment line (teal dashed) */}
-            {hasUserLine && (
+            {/* ── Audience line (Teal, solid) ── */}
+            {showAudience && (
               <Area
                 type="monotone"
                 dataKey="userScore"
                 stroke="#2DD4A8"
                 strokeWidth={2}
-                strokeDasharray="5 5"
                 fill="url(#userGradient)"
                 isAnimationActive={false}
                 connectNulls
@@ -448,6 +672,49 @@ export default function SentimentGraph({
                       r={6}
                       fill="#2DD4A8"
                       stroke="#F0E6D3"
+                      strokeWidth={2}
+                    />
+                  )
+                }}
+              />
+            )}
+
+            {/* ── Merged line (Ivory, solid) ── */}
+            {showMerged && (
+              <Area
+                type="monotone"
+                dataKey="mergedScore"
+                stroke="rgba(245,240,232,0.9)"
+                strokeWidth={2.5}
+                fill="url(#mergedGradient)"
+                isAnimationActive={false}
+                connectNulls
+                dot={(props: any) => {
+                  const { cx, cy, payload, index } = props
+                  if (cx == null || cy == null || payload.mergedScore == null) return <circle r={0} />
+                  return (
+                    <circle
+                      key={`merged-dot-${index}`}
+                      cx={cx}
+                      cy={cy}
+                      r={5}
+                      fill="#F5F0E8"
+                      stroke="#1a1a2e"
+                      strokeWidth={1.5}
+                    />
+                  )
+                }}
+                activeDot={(props: any) => {
+                  const { cx, cy, index } = props
+                  if (cx == null || cy == null) return <circle r={0} />
+                  return (
+                    <circle
+                      key={`merged-activedot-${index}`}
+                      cx={cx}
+                      cy={cy}
+                      r={7}
+                      fill="#F5F0E8"
+                      stroke="#1a1a2e"
                       strokeWidth={2}
                     />
                   )
@@ -488,7 +755,11 @@ export default function SentimentGraph({
               {spoilersRevealed ? (
                 <>
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M3 3l18 18" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M3 3l18 18"
+                    />
                   </svg>
                   Hide Spoilers
                 </>
@@ -496,7 +767,11 @@ export default function SentimentGraph({
                 <>
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                    />
                   </svg>
                   Reveal Spoilers
                 </>
@@ -514,7 +789,9 @@ export default function SentimentGraph({
           >
             {chartData.slice(1).map((dp, i) => {
               const chartIndex = i + 1
-              const color = scoreColor(dp.score)
+              const pillScore = getPillScore(dp)
+              if (pillScore == null) return null
+              const color = scoreColor(pillScore)
               const isActive = highlightedIndex === chartIndex
               return (
                 <button
@@ -528,9 +805,13 @@ export default function SentimentGraph({
                     transform: isActive ? 'scale(1.1)' : 'scale(1)',
                     boxShadow: isActive ? `0 0 8px ${color}60` : 'none',
                   }}
-                  onMouseEnter={() => spoilersRevealed ? setHighlightedIndex(chartIndex) : undefined}
-                  onMouseLeave={() => spoilersRevealed ? setHighlightedIndex(null) : undefined}
-                  onClick={() => spoilersRevealed ? setHighlightedIndex(highlightedIndex === chartIndex ? null : chartIndex) : toggleSpoilers()}
+                  onMouseEnter={() => (spoilersRevealed ? setHighlightedIndex(chartIndex) : undefined)}
+                  onMouseLeave={() => (spoilersRevealed ? setHighlightedIndex(null) : undefined)}
+                  onClick={() =>
+                    spoilersRevealed
+                      ? setHighlightedIndex(highlightedIndex === chartIndex ? null : chartIndex)
+                      : toggleSpoilers()
+                  }
                 >
                   {dp.label}
                 </button>
@@ -539,20 +820,30 @@ export default function SentimentGraph({
           </div>
         </div>
 
-        {/* Legend */}
+        {/* Dynamic Legend */}
         <div className="flex flex-wrap items-center justify-between mt-4 text-xs text-cinema-muted">
           <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-cinema-gold" />
-              <span>External Reviews</span>
-            </div>
-            {hasUserLine && (
+            {/* Line labels — only for visible lines */}
+            {showCritics && (
               <div className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-full bg-[#2DD4A8]" />
-                <span>Cinemagraphs Users</span>
+                <span className="w-5 h-[2px] rounded bg-[#C8A951] inline-block" />
+                <span>Critics</span>
+              </div>
+            )}
+            {showAudience && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-5 h-[2px] rounded bg-[#2DD4A8] inline-block" />
+                <span>Audience</span>
+              </div>
+            )}
+            {showMerged && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-5 h-[2px] rounded bg-[#F5F0E8] inline-block" />
+                <span>Merged</span>
               </div>
             )}
             <span className="text-cinema-muted/40">|</span>
+            {/* Score color key */}
             <div className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded-full bg-[#2DD4A8]" />
               <span>8+ Great</span>
@@ -567,9 +858,9 @@ export default function SentimentGraph({
             </div>
           </div>
           <div className="flex items-center gap-1 text-cinema-muted/60">
-            {(reviewCount != null || userReviewCount > 0) && (
+            {(reviewCount != null || (audienceData?.userReviewCount ?? 0) > 0) && (
               <span>
-                {(reviewCount ?? 0) + userReviewCount} reviews
+                {(reviewCount ?? 0) + (audienceData?.userReviewCount ?? 0)} reviews
               </span>
             )}
             {generatedAt && (
@@ -601,9 +892,7 @@ export default function SentimentGraph({
               {peakMoment.label}
             </p>
             <div className="flex items-baseline gap-2">
-              <span
-                className="font-[family-name:var(--font-bebas)] text-2xl text-[#2DD4A8]"
-              >
+              <span className="font-[family-name:var(--font-bebas)] text-2xl text-[#2DD4A8]">
                 {peakMoment.score.toFixed(1)}
               </span>
               <span className="text-xs text-cinema-muted">at {formatTime(peakMoment.time)}</span>
@@ -666,7 +955,7 @@ export default function SentimentGraph({
             {sourcesUsed && sourcesUsed.length > 0 && (
               <>
                 <span className="text-cinema-muted/40">|</span>
-                <span>Sources: {sourcesUsed.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', ')}</span>
+                <span>Sources: {sourcesUsed.map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join(', ')}</span>
               </>
             )}
           </div>
