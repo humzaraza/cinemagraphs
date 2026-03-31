@@ -71,7 +71,6 @@ export function FilmCardMiniGraph({
     timeMidpoint: dp.timeMidpoint ?? Math.round(((dp.timeStart ?? 0) + (dp.timeEnd ?? 0)) / 2),
   }))
 
-  // Prepend synthetic neutral start point
   const allPoints: { timeMidpoint: number; score: number; label?: string }[] = [
     { timeMidpoint: 0, score: 5 },
     ...chartData.map((dp) => ({
@@ -90,10 +89,6 @@ export function FilmCardMiniGraph({
     return GRAPH_PADDING_X + ((t - minTime) / timeRange) * (SVG_WIDTH - GRAPH_PADDING_X * 2)
   }
 
-  function xToTime(x: number): number {
-    return minTime + ((x - GRAPH_PADDING_X) / (SVG_WIDTH - GRAPH_PADDING_X * 2)) * timeRange
-  }
-
   const linePoints = allPoints.map((d) => ({
     x: timeToX(d.timeMidpoint),
     y: scoreToY(d.score),
@@ -110,22 +105,18 @@ export function FilmCardMiniGraph({
   const lastDp = chartData[chartData.length - 1]
   const endTime = runtime ?? lastDp?.timeMidpoint ?? maxTime
 
-  // Unique gradient ID to avoid conflicts when multiple cards render
   const gradientId = `miniGrad-${dataPoints.length}-${allPoints[1]?.timeMidpoint ?? 0}`
 
-  // Interpolate score at a given SVG X position along the polyline
   const interpolateAtX = useCallback(
     (svgX: number): HoverInfo | null => {
       if (svgX < linePoints[0].x || svgX > linePoints[linePoints.length - 1].x) return null
 
-      // Find the segment the cursor falls within
       for (let i = 0; i < linePoints.length - 1; i++) {
         const a = linePoints[i]
         const b = linePoints[i + 1]
         if (svgX >= a.x && svgX <= b.x) {
           const t = (svgX - a.x) / (b.x - a.x || 1)
           const score = a.score + t * (b.score - a.score)
-          // Use the nearest data point's label
           const nearest = t < 0.5 ? a : b
           return { svgX, score: Math.round(score * 10) / 10, label: nearest.label }
         }
@@ -150,10 +141,16 @@ export function FilmCardMiniGraph({
 
   const handleMouseLeave = useCallback(() => setHover(null), [])
 
+  // Position tooltip inside the SVG area to avoid overflow-hidden clipping
   const hoverY = hover ? scoreToY(hover.score) : 0
+  const tooltipText = hover ? `${hover.score.toFixed(1)}${hover.label ? ` ${hover.label}` : ''}` : ''
+  // Keep tooltip inside SVG bounds
+  const tooltipX = hover ? Math.max(30, Math.min(hover.svgX, SVG_WIDTH - 30)) : 0
+  // Place tooltip above the dot, or below if too close to top
+  const tooltipY = hover ? (hoverY > 18 ? hoverY - 10 : hoverY + 14) : 0
 
   return (
-    <div className="relative">
+    <div>
       <svg
         ref={svgRef}
         viewBox={`0 0 ${SVG_WIDTH} ${GRAPH_HEIGHT}`}
@@ -187,9 +184,10 @@ export function FilmCardMiniGraph({
         {/* Gold line */}
         <path d={linePath} fill="none" stroke="#C8A951" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
 
-        {/* Hover cursor line + dot */}
+        {/* Hover elements — all inside SVG so they're never clipped */}
         {hover && (
           <>
+            {/* Vertical cursor line */}
             <line
               x1={hover.svgX}
               y1={GRAPH_PADDING_TOP}
@@ -198,6 +196,7 @@ export function FilmCardMiniGraph({
               stroke="rgba(200,169,110,0.4)"
               strokeWidth={0.8}
             />
+            {/* Dot on the line */}
             <circle
               cx={hover.svgX}
               cy={hoverY}
@@ -206,29 +205,32 @@ export function FilmCardMiniGraph({
               stroke="#0D0D1A"
               strokeWidth={1}
             />
+            {/* Tooltip background */}
+            <rect
+              x={tooltipX - tooltipText.length * 2.8 - 4}
+              y={tooltipY - 6}
+              width={tooltipText.length * 5.6 + 8}
+              height={12}
+              rx={2}
+              fill="#1a1a2e"
+              stroke="rgba(200,169,110,0.3)"
+              strokeWidth={0.5}
+            />
+            {/* Tooltip text */}
+            <text
+              x={tooltipX}
+              y={tooltipY + 2.5}
+              textAnchor="middle"
+              fontSize={7}
+              fontWeight={600}
+              fill={scoreColor(hover.score)}
+              style={{ pointerEvents: 'none' }}
+            >
+              {tooltipText}
+            </text>
           </>
         )}
       </svg>
-
-      {/* Hover tooltip */}
-      {hover && (
-        <div
-          className="absolute pointer-events-none z-10 px-1.5 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap"
-          style={{
-            left: `${(hover.svgX / SVG_WIDTH) * 100}%`,
-            top: -2,
-            transform: 'translate(-50%, -100%)',
-            backgroundColor: '#1a1a2e',
-            border: '1px solid rgba(200,169,110,0.3)',
-            color: scoreColor(hover.score),
-          }}
-        >
-          {hover.score.toFixed(1)}
-          {hover.label && (
-            <span className="text-cinema-muted ml-1 font-normal">{hover.label}</span>
-          )}
-        </div>
-      )}
 
       {/* Runtime labels */}
       <div className="flex justify-between px-0.5 mt-0.5">
