@@ -11,6 +11,7 @@ import {
   YAxis,
   CartesianGrid,
   ReferenceLine,
+  Tooltip,
   ResponsiveContainer,
 } from 'recharts'
 
@@ -196,39 +197,92 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
             </div>
           </div>
 
-          {/* Right: Sentiment graph — wide landscape card */}
-          <div className="bg-cinema-darker/80 backdrop-blur-sm rounded-xl border border-cinema-border px-2 py-3 md:px-3 md:py-4">
-            <div className="mb-2 px-1 md:px-2">
-              <span className="text-xs text-cinema-muted uppercase tracking-wider">Sentiment Timeline</span>
+          {/* Right: Sentiment graph — clickable, hoverable */}
+          <Link href={`/films/${film.id}`} className="block cursor-pointer">
+            <div className="bg-cinema-darker/80 backdrop-blur-sm rounded-xl border border-cinema-border px-2 py-3 md:px-3 md:py-4 hover:border-cinema-gold/50 transition-colors">
+              <div className="mb-2 px-1 md:px-2 flex items-center justify-between">
+                <span className="text-xs text-cinema-muted uppercase tracking-wider">Sentiment Timeline</span>
+                <span className="text-[10px] text-cinema-gold/50 hidden md:inline">Click to view full graph</span>
+              </div>
+              <ResponsiveContainer width="100%" height={280}>
+                <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
+                  <defs>
+                    <linearGradient id="heroGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#C8A951" stopOpacity={0.3} />
+                      <stop offset="50%" stopColor="#C8A951" stopOpacity={0.1} />
+                      <stop offset="95%" stopColor="#C8A951" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3e" />
+                  <XAxis dataKey="timeMidpoint" tickFormatter={formatTime} stroke="#666" fontSize={11} />
+                  <YAxis domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={11} width={28} />
+                  <YAxis yAxisId="right" orientation="right" domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={11} width={28} />
+                  <Area yAxisId="right" type="monotone" dataKey="score" stroke="none" fill="none" dot={false} activeDot={false} isAnimationActive={false} />
+                  <ReferenceLine y={5} stroke="#888" strokeDasharray="6 4" strokeWidth={1} />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null
+                      const data = payload[0].payload
+                      if (!data.label) return null
+                      return (
+                        <div className="bg-[#1a1a2e] border border-[#2a2a3e] rounded-lg px-3 py-2 shadow-xl">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="font-[family-name:var(--font-bebas)] text-xl"
+                              style={{ color: scoreColor(data.score) }}
+                            >
+                              {data.score.toFixed(1)}
+                            </span>
+                            <span className="text-xs text-cinema-cream">{data.label}</span>
+                          </div>
+                          <div className="text-[10px] text-cinema-muted mt-0.5">
+                            {formatTime(data.timeStart)} - {formatTime(data.timeEnd)}
+                          </div>
+                        </div>
+                      )
+                    }}
+                    cursor={{ stroke: '#C8A951', strokeOpacity: 0.3, strokeDasharray: '4 4' }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="score"
+                    stroke="#C8A951"
+                    strokeWidth={2.5}
+                    fill="url(#heroGradient)"
+                    isAnimationActive={false}
+                    dot={(props: any) => {
+                      const { cx, cy, payload } = props
+                      if (cx == null || cy == null || !payload.label) return <circle r={0} />
+                      return (
+                        <circle
+                          cx={cx}
+                          cy={cy}
+                          r={4}
+                          fill={scoreColor(payload.score)}
+                          stroke="#1a1a2e"
+                          strokeWidth={1.5}
+                        />
+                      )
+                    }}
+                    activeDot={(props: any) => {
+                      const { cx, cy, payload } = props
+                      if (cx == null || cy == null) return <circle r={0} />
+                      return (
+                        <circle
+                          cx={cx}
+                          cy={cy}
+                          r={6}
+                          fill={scoreColor(payload.score)}
+                          stroke="#F0E6D3"
+                          strokeWidth={2}
+                        />
+                      )
+                    }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
-            <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
-                <defs>
-                  <linearGradient id="heroGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#C8A951" stopOpacity={0.3} />
-                    <stop offset="50%" stopColor="#C8A951" stopOpacity={0.1} />
-                    <stop offset="95%" stopColor="#C8A951" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3e" />
-                <XAxis dataKey="timeMidpoint" tickFormatter={formatTime} stroke="#666" fontSize={11} />
-                <YAxis domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={11} width={28} />
-                <YAxis yAxisId="right" orientation="right" domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={11} width={28} />
-                <Area yAxisId="right" type="monotone" dataKey="score" stroke="none" fill="none" dot={false} activeDot={false} isAnimationActive={false} />
-                <ReferenceLine y={5} stroke="#888" strokeDasharray="6 4" strokeWidth={1} />
-                <Area
-                  type="monotone"
-                  dataKey="score"
-                  stroke="#C8A951"
-                  strokeWidth={2.5}
-                  fill="url(#heroGradient)"
-                  dot={false}
-                  activeDot={false}
-                  isAnimationActive={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          </Link>
         </div>
 
         {/* Navigation arrows + dots */}
