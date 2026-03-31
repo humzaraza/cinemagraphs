@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
+import { invalidateFilmCache, invalidateHomepageCache } from '@/lib/cache'
 
 export async function PATCH(
   request: Request,
@@ -34,6 +35,12 @@ export async function PATCH(
       where: { id },
       data: updateData,
     })
+
+    // Invalidate caches when homepage-affecting fields change
+    const homepageFields = ['nowPlaying', 'isFeatured', 'pinnedSection', 'status']
+    if (homepageFields.some((f) => f in updateData)) {
+      await Promise.all([invalidateFilmCache(id), invalidateHomepageCache()])
+    }
 
     return Response.json({ film })
   } catch (err) {

@@ -1,14 +1,15 @@
 'use client'
 
+import { useState, useRef, useCallback } from 'react'
 import type { MiniGraphDataPoint } from '@/lib/types'
 
 const GRAPH_HEIGHT = 48
 const GRAPH_PADDING_X = 4
 const GRAPH_PADDING_TOP = 4
 const GRAPH_PADDING_BOTTOM = 2
+const SVG_WIDTH = 300
 
 function scoreToY(score: number): number {
-  // Map score (1–10) to y position within drawable area
   const drawableHeight = GRAPH_HEIGHT - GRAPH_PADDING_TOP - GRAPH_PADDING_BOTTOM
   return GRAPH_PADDING_TOP + ((10 - score) / 9) * drawableHeight
 }
@@ -20,6 +21,18 @@ function formatRuntime(minutes: number): string {
   return `${h}h${m.toString().padStart(2, '0')}m`
 }
 
+function scoreColor(score: number): string {
+  if (score >= 8) return '#2DD4A8'
+  if (score >= 6) return '#C8A951'
+  return '#ef4444'
+}
+
+interface HoverInfo {
+  svgX: number
+  score: number
+  label?: string
+}
+
 export function FilmCardMiniGraph({
   dataPoints,
   runtime,
@@ -27,12 +40,14 @@ export function FilmCardMiniGraph({
   dataPoints: MiniGraphDataPoint[]
   runtime: number | null
 }) {
+  const svgRef = useRef<SVGSVGElement>(null)
+  const [hover, setHover] = useState<HoverInfo | null>(null)
+
   if (!dataPoints || dataPoints.length === 0) {
-    // Flat dashed placeholder line
     return (
       <div>
         <svg
-          viewBox={`0 0 ${300} ${GRAPH_HEIGHT}`}
+          viewBox={`0 0 ${SVG_WIDTH} ${GRAPH_HEIGHT}`}
           preserveAspectRatio="none"
           className="w-full"
           style={{ height: GRAPH_HEIGHT, display: 'block' }}
@@ -40,7 +55,7 @@ export function FilmCardMiniGraph({
           <line
             x1={GRAPH_PADDING_X}
             y1={GRAPH_HEIGHT / 2}
-            x2={300 - GRAPH_PADDING_X}
+            x2={SVG_WIDTH - GRAPH_PADDING_X}
             y2={GRAPH_HEIGHT / 2}
             stroke="#555"
             strokeWidth={0.8}
@@ -57,58 +72,106 @@ export function FilmCardMiniGraph({
   }))
 
   // Prepend synthetic neutral start point
-  const allPoints = [{ timeMidpoint: 0, score: 5 }, ...chartData]
+  const allPoints: { timeMidpoint: number; score: number; label?: string }[] = [
+    { timeMidpoint: 0, score: 5 },
+    ...chartData.map((dp) => ({
+      timeMidpoint: dp.timeMidpoint,
+      score: dp.score,
+      label: (dp as any).label as string | undefined,
+    })),
+  ]
 
-  // X range
   const times = allPoints.map((d) => d.timeMidpoint)
   const minTime = Math.min(...times)
   const maxTime = Math.max(...times)
   const timeRange = maxTime - minTime || 1
 
-  // Compute SVG width from container — use 100% via viewBox
-  const SVG_WIDTH = 300
-
   function timeToX(t: number): number {
     return GRAPH_PADDING_X + ((t - minTime) / timeRange) * (SVG_WIDTH - GRAPH_PADDING_X * 2)
   }
 
-  // Build the line path
+  function xToTime(x: number): number {
+    return minTime + ((x - GRAPH_PADDING_X) / (SVG_WIDTH - GRAPH_PADDING_X * 2)) * timeRange
+  }
+
   const linePoints = allPoints.map((d) => ({
     x: timeToX(d.timeMidpoint),
     y: scoreToY(d.score),
+    score: d.score,
+    label: d.label,
   }))
 
   const linePath = linePoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
-
-  // Build the fill path (close to bottom)
   const fillPath =
     linePath +
     ` L${linePoints[linePoints.length - 1].x},${GRAPH_HEIGHT} L${linePoints[0].x},${GRAPH_HEIGHT} Z`
 
-  // Neutral line at score=5
   const neutralY = scoreToY(5)
-
-  // Runtime label — use last data point's end time or runtime prop
   const lastDp = chartData[chartData.length - 1]
   const endTime = runtime ?? lastDp?.timeMidpoint ?? maxTime
 
+  // Unique gradient ID to avoid conflicts when multiple cards render
+  const gradientId = `miniGrad-${dataPoints.length}-${allPoints[1]?.timeMidpoint ?? 0}`
+
+  // Interpolate score at a given SVG X position along the polyline
+  const interpolateAtX = useCallback(
+    (svgX: number): HoverInfo | null => {
+      if (svgX < linePoints[0].x || svgX > linePoints[linePoints.length - 1].x) return null
+
+      // Find the segment the cursor falls within
+      for (let i = 0; i < linePoints.length - 1; i++) {
+        const a = linePoints[i]
+        const b = linePoints[i + 1]
+        if (svgX >= a.x && svgX <= b.x) {
+          const t = (svgX - a.x) / (b.x - a.x || 1)
+          const score = a.score + t * (b.score - a.score)
+          // Use the nearest data point's label
+          const nearest = t < 0.5 ? a : b
+          return { svgX, score: Math.round(score * 10) / 10, label: nearest.label }
+        }
+      }
+      return null
+    },
+    [linePoints],
+  )
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      const svg = svgRef.current
+      if (!svg) return
+      const rect = svg.getBoundingClientRect()
+      const relX = e.clientX - rect.left
+      const svgX = (relX / rect.width) * SVG_WIDTH
+      const info = interpolateAtX(svgX)
+      setHover(info)
+    },
+    [interpolateAtX],
+  )
+
+  const handleMouseLeave = useCallback(() => setHover(null), [])
+
+  const hoverY = hover ? scoreToY(hover.score) : 0
+
   return (
-    <div>
+    <div className="relative">
       <svg
+        ref={svgRef}
         viewBox={`0 0 ${SVG_WIDTH} ${GRAPH_HEIGHT}`}
         preserveAspectRatio="none"
         className="w-full"
-        style={{ height: GRAPH_HEIGHT, display: 'block' }}
+        style={{ height: GRAPH_HEIGHT, display: 'block', cursor: hover ? 'crosshair' : undefined }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
       >
         <defs>
-          <linearGradient id="miniGradient" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#C8A951" stopOpacity={0.35} />
             <stop offset="100%" stopColor="#C8A951" stopOpacity={0} />
           </linearGradient>
         </defs>
 
         {/* Fill area */}
-        <path d={fillPath} fill="url(#miniGradient)" />
+        <path d={fillPath} fill={`url(#${gradientId})`} />
 
         {/* Dashed neutral line at score=5 */}
         <line
@@ -123,7 +186,49 @@ export function FilmCardMiniGraph({
 
         {/* Gold line */}
         <path d={linePath} fill="none" stroke="#C8A951" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+
+        {/* Hover cursor line + dot */}
+        {hover && (
+          <>
+            <line
+              x1={hover.svgX}
+              y1={GRAPH_PADDING_TOP}
+              x2={hover.svgX}
+              y2={GRAPH_HEIGHT - GRAPH_PADDING_BOTTOM}
+              stroke="rgba(200,169,110,0.4)"
+              strokeWidth={0.8}
+            />
+            <circle
+              cx={hover.svgX}
+              cy={hoverY}
+              r={3}
+              fill={scoreColor(hover.score)}
+              stroke="#0D0D1A"
+              strokeWidth={1}
+            />
+          </>
+        )}
       </svg>
+
+      {/* Hover tooltip */}
+      {hover && (
+        <div
+          className="absolute pointer-events-none z-10 px-1.5 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap"
+          style={{
+            left: `${(hover.svgX / SVG_WIDTH) * 100}%`,
+            top: -2,
+            transform: 'translate(-50%, -100%)',
+            backgroundColor: '#1a1a2e',
+            border: '1px solid rgba(200,169,110,0.3)',
+            color: scoreColor(hover.score),
+          }}
+        >
+          {hover.score.toFixed(1)}
+          {hover.label && (
+            <span className="text-cinema-muted ml-1 font-normal">{hover.label}</span>
+          )}
+        </div>
+      )}
 
       {/* Runtime labels */}
       <div className="flex justify-between px-0.5 mt-0.5">
