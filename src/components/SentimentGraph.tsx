@@ -53,13 +53,16 @@ function confidenceRadius(confidence: string): number {
   return 4
 }
 
-function CustomTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
+function CustomTooltip({ active, payload, spoilersRevealed }: { active?: boolean; payload?: any[]; spoilersRevealed?: boolean }) {
   if (!active || !payload?.length) return null
   const data = payload[0].payload as SentimentDataPoint & { userScore?: number | null }
+  const showSpoilers = spoilersRevealed === true
   return (
     <div className="bg-[#1a1a2e] border border-[#2a2a3e] rounded-lg p-3 max-w-xs shadow-xl">
       <div className="flex items-center justify-between gap-3 mb-1">
-        <span className="text-cinema-cream font-semibold text-sm">{data.label}</span>
+        {showSpoilers && (
+          <span className="text-cinema-cream font-semibold text-sm">{data.label}</span>
+        )}
         <span
           className="font-[family-name:var(--font-bebas)] text-xl"
           style={{ color: scoreColor(data.score) }}
@@ -89,7 +92,7 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: any[] 
         />
         <span className="text-xs text-cinema-muted capitalize">{data.confidence} confidence</span>
       </div>
-      {data.reviewEvidence && (
+      {showSpoilers && data.reviewEvidence && (
         <p className="text-xs text-cinema-cream/70 italic leading-relaxed">{data.reviewEvidence}</p>
       )}
     </div>
@@ -317,7 +320,7 @@ export default function SentimentGraph({
               activeDot={false}
               isAnimationActive={false}
             />
-            <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#C8A951', strokeOpacity: 0.3, strokeDasharray: '4 4' }} />
+            <Tooltip content={<CustomTooltip spoilersRevealed={spoilersRevealed} />} cursor={{ stroke: '#C8A951', strokeOpacity: 0.3, strokeDasharray: '4 4' }} />
 
             {/* Neutral reference line */}
             <ReferenceLine y={5} stroke="#666" strokeDasharray="6 4" />

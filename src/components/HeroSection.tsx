@@ -233,10 +233,9 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                             >
                               {data.score.toFixed(1)}
                             </span>
-                            <span className="text-xs text-cinema-cream">{data.label}</span>
-                          </div>
-                          <div className="text-[10px] text-cinema-muted mt-0.5">
-                            {formatTime(data.timeStart)} - {formatTime(data.timeEnd)}
+                            <span className="text-[10px] text-cinema-muted">
+                              {formatTime(data.timeStart)} - {formatTime(data.timeEnd)}
+                            </span>
                           </div>
                         </div>
                       )
