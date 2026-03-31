@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
+import { invalidateHomepageCache } from '@/lib/cache'
 
 export async function GET() {
   try {
@@ -80,6 +81,7 @@ export async function PUT(request: Request) {
         await prisma.film.updateMany({ where: { id: { in: filmIds } }, data: { isFeatured: true } })
       }
 
+      await invalidateHomepageCache()
       return Response.json({ ok: true })
     }
 
@@ -90,12 +92,28 @@ export async function PUT(request: Request) {
         update: { value: visibility },
         create: { key: 'homepage_sections', value: visibility },
       })
+      await invalidateHomepageCache()
       return Response.json({ ok: true })
     }
 
     return Response.json({ error: 'Unknown action' }, { status: 400 })
   } catch (err) {
     apiLogger.error({ err }, 'Failed to update homepage config')
+    return Response.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
+  }
+}
+
+/** Manual cache flush — forces homepage to re-fetch from DB on next load */
+export async function DELETE() {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user || session.user.role !== 'ADMIN') {
+      return Response.json({ error: 'Unauthorized' }, { status: 403 })
+    }
+    await invalidateHomepageCache()
+    return Response.json({ ok: true, message: 'Homepage cache cleared' })
+  } catch (err) {
+    apiLogger.error({ err }, 'Failed to flush homepage cache')
     return Response.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
   }
 }

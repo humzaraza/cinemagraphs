@@ -7,6 +7,7 @@ import AnnouncementBar from '@/components/AnnouncementBar'
 import Link from 'next/link'
 import { getMovieTrailerKey, getNowPlayingMovies } from '@/lib/tmdb'
 import { cacheGet, cacheSet, KEYS, TTL } from '@/lib/cache'
+import { getInTheatersFilms } from '@/lib/queries'
 
 export const dynamic = 'force-dynamic'
 
@@ -121,14 +122,9 @@ export default async function HomePage() {
     allGenresResult = cachedHomepage.allGenres
   } else {
     const results = await Promise.all([
-      // In Theaters: films with nowPlaying flag
+      // In Theaters: shared query (same as admin panel)
       sections.inTheaters
-        ? prisma.film.findMany({
-            where: { status: 'ACTIVE', nowPlaying: true },
-            include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
-            take: 20,
-            orderBy: { releaseDate: 'desc' },
-          })
+        ? getInTheatersFilms()
         : Promise.resolve([] as InTheaterFilm),
       // For ticker: now playing films with graphs
       prisma.film.findMany({

@@ -165,6 +165,11 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
     ? localFilms.filter((f) => f.title.toLowerCase().includes(pinnedSearch.toLowerCase()))
     : localFilms.filter((f) => f.pinnedSection)
 
+  const flushHomepageCache = async () => {
+    const res = await fetch('/api/admin/homepage', { method: 'DELETE' })
+    flash(res.ok ? 'Homepage cache cleared — reload homepage to see changes' : 'Failed to clear cache')
+  }
+
   return (
     <div className="space-y-10">
       {message && (
@@ -172,6 +177,20 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
           {message}
         </div>
       )}
+
+      {/* Cache flush button */}
+      <div className="flex items-center justify-between bg-cinema-darker border border-cinema-border rounded-lg px-4 py-3">
+        <div>
+          <span className="text-sm text-cinema-cream font-medium">Homepage Cache</span>
+          <p className="text-xs text-cinema-muted mt-0.5">Force-refresh the homepage after making changes</p>
+        </div>
+        <button
+          onClick={flushHomepageCache}
+          className="text-xs px-4 py-1.5 rounded-lg border border-cinema-gold/40 text-cinema-gold hover:bg-cinema-gold/10 transition-colors"
+        >
+          Refresh Cache
+        </button>
+      </div>
 
       {/* ── 1. Featured Films (Hero Carousel) ── */}
       <section>
