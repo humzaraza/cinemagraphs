@@ -87,7 +87,7 @@ export default function AnnouncementBar() {
         </div>
         {/* Message */}
         <p
-          className="leading-relaxed line-clamp-3"
+          className="leading-relaxed"
           style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)' }}
         >
           {announcement.message}
