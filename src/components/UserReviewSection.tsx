@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession, signIn } from 'next-auth/react'
 import Image from 'next/image'
+import Link from 'next/link'
 
 interface BeatInfo {
   label: string
@@ -587,20 +588,33 @@ function ReviewCard({
     <div className="bg-cinema-card border border-cinema-border rounded-lg p-4">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          {review.user.image ? (
-            <Image
-              src={review.user.image}
-              alt={review.user.name || 'User'}
-              width={28}
-              height={28}
-              className="rounded-full"
-            />
+          {review.user.name ? (
+            <Link href={`/profile/${review.user.id}`} className="flex items-center gap-2 group cursor-pointer">
+              {review.user.image ? (
+                <Image
+                  src={review.user.image}
+                  alt={review.user.name}
+                  width={28}
+                  height={28}
+                  className="rounded-full"
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-full bg-cinema-gold/20 flex items-center justify-center text-cinema-gold text-xs">
+                  {review.user.name[0]}
+                </div>
+              )}
+              <span className="text-sm text-cinema-cream group-hover:underline group-hover:decoration-cinema-gold/50 group-hover:underline-offset-2">
+                {review.user.name}
+              </span>
+            </Link>
           ) : (
-            <div className="w-7 h-7 rounded-full bg-cinema-gold/20 flex items-center justify-center text-cinema-gold text-xs">
-              {(review.user.name || '?')[0]}
-            </div>
+            <>
+              <div className="w-7 h-7 rounded-full bg-cinema-gold/20 flex items-center justify-center text-cinema-gold text-xs">
+                ?
+              </div>
+              <span className="text-sm text-cinema-cream">Anonymous</span>
+            </>
           )}
-          <span className="text-sm text-cinema-cream">{review.user.name || 'Anonymous'}</span>
           <span className="text-xs text-cinema-muted">
             {new Date(review.createdAt).toLocaleDateString()}
           </span>
