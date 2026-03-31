@@ -217,7 +217,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                   <XAxis dataKey="timeMidpoint" tickFormatter={formatTime} stroke="#666" fontSize={11} />
                   <YAxis domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={11} width={28} />
                   <YAxis yAxisId="right" orientation="right" domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={11} width={28} />
-                  <Area yAxisId="right" type="monotone" dataKey="score" stroke="none" fill="none" dot={false} activeDot={false} isAnimationActive={false} />
+                  <Area yAxisId="right" type="natural" dataKey="score" stroke="none" fill="none" dot={false} activeDot={false} isAnimationActive={false} />
                   <ReferenceLine y={5} stroke="#888" strokeDasharray="6 4" strokeWidth={1} />
                   <Tooltip
                     content={({ active, payload }) => {
@@ -243,26 +243,13 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                     cursor={{ stroke: '#C8A951', strokeOpacity: 0.3, strokeDasharray: '4 4' }}
                   />
                   <Area
-                    type="monotone"
+                    type="natural"
                     dataKey="score"
                     stroke="#C8A951"
                     strokeWidth={2.5}
                     fill="url(#heroGradient)"
                     isAnimationActive={false}
-                    dot={(props: any) => {
-                      const { cx, cy, payload } = props
-                      if (cx == null || cy == null || !payload.label) return <circle r={0} />
-                      return (
-                        <circle
-                          cx={cx}
-                          cy={cy}
-                          r={4}
-                          fill={scoreColor(payload.score)}
-                          stroke="#1a1a2e"
-                          strokeWidth={1.5}
-                        />
-                      )
-                    }}
+                    dot={false}
                     activeDot={(props: any) => {
                       const { cx, cy, payload } = props
                       if (cx == null || cy == null) return <circle r={0} />
@@ -270,9 +257,9 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                         <circle
                           cx={cx}
                           cy={cy}
-                          r={6}
-                          fill={scoreColor(payload.score)}
-                          stroke="#F0E6D3"
+                          r={4}
+                          fill="#C8A951"
+                          stroke="#0D0D1A"
                           strokeWidth={2}
                         />
                       )
