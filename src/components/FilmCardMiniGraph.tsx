@@ -159,7 +159,7 @@ export function FilmCardMiniGraph({
         viewBox={`0 0 ${SVG_WIDTH} ${GRAPH_HEIGHT}`}
         preserveAspectRatio="none"
         className="w-full"
-        style={{ height: GRAPH_HEIGHT, display: 'block', cursor: hover ? 'crosshair' : undefined }}
+        style={{ height: GRAPH_HEIGHT, display: 'block' }}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
       >

@@ -9,6 +9,7 @@ interface FilmOption {
   posterUrl: string | null
   tmdbId: number
   nowPlaying: boolean
+  nowPlayingOverride: string | null // null = auto, "force_show", "force_hide"
   pinnedSection: string | null
   hasGraph: boolean
 }
@@ -121,17 +122,22 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
     flash(res.ok ? 'Section visibility saved' : 'Failed to save')
   }
 
-  // ── Now Playing Toggle ──
-  const toggleNowPlaying = async (film: FilmOption) => {
-    const newVal = !film.nowPlaying
+  // ── Now Playing Override ──
+  const setNowPlayingOverride = async (film: FilmOption, override: string | null) => {
+    const nowPlaying = override === 'force_show' ? true : override === 'force_hide' ? false : film.nowPlaying
     const res = await fetch(`/api/admin/films/${film.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nowPlaying: newVal }),
+      body: JSON.stringify({ nowPlayingOverride: override, nowPlaying }),
     })
     if (res.ok) {
-      setLocalFilms((prev) => prev.map((f) => (f.id === film.id ? { ...f, nowPlaying: newVal } : f)))
-      flash(`${film.title} ${newVal ? 'added to' : 'removed from'} In Theaters`)
+      setLocalFilms((prev) =>
+        prev.map((f) =>
+          f.id === film.id ? { ...f, nowPlayingOverride: override, nowPlaying } : f,
+        ),
+      )
+      const label = override === 'force_show' ? 'force-shown' : override === 'force_hide' ? 'force-hidden' : 'set to auto (TMDB)'
+      flash(`${film.title} ${label}`)
     }
   }
 
@@ -154,7 +160,7 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
     : []
   const filteredNowPlaying = nowPlayingSearch
     ? localFilms.filter((f) => f.title.toLowerCase().includes(nowPlayingSearch.toLowerCase()))
-    : localFilms.filter((f) => f.nowPlaying)
+    : localFilms.filter((f) => f.nowPlaying || f.nowPlayingOverride === 'force_hide')
   const filteredPinned = pinnedSearch
     ? localFilms.filter((f) => f.title.toLowerCase().includes(pinnedSearch.toLowerCase()))
     : localFilms.filter((f) => f.pinnedSection)
@@ -300,12 +306,17 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
 
       {/* ── 3. In Theaters (Now Playing) Management ── */}
       <section>
-        <h3 className="font-[family-name:var(--font-playfair)] text-lg font-bold text-cinema-cream mb-4">
+        <h3 className="font-[family-name:var(--font-playfair)] text-lg font-bold text-cinema-cream mb-2">
           In Theaters (Now Playing)
         </h3>
         <p className="text-xs text-cinema-muted mb-3">
-          Search any film to manually add or remove it from the In Theaters section.
+          Films auto-populate from TMDB. Use overrides to force-show or force-hide specific films.
         </p>
+        <div className="flex gap-3 mb-3 text-[10px] text-cinema-muted">
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#2DD4A8]" /> Auto (TMDB)</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cinema-gold" /> Force shown</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Force hidden</span>
+        </div>
         <input
           type="text"
           placeholder="Search films to manage now playing..."
@@ -313,22 +324,61 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
           onChange={(e) => setNowPlayingSearch(e.target.value)}
           className="w-full bg-cinema-darker border border-cinema-border rounded-lg px-4 py-2 text-sm text-cinema-cream placeholder:text-cinema-muted focus:outline-none focus:border-cinema-gold mb-3"
         />
-        <div className="max-h-64 overflow-y-auto border border-cinema-border rounded-lg divide-y divide-cinema-border">
-          {filteredNowPlaying.slice(0, 20).map((film) => (
-            <div key={film.id} className="flex items-center justify-between px-4 py-2">
-              <span className="text-sm text-cinema-cream">{film.title}</span>
-              <button
-                onClick={() => toggleNowPlaying(film)}
-                className="text-xs px-3 py-1 rounded-full border transition-colors"
-                style={{
-                  borderColor: film.nowPlaying ? '#ef4444' : '#C8A951',
-                  color: film.nowPlaying ? '#ef4444' : '#C8A951',
-                }}
-              >
-                {film.nowPlaying ? 'Remove' : 'Add'}
-              </button>
-            </div>
-          ))}
+        <div className="max-h-80 overflow-y-auto border border-cinema-border rounded-lg divide-y divide-cinema-border">
+          {filteredNowPlaying.slice(0, 30).map((film) => {
+            const override = film.nowPlayingOverride
+            const isAuto = !override
+            const isForceShow = override === 'force_show'
+            const isForceHide = override === 'force_hide'
+            return (
+              <div key={film.id} className="flex items-center justify-between px-4 py-2.5 gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{
+                      backgroundColor: isForceShow ? '#C8A951' : isForceHide ? '#ef4444' : '#2DD4A8',
+                    }}
+                  />
+                  <span className={`text-sm truncate ${isForceHide ? 'text-cinema-muted line-through' : 'text-cinema-cream'}`}>
+                    {film.title}
+                  </span>
+                  {isAuto && film.nowPlaying && (
+                    <span className="text-[9px] text-[#2DD4A8]/60 shrink-0">TMDB</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={() => setNowPlayingOverride(film, isForceShow ? null : 'force_show')}
+                    className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                      isForceShow
+                        ? 'bg-cinema-gold/20 border-cinema-gold text-cinema-gold'
+                        : 'border-cinema-border text-cinema-muted hover:border-cinema-gold/40 hover:text-cinema-gold'
+                    }`}
+                  >
+                    {isForceShow ? 'Showing' : 'Show'}
+                  </button>
+                  <button
+                    onClick={() => setNowPlayingOverride(film, isForceHide ? null : 'force_hide')}
+                    className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                      isForceHide
+                        ? 'bg-red-500/20 border-red-500 text-red-400'
+                        : 'border-cinema-border text-cinema-muted hover:border-red-500/40 hover:text-red-400'
+                    }`}
+                  >
+                    {isForceHide ? 'Hidden' : 'Hide'}
+                  </button>
+                  {override && (
+                    <button
+                      onClick={() => setNowPlayingOverride(film, null)}
+                      className="text-[10px] px-2 py-0.5 rounded border border-cinema-border text-cinema-muted hover:border-[#2DD4A8]/40 hover:text-[#2DD4A8] transition-colors"
+                    >
+                      Auto
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
           {filteredNowPlaying.length === 0 && (
             <div className="px-4 py-3 text-sm text-cinema-muted text-center">
               {nowPlayingSearch ? 'No films found' : 'No films currently in theaters'}

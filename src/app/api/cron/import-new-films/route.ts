@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { getMovieDetails, getMovieCredits } from '@/lib/tmdb'
 import { cronLogger } from '@/lib/logger'
+import { invalidateHomepageCache } from '@/lib/cache'
 
 export const maxDuration = 300
 
@@ -58,20 +59,30 @@ export async function GET(request: Request) {
 
     cronLogger.info({ nowPlayingCount: nowPlayingIds.size, totalCandidates: allIds.size }, 'TMDB candidates fetched')
 
-    // --- Refresh nowPlaying flags ---
-    // Set nowPlaying=false for all films not in the current now_playing list
+    // --- Refresh nowPlaying flags (respecting admin overrides) ---
+    // Only auto-update films with NO override (nowPlayingOverride is null)
     await prisma.film.updateMany({
-      where: { nowPlaying: true, tmdbId: { notIn: Array.from(nowPlayingIds) } },
+      where: { nowPlaying: true, nowPlayingOverride: null, tmdbId: { notIn: Array.from(nowPlayingIds) } },
       data: { nowPlaying: false },
     })
-    // Set nowPlaying=true for films that ARE in the current now_playing list
     if (nowPlayingIds.size > 0) {
       await prisma.film.updateMany({
-        where: { tmdbId: { in: Array.from(nowPlayingIds) } },
+        where: { nowPlayingOverride: null, tmdbId: { in: Array.from(nowPlayingIds) } },
         data: { nowPlaying: true },
       })
     }
-    cronLogger.info({ nowPlayingIds: nowPlayingIds.size }, 'nowPlaying flags refreshed')
+    // Enforce overrides: force_show -> nowPlaying=true, force_hide -> nowPlaying=false
+    await prisma.film.updateMany({
+      where: { nowPlayingOverride: 'force_show', nowPlaying: false },
+      data: { nowPlaying: true },
+    })
+    await prisma.film.updateMany({
+      where: { nowPlayingOverride: 'force_hide', nowPlaying: true },
+      data: { nowPlaying: false },
+    })
+    cronLogger.info({ nowPlayingIds: nowPlayingIds.size }, 'nowPlaying flags refreshed (overrides respected)')
+
+    await invalidateHomepageCache()
 
     // --- Import new films ---
     const existing = await prisma.film.findMany({
