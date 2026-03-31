@@ -343,8 +343,8 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
           onChange={(e) => setNowPlayingSearch(e.target.value)}
           className="w-full bg-cinema-darker border border-cinema-border rounded-lg px-4 py-2 text-sm text-cinema-cream placeholder:text-cinema-muted focus:outline-none focus:border-cinema-gold mb-3"
         />
-        <div className="max-h-80 overflow-y-auto border border-cinema-border rounded-lg divide-y divide-cinema-border">
-          {filteredNowPlaying.slice(0, 30).map((film) => {
+        <div className="max-h-[28rem] overflow-y-auto border border-cinema-border rounded-lg divide-y divide-cinema-border">
+          {filteredNowPlaying.map((film) => {
             const override = film.nowPlayingOverride
             const isAuto = !override
             const isForceShow = override === 'force_show'

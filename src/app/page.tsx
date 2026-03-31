@@ -171,13 +171,8 @@ export default async function HomePage() {
             },
           })
         : Promise.resolve([]),
-      // Pinned to in theaters
-      sections.inTheaters
-        ? prisma.film.findMany({
-            where: { status: 'ACTIVE', pinnedSection: 'inTheaters' },
-            include: { sentimentGraph: { select: { overallScore: true, dataPoints: true } } },
-          })
-        : Promise.resolve([]),
+      // (Pinned to in theaters — no longer used, override system replaces this)
+      Promise.resolve([]),
       // All genres
       sections.browseByGenre
         ? prisma.film.findMany({ where: { status: 'ACTIVE' }, select: { genres: true } })
@@ -211,15 +206,10 @@ export default async function HomePage() {
   const pinnedTopRated = pinnedTopRatedResult
   const allSwingFilms = allSwingFilmsResult
   const pinnedSwings = pinnedSwingsResult
-  const pinnedInTheaters = pinnedInTheatersResult
   const allGenres = allGenresResult
 
-  // Merge pinned + regular for In Theaters (pinned first, no duplicates)
-  const pinnedInTheaterIds = new Set(pinnedInTheaters.map((f) => f.id))
-  const inTheaterFilms = [
-    ...pinnedInTheaters,
-    ...recentFilms.filter((f) => !pinnedInTheaterIds.has(f.id)),
-  ]
+  // In Theaters — only films with nowPlaying=true (managed by admin overrides + TMDB auto)
+  const inTheaterFilms = recentFilms
 
   // If no admin-selected featured films, use top-scored films with graphs
   const heroSourceFilms = featuredFilms.length > 0
