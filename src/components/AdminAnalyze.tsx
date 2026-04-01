@@ -8,7 +8,11 @@ interface Film {
   hasGraph: boolean
   reviewCount: number
   graphDate: string | null
+  graphDateRaw: string | null
+  createdAt: string
 }
+
+type SortOption = 'recent' | 'title-asc' | 'title-desc' | 'reviews' | 'analyzed'
 
 export default function AdminAnalyze({ films: initialFilms }: { films: Film[] }) {
   const [films, setFilms] = useState(initialFilms)
@@ -18,6 +22,7 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
   const [results, setResults] = useState<Record<string, 'success' | 'error' | 'pending'>>({})
   const [message, setMessage] = useState('')
   const [toast, setToast] = useState<string | null>(null)
+  const [sortBy, setSortBy] = useState<SortOption>('recent')
 
   async function analyzeFilm(filmId: string) {
     setAnalyzing(filmId)
@@ -96,6 +101,22 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
     }
   }
 
+  const sortedFilms = [...films].sort((a, b) => {
+    switch (sortBy) {
+      case 'title-asc':
+        return a.title.localeCompare(b.title)
+      case 'title-desc':
+        return b.title.localeCompare(a.title)
+      case 'reviews':
+        return b.reviewCount - a.reviewCount
+      case 'analyzed':
+        return (b.graphDateRaw ?? '').localeCompare(a.graphDateRaw ?? '')
+      case 'recent':
+      default:
+        return b.createdAt.localeCompare(a.createdAt)
+    }
+  })
+
   const filmsWithoutGraphs = films.filter((f) => !f.hasGraph).length
 
   return (
@@ -106,10 +127,32 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
         </div>
       )}
       <div className="flex items-center justify-between mb-4">
-        <div>
+        <div className="flex items-center gap-4">
           <p className="text-sm text-cinema-muted">
             {films.length - filmsWithoutGraphs} / {films.length} films have sentiment graphs
           </p>
+          <div className="flex items-center gap-2">
+            <span className="text-xs" style={{ color: '#888' }}>Sort by:</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortOption)}
+              style={{
+                background: '#1a1a2e',
+                border: '0.5px solid #333',
+                color: '#e0e0e0',
+                borderRadius: 6,
+                fontSize: 13,
+                padding: '4px 8px',
+                outline: 'none',
+              }}
+            >
+              <option value="recent">Recently added</option>
+              <option value="title-asc">Title (A-Z)</option>
+              <option value="title-desc">Title (Z-A)</option>
+              <option value="reviews">Most reviews</option>
+              <option value="analyzed">Last analyzed</option>
+            </select>
+          </div>
         </div>
         {filmsWithoutGraphs > 0 && (
           <button
@@ -140,7 +183,7 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
             </tr>
           </thead>
           <tbody>
-            {films.map((film) => (
+            {sortedFilms.map((film) => (
               <tr key={film.id} className="border-b border-cinema-border/50">
                 <td className="py-2 pr-4 text-cinema-cream">{film.title}</td>
                 <td className="py-2 pr-4">

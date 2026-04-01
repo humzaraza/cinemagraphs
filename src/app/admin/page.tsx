@@ -59,6 +59,8 @@ export default async function AdminPage() {
     graphDate: film.sentimentGraph?.generatedAt
       ? film.sentimentGraph.generatedAt.toLocaleDateString()
       : null,
+    graphDateRaw: film.sentimentGraph?.generatedAt?.toISOString() ?? null,
+    createdAt: film.createdAt.toISOString(),
   }))
 
   const filmsForCuration = allFilms.map((film) => ({
