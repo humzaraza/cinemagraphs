@@ -414,9 +414,10 @@ export async function GET(request: NextRequest) {
   const rowSpace = totalH - headerH - footerH
   const rowH = Math.max(40, Math.floor(rowSpace / count))
 
-  // Sparkline: 40% of poster width, height capped at 90px
+  // Sparkline: 40% of poster width, height = min(40% of row, 90px)
   const sparkW = Math.round(W * 0.4)
-  const sparkH = Math.min(90, Math.round(rowH * 0.75))
+  const sparkH = Math.min(90, Math.round(rowH * 0.4))
+  console.log(`[og/list] ratio=${ratio} rowH=${rowH} sparkW=${sparkW} sparkH=${sparkH} (cap=90)`)
 
   // ── Build rows ──
   const rows = ordered.map((film, i) => {
@@ -575,7 +576,7 @@ export async function GET(request: NextRequest) {
         },
         // Title (logo or font) + year
         titleElement,
-        // Sparkline
+        // Sparkline (fixed bounding box, centered vertically)
         sparkline
           ? React.createElement(
               'div',
@@ -583,9 +584,14 @@ export async function GET(request: NextRequest) {
                 style: {
                   display: 'flex',
                   alignItems: 'center',
+                  justifyContent: 'center',
                   flexShrink: 0,
+                  width: sparkW,
+                  height: sparkH,
+                  maxHeight: sparkH,
                   marginLeft: 'auto' as const,
                   marginRight: 10,
+                  overflow: 'hidden' as const,
                 },
               },
               sparkline
