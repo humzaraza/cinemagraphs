@@ -80,16 +80,14 @@ function catmullRomPath(
   return parts.join(' ')
 }
 
-function buildSparkline(
+async function buildSparklinePng(
   dataPoints: SentimentDataPoint[],
   sw: number,
   sh: number
-): React.ReactElement {
-  if (dataPoints.length < 2) {
-    return React.createElement('svg', { width: sw, height: sh })
-  }
+): Promise<string | null> {
+  if (dataPoints.length < 2) return null
 
-  const paddingX = 18 // extra horizontal space for y-axis labels
+  const paddingX = 18
   const paddingY = 6
   const innerW = sw - paddingX * 2
   const innerH = sh - paddingY * 2
@@ -115,145 +113,51 @@ function buildSparkline(
 
   const axisColor = 'rgba(232,228,220,0.5)'
   const neutralColor = 'rgba(232,228,220,0.3)'
-
   const labelColor = 'rgba(232,228,220,0.4)'
-  const labelStyle = {
-    fontFamily: 'DM Sans',
-    fontSize: 8,
-    color: labelColor,
-    position: 'absolute' as const,
-    lineHeight: 1,
-  }
 
-  const children: React.ReactElement[] = [
-    // Y-axis (left)
-    React.createElement('line', {
-      key: 'yaxis-l',
-      x1: paddingX,
-      y1: paddingY,
-      x2: paddingX,
-      y2: paddingY + innerH,
-      stroke: axisColor,
-      strokeWidth: 1,
-    }),
-    // Y-axis (right)
-    React.createElement('line', {
-      key: 'yaxis-r',
-      x1: paddingX + innerW,
-      y1: paddingY,
-      x2: paddingX + innerW,
-      y2: paddingY + innerH,
-      stroke: axisColor,
-      strokeWidth: 1,
-    }),
-    // X-axis (bottom)
-    React.createElement('line', {
-      key: 'xaxis',
-      x1: paddingX,
-      y1: paddingY + innerH,
-      x2: paddingX + innerW,
-      y2: paddingY + innerH,
-      stroke: axisColor,
-      strokeWidth: 1,
-    }),
-  ]
-
-  // Y-axis labels as absolutely positioned divs (satori doesn't support SVG <text>)
-  const labels: React.ReactElement[] = [
-    // Left side labels (right-aligned to left axis)
-    React.createElement('span', {
-      key: 'lbl-l-max',
-      style: { ...labelStyle, top: paddingY - 4, left: 0, width: paddingX - 3, textAlign: 'right' as const },
-    }, String(yMax)),
-    React.createElement('span', {
-      key: 'lbl-l-min',
-      style: { ...labelStyle, bottom: paddingY - 4, left: 0, width: paddingX - 3, textAlign: 'right' as const },
-    }, String(yMin)),
-    // Right side labels (left-aligned to right axis)
-    React.createElement('span', {
-      key: 'lbl-r-max',
-      style: { ...labelStyle, top: paddingY - 4, right: 0, width: paddingX - 3, textAlign: 'left' as const },
-    }, String(yMax)),
-    React.createElement('span', {
-      key: 'lbl-r-min',
-      style: { ...labelStyle, bottom: paddingY - 4, right: 0, width: paddingX - 3, textAlign: 'left' as const },
-    }, String(yMin)),
-  ]
-
-  // Dashed reference line at midpoint of the dynamic y-axis range
+  // Midpoint dashed line
   const midScore = (yMin + yMax) / 2
   const midY = paddingY + innerH - ((midScore - yMin) / yRange) * innerH
-  children.push(
-    React.createElement('line', {
-      key: 'neutral',
-      x1: paddingX,
-      y1: midY,
-      x2: paddingX + innerW,
-      y2: midY,
-      stroke: neutralColor,
-      strokeWidth: 1,
-      strokeDasharray: '4 3',
-    })
-  )
 
-  children.push(
+  // Build raw SVG string with text labels (sharp supports SVG text)
+  const svgParts: string[] = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${sw}" height="${sh}" viewBox="0 0 ${sw} ${sh}">`,
+    // Y-axis left
+    `<line x1="${paddingX}" y1="${paddingY}" x2="${paddingX}" y2="${paddingY + innerH}" stroke="${axisColor}" stroke-width="1"/>`,
+    // Y-axis right
+    `<line x1="${paddingX + innerW}" y1="${paddingY}" x2="${paddingX + innerW}" y2="${paddingY + innerH}" stroke="${axisColor}" stroke-width="1"/>`,
+    // X-axis bottom
+    `<line x1="${paddingX}" y1="${paddingY + innerH}" x2="${paddingX + innerW}" y2="${paddingY + innerH}" stroke="${axisColor}" stroke-width="1"/>`,
+    // Dashed midpoint line
+    `<line x1="${paddingX}" y1="${midY.toFixed(1)}" x2="${paddingX + innerW}" y2="${midY.toFixed(1)}" stroke="${neutralColor}" stroke-width="1" stroke-dasharray="4 3"/>`,
+    // Y-axis labels — left side
+    `<text x="${paddingX - 3}" y="${paddingY + 4}" text-anchor="end" fill="${labelColor}" font-family="sans-serif" font-size="8">${yMax}</text>`,
+    `<text x="${paddingX - 3}" y="${paddingY + innerH}" text-anchor="end" fill="${labelColor}" font-family="sans-serif" font-size="8">${yMin}</text>`,
+    // Y-axis labels — right side
+    `<text x="${paddingX + innerW + 3}" y="${paddingY + 4}" text-anchor="start" fill="${labelColor}" font-family="sans-serif" font-size="8">${yMax}</text>`,
+    `<text x="${paddingX + innerW + 3}" y="${paddingY + innerH}" text-anchor="start" fill="${labelColor}" font-family="sans-serif" font-size="8">${yMin}</text>`,
     // Data line
-    React.createElement('path', {
-      key: 'line',
-      d: path,
-      fill: 'none',
-      stroke: GOLD,
-      strokeWidth: 2.5,
-      strokeLinecap: 'round',
-    }),
-    // Peak dot (teal)
-    React.createElement('circle', {
-      key: 'peak',
-      cx: points[peakIdx].x,
-      cy: points[peakIdx].y,
-      r: 3.5,
-      fill: TEAL,
-    })
-  )
+    `<path d="${path}" fill="none" stroke="${GOLD}" stroke-width="2.5" stroke-linecap="round"/>`,
+    // Peak dot
+    `<circle cx="${points[peakIdx].x.toFixed(1)}" cy="${points[peakIdx].y.toFixed(1)}" r="3.5" fill="${TEAL}"/>`,
+  ]
 
   // Low dot only if below 7.5
   if (points[lowIdx].score < 7.5) {
-    children.push(
-      React.createElement('circle', {
-        key: 'low',
-        cx: points[lowIdx].x,
-        cy: points[lowIdx].y,
-        r: 3.5,
-        fill: RED,
-      })
+    svgParts.push(
+      `<circle cx="${points[lowIdx].x.toFixed(1)}" cy="${points[lowIdx].y.toFixed(1)}" r="3.5" fill="${RED}"/>`
     )
   }
 
-  const svg = React.createElement(
-    'svg',
-    {
-      width: sw,
-      height: sh,
-      viewBox: `0 0 ${sw} ${sh}`,
-      style: { display: 'flex' },
-    },
-    ...children
-  )
+  svgParts.push('</svg>')
+  const svgStr = svgParts.join('\n')
 
-  // Wrap SVG + label divs in a relative container
-  return React.createElement(
-    'div',
-    {
-      style: {
-        position: 'relative' as const,
-        width: sw,
-        height: sh,
-        display: 'flex',
-      },
-    },
-    svg,
-    ...labels
-  )
+  // Render SVG to PNG via sharp
+  const png = await sharp(Buffer.from(svgStr))
+    .png()
+    .toBuffer()
+
+  return `data:image/png;base64,${png.toString('base64')}`
 }
 
 // ── Image fetching (convert to base64 data URI for satori) ──
@@ -414,23 +318,32 @@ export async function GET(request: NextRequest) {
   const rowSpace = totalH - headerH - footerH
   const rowH = Math.max(40, Math.floor(rowSpace / count))
 
-  // Sparkline: 40% of poster width, height = min(40% of row, 90px)
+  // Sparkline: 40% of poster width, height capped at 90px
   const sparkW = Math.round(W * 0.4)
   const sparkH = Math.min(90, Math.round(rowH * 0.4))
   console.log(`[og/list] ratio=${ratio} rowH=${rowH} sparkW=${sparkW} sparkH=${sparkH} (cap=90)`)
+
+  // Pre-render sparklines as PNGs (parallel)
+  const sparklineCache = new Map<string, string | null>()
+  await Promise.all(
+    ordered.map(async (film) => {
+      const dataPoints = (film.sentimentGraph?.dataPoints as unknown as SentimentDataPoint[]) ?? []
+      if (dataPoints.length >= 2) {
+        const uri = await buildSparklinePng(dataPoints, sparkW, sparkH)
+        sparklineCache.set(film.id, uri)
+      }
+    })
+  )
 
   // ── Build rows ──
   const rows = ordered.map((film, i) => {
     const year = film.releaseDate ? new Date(film.releaseDate).getFullYear().toString() : ''
     const score = film.sentimentGraph?.overallScore ?? null
-    const dataPoints = (film.sentimentGraph?.dataPoints as unknown as SentimentDataPoint[]) ?? []
     const backdropSrc = backdropCache.get(film.id) ?? null
     const cropY = cropMap.get(film.id) ?? 30
     const logoSrc = logoCache.get(film.id) ?? null
     const useLogo = displayMap.get(film.id) === 'logo' && logoSrc != null
-
-    const sparkline =
-      dataPoints.length >= 2 ? buildSparkline(dataPoints, sparkW, sparkH) : null
+    const sparklineSrc = sparklineCache.get(film.id) ?? null
 
     const titleFontSize = rowH > 80 ? 22 : rowH > 60 ? 18 : 14
     const yearFontSize = rowH > 80 ? 16 : rowH > 60 ? 14 : 12
@@ -576,25 +489,20 @@ export async function GET(request: NextRequest) {
         },
         // Title (logo or font) + year
         titleElement,
-        // Sparkline (absolute positioned to avoid satori flex stretching)
-        sparkline
-          ? React.createElement(
-              'div',
-              {
-                style: {
-                  position: 'absolute' as const,
-                  top: Math.round((rowH - sparkH) / 2),
-                  right: 24 + 56 + 10, // row padding + score width + gap
-                  width: sparkW,
-                  height: sparkH,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  overflow: 'hidden' as const,
-                },
+        // Sparkline (pre-rendered PNG with intrinsic dimensions)
+        sparklineSrc
+          ? React.createElement('img', {
+              src: sparklineSrc,
+              width: sparkW,
+              height: sparkH,
+              style: {
+                position: 'absolute' as const,
+                top: Math.round((rowH - sparkH) / 2),
+                right: 24 + 56 + 10, // row padding + score width + gap
+                width: sparkW,
+                height: sparkH,
               },
-              sparkline
-            )
+            })
           : null,
         // Score (absolute positioned, right-aligned)
         React.createElement(
