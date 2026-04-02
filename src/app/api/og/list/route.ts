@@ -414,9 +414,16 @@ export async function GET(request: NextRequest) {
   const rowSpace = totalH - headerH - footerH
   const rowH = Math.max(40, Math.floor(rowSpace / count))
 
-  // Fixed sparkline size — identical across all aspect ratios
-  const sparkW = 200
-  const sparkH = 70
+  // Fixed sparkline size per aspect ratio
+  const SPARK_DIMS: Record<string, { w: number; h: number }> = {
+    '16:9': { w: 200, h: 70 },
+    '1:1': { w: 220, h: 85 },
+    '4:5': { w: 240, h: 100 },
+    '9:16': { w: 260, h: 120 },
+  }
+  const spark = SPARK_DIMS[ratio] ?? SPARK_DIMS['16:9']
+  const sparkW = spark.w
+  const sparkH = spark.h
 
   // ── Build rows ──
   const rows = ordered.map((film, i) => {
