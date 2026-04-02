@@ -318,10 +318,15 @@ export async function GET(request: NextRequest) {
   const rowSpace = totalH - headerH - footerH
   const rowH = Math.max(40, Math.floor(rowSpace / count))
 
-  // Pre-render sparklines as PNGs — 60% of row height, width = height * 4.8
+  // Layout zones: left 40% = title, middle 40% = sparkline, right 20% = score
+  const titleZoneW = Math.round(W * 0.4)
+  const sparkZoneW = Math.round(W * 0.4)
+  const scoreZoneW = W - titleZoneW - sparkZoneW
+
+  // Pre-render sparklines as PNGs — width = 40% of poster, height = 50% of row
   const sparklineCache = new Map<string, { uri: string; w: number; h: number }>()
-  const sparkH = Math.round(rowH * 0.6)
-  const sparkW = Math.round(sparkH * 4.8)
+  const sparkW = sparkZoneW
+  const sparkH = Math.round(rowH * 0.5)
   await Promise.all(
     ordered.map(async (film) => {
       const dataPoints = (film.sentimentGraph?.dataPoints as unknown as SentimentDataPoint[]) ?? []
@@ -347,7 +352,7 @@ export async function GET(request: NextRequest) {
     const scoreFontSize = rowH > 80 ? 30 : rowH > 60 ? 24 : 18
     const logoMaxH = Math.max(20, rowH - 30)
 
-    // Build title element: logo or text
+    // Build title element: logo or text — constrained to left 40% zone
     const titleElement = useLogo
       ? React.createElement(
           'div',
@@ -355,7 +360,7 @@ export async function GET(request: NextRequest) {
             style: {
               display: 'flex',
               flexDirection: 'column' as const,
-              flex: 1,
+              width: titleZoneW,
               paddingLeft: 16,
               paddingRight: 16,
               overflow: 'hidden',
@@ -366,7 +371,7 @@ export async function GET(request: NextRequest) {
             src: logoSrc,
             style: {
               maxHeight: logoMaxH,
-              maxWidth: 280,
+              maxWidth: titleZoneW - 48,
               objectFit: 'contain' as const,
               objectPosition: 'left center',
             },
@@ -392,7 +397,7 @@ export async function GET(request: NextRequest) {
             style: {
               display: 'flex',
               flexDirection: 'column' as const,
-              flex: 1,
+              width: titleZoneW,
               paddingLeft: 16,
               paddingRight: 16,
               overflow: 'hidden',
@@ -480,13 +485,13 @@ export async function GET(request: NextRequest) {
             width: W,
             height: rowH,
             position: 'relative' as const,
-            padding: '0 24px 0 20px',
+            padding: '0 0 0 20px',
             zIndex: 1,
           },
         },
         // Title (logo or font) + year
         titleElement,
-        // Sparkline (pre-rendered PNG with intrinsic dimensions)
+        // Sparkline (pre-rendered PNG) — middle 40% zone, vertically centered
         sparkData
           ? React.createElement('img', {
               src: sparkData.uri,
@@ -494,27 +499,27 @@ export async function GET(request: NextRequest) {
               height: sparkData.h,
               style: {
                 position: 'absolute' as const,
+                left: titleZoneW,
                 top: Math.round((rowH - sparkData.h) / 2),
-                right: 24 + 56 + 10, // row padding + score width + gap
                 width: sparkData.w,
                 height: sparkData.h,
               },
             })
           : null,
-        // Score (absolute positioned, right-aligned)
+        // Score — right 20% zone, centered
         React.createElement(
           'span',
           {
             style: {
               position: 'absolute' as const,
+              left: titleZoneW + sparkZoneW,
               top: Math.round((rowH - scoreFontSize * 1.2) / 2),
-              right: 24,
+              width: scoreZoneW,
               fontFamily: score != null ? 'Libre Baskerville' : 'DM Sans',
               fontWeight: score != null ? 700 : 400,
               fontSize: score != null ? scoreFontSize : scoreFontSize - 4,
               color: score != null ? GOLD : 'rgba(255,255,255,0.2)',
-              width: 56,
-              textAlign: 'right' as const,
+              textAlign: 'center' as const,
             },
           },
           score != null ? score.toFixed(1) : '--'
