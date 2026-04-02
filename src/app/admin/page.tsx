@@ -176,6 +176,21 @@ export default async function AdminPage() {
               <AdminAnnouncements />
             ),
           },
+          {
+            id: 'share',
+            label: 'Share Posters',
+            content: (
+              <div className="space-y-4">
+                <p className="text-sm text-cinema-muted">Generate ranked film list posters as shareable images.</p>
+                <a
+                  href="/admin/share/list"
+                  className="inline-block px-5 py-2.5 bg-cinema-gold/20 text-cinema-gold border border-cinema-gold/30 rounded-lg text-sm font-medium hover:bg-cinema-gold/30 transition-colors"
+                >
+                  Open Poster Generator
+                </a>
+              </div>
+            ),
+          },
         ]}
       />
     </div>
