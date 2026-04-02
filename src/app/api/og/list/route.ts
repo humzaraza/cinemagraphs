@@ -14,6 +14,7 @@ const GOLD = '#C8A951'
 const TEAL = '#2DD4A8'
 const RED = '#E05555'
 const IVORY = '#F5F0E8'
+const TMDB_API_KEY = process.env.TMDB_API_KEY!
 
 // ── Font cache ──────────────────────────────────────────
 
@@ -51,7 +52,7 @@ async function loadFonts() {
   }
 }
 
-// ── Catmull-Rom sparkline ───────────────────────────────
+// ── Catmull-Rom sparkline with axis lines ───────────────
 
 function catmullRomPath(
   points: { x: number; y: number }[],
@@ -88,7 +89,7 @@ function buildSparkline(
     return React.createElement('svg', { width: sw, height: sh })
   }
 
-  const padding = 4
+  const padding = 6
   const innerW = sw - padding * 2
   const innerH = sh - padding * 2
 
@@ -103,7 +104,45 @@ function buildSparkline(
 
   const path = catmullRomPath(points)
 
+  // Y position of score 5 (neutral line)
+  const neutralY = padding + innerH - ((5 - 1) / 9) * innerH
+
+  const axisColor = 'rgba(232,228,220,0.3)'
+  const neutralColor = 'rgba(232,228,220,0.15)'
+
   const children: React.ReactElement[] = [
+    // Y-axis (left)
+    React.createElement('line', {
+      key: 'yaxis',
+      x1: padding,
+      y1: padding,
+      x2: padding,
+      y2: padding + innerH,
+      stroke: axisColor,
+      strokeWidth: 0.75,
+    }),
+    // X-axis (bottom)
+    React.createElement('line', {
+      key: 'xaxis',
+      x1: padding,
+      y1: padding + innerH,
+      x2: padding + innerW,
+      y2: padding + innerH,
+      stroke: axisColor,
+      strokeWidth: 0.75,
+    }),
+    // Neutral line at score 5
+    React.createElement('line', {
+      key: 'neutral',
+      x1: padding,
+      y1: neutralY,
+      x2: padding + innerW,
+      y2: neutralY,
+      stroke: neutralColor,
+      strokeWidth: 0.75,
+      strokeDasharray: '4 3',
+    }),
+    // Data line
     React.createElement('path', {
       key: 'line',
       d: path,
@@ -162,6 +201,26 @@ async function fetchImageAsDataUri(url: string): Promise<string | null> {
   }
 }
 
+// ── Fetch TMDB logo for a film ──
+
+async function fetchTmdbLogo(tmdbId: number): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://api.themoviedb.org/3/movie/${tmdbId}/images?include_image_language=en,null`,
+      { headers: { Authorization: `Bearer ${TMDB_API_KEY}` } }
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    const logos = data.logos as { file_path: string; iso_639_1: string | null }[]
+    if (!logos || logos.length === 0) return null
+    // Prefer English logo, fall back to first
+    const enLogo = logos.find((l) => l.iso_639_1 === 'en') ?? logos[0]
+    return fetchImageAsDataUri(`https://image.tmdb.org/t/p/w300${enLogo.file_path}`)
+  } catch {
+    return null
+  }
+}
+
 // ── Main route ──────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -172,6 +231,7 @@ export async function GET(request: NextRequest) {
   const filmIds = (url.searchParams.get('films') || '').split(',').filter(Boolean)
   const title = url.searchParams.get('title') || 'Top Films'
   const subtitle = url.searchParams.get('subtitle') || ''
+  const displays = (url.searchParams.get('displays') || '').split(',')
 
   if (filmIds.length === 0) {
     return Response.json({ error: 'No films specified' }, { status: 400 })
@@ -180,14 +240,21 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: 'Maximum 15 films' }, { status: 400 })
   }
 
-  // Fetch films with graph data in the order provided
+  // Build display map: filmId -> 'logo' | 'font'
+  const displayMap = new Map<string, string>()
+  filmIds.forEach((id, i) => {
+    displayMap.set(id, displays[i] === 'font' ? 'font' : 'logo')
+  })
+
+  // Fetch films with graph data
   const films = await prisma.film.findMany({
     where: { id: { in: filmIds } },
     select: {
       id: true,
       title: true,
+      tmdbId: true,
       releaseDate: true,
-      backdropUrl: true,
+      posterUrl: true,
       sentimentGraph: {
         select: { overallScore: true, dataPoints: true },
       },
@@ -204,16 +271,30 @@ export async function GET(request: NextRequest) {
 
   const fonts = await loadFonts()
 
-  // Pre-fetch all backdrop images as base64 data URIs (satori can't fetch external URLs)
-  const backdropCache = new Map<string, string | null>()
+  // Pre-fetch poster images + logos as base64 (parallel)
+  const posterCache = new Map<string, string | null>()
+  const logoCache = new Map<string, string | null>()
+
   await Promise.all(
-    ordered.map(async (film) => {
-      if (film.backdropUrl) {
-        const dataUri = await fetchImageAsDataUri(
-          `https://image.tmdb.org/t/p/w780${film.backdropUrl}`
+    ordered.flatMap((film) => {
+      const tasks: Promise<void>[] = []
+      // Poster image (replacing backdrop)
+      if (film.posterUrl) {
+        tasks.push(
+          fetchImageAsDataUri(`https://image.tmdb.org/t/p/w780${film.posterUrl}`).then((uri) => {
+            posterCache.set(film.id, uri)
+          })
         )
-        backdropCache.set(film.id, dataUri)
       }
+      // Logo (only for films set to 'logo' display)
+      if (displayMap.get(film.id) === 'logo') {
+        tasks.push(
+          fetchTmdbLogo(film.tmdbId).then((uri) => {
+            logoCache.set(film.id, uri)
+          })
+        )
+      }
+      return tasks
     })
   )
 
@@ -231,7 +312,9 @@ export async function GET(request: NextRequest) {
     const year = film.releaseDate ? new Date(film.releaseDate).getFullYear().toString() : ''
     const score = film.sentimentGraph?.overallScore ?? null
     const dataPoints = (film.sentimentGraph?.dataPoints as unknown as SentimentDataPoint[]) ?? []
-    const backdropSrc = backdropCache.get(film.id) ?? null
+    const posterSrc = posterCache.get(film.id) ?? null
+    const logoSrc = logoCache.get(film.id) ?? null
+    const useLogo = displayMap.get(film.id) === 'logo' && logoSrc != null
 
     const sparkline =
       dataPoints.length >= 2 ? buildSparkline(dataPoints, sparkW, sparkH) : null
@@ -240,6 +323,90 @@ export async function GET(request: NextRequest) {
     const titleFontSize = rowH > 80 ? 22 : rowH > 60 ? 18 : 14
     const yearFontSize = rowH > 80 ? 16 : rowH > 60 ? 14 : 12
     const scoreFontSize = rowH > 80 ? 30 : rowH > 60 ? 24 : 18
+    const logoMaxH = Math.max(20, rowH - 30)
+
+    // Build title element: logo or text
+    const titleElement = useLogo
+      ? React.createElement(
+          'div',
+          {
+            style: {
+              display: 'flex',
+              flexDirection: 'column' as const,
+              flex: 1,
+              paddingLeft: 16,
+              paddingRight: 16,
+              overflow: 'hidden',
+              justifyContent: 'center',
+            },
+          },
+          React.createElement('img', {
+            src: logoSrc,
+            style: {
+              maxHeight: logoMaxH,
+              maxWidth: 280,
+              objectFit: 'contain' as const,
+              objectPosition: 'left center',
+            },
+          }),
+          year
+            ? React.createElement(
+                'span',
+                {
+                  style: {
+                    fontFamily: 'DM Sans',
+                    fontSize: yearFontSize,
+                    color: 'rgba(245,240,232,0.5)',
+                    marginTop: 4,
+                  },
+                },
+                year
+              )
+            : null
+        )
+      : React.createElement(
+          'div',
+          {
+            style: {
+              display: 'flex',
+              flexDirection: 'column' as const,
+              flex: 1,
+              paddingLeft: 16,
+              paddingRight: 16,
+              overflow: 'hidden',
+            },
+          },
+          React.createElement(
+            'span',
+            {
+              style: {
+                fontFamily: 'Libre Baskerville',
+                fontWeight: 700,
+                fontSize: titleFontSize,
+                color: IVORY,
+                lineHeight: 1.2,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap' as const,
+              },
+            },
+            film.title
+          ),
+          year
+            ? React.createElement(
+                'span',
+                {
+                  style: {
+                    fontFamily: 'DM Sans',
+                    fontSize: yearFontSize,
+                    color: 'rgba(245,240,232,0.5)',
+                    marginTop: 2,
+                  },
+                },
+                year
+              )
+            : null
+        )
 
     return React.createElement(
       'div',
@@ -255,10 +422,10 @@ export async function GET(request: NextRequest) {
           borderBottom: i < count - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
         },
       },
-      // Backdrop image
-      backdropSrc
+      // Poster image (replaces backdrop)
+      posterSrc
         ? React.createElement('img', {
-            src: backdropSrc,
+            src: posterSrc,
             style: {
               position: 'absolute' as const,
               top: 0,
@@ -266,7 +433,7 @@ export async function GET(request: NextRequest) {
               width: W,
               height: rowH,
               objectFit: 'cover' as const,
-              objectPosition: 'center 30%',
+              objectPosition: 'center top',
             },
           })
         : null,
@@ -311,50 +478,8 @@ export async function GET(request: NextRequest) {
           },
           String(i + 1)
         ),
-        // Title + year
-        React.createElement(
-          'div',
-          {
-            style: {
-              display: 'flex',
-              flexDirection: 'column' as const,
-              flex: 1,
-              paddingLeft: 16,
-              paddingRight: 16,
-              overflow: 'hidden',
-            },
-          },
-          React.createElement(
-            'span',
-            {
-              style: {
-                fontFamily: 'Libre Baskerville',
-                fontWeight: 700,
-                fontSize: titleFontSize,
-                color: IVORY,
-                lineHeight: 1.2,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap' as const,
-              },
-            },
-            film.title
-          ),
-          year
-            ? React.createElement(
-                'span',
-                {
-                  style: {
-                    fontFamily: 'DM Sans',
-                    fontSize: yearFontSize,
-                    color: 'rgba(245,240,232,0.5)',
-                    marginTop: 2,
-                  },
-                },
-                year
-              )
-            : null
-        ),
+        // Title (logo or font) + year
+        titleElement,
         // Sparkline
         sparkline
           ? React.createElement(

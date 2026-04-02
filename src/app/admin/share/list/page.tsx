@@ -13,12 +13,15 @@ interface FilmResult {
   sentimentGraph: { overallScore: number } | null
 }
 
+type TitleDisplay = 'logo' | 'font'
+
 interface SelectedFilm {
   id: string
   title: string
   year: string
   posterUrl: string | null
   score: number | null
+  titleDisplay: TitleDisplay
 }
 
 export default function ShareListPage() {
@@ -84,6 +87,7 @@ export default function ShareListPage() {
         year,
         posterUrl: film.posterUrl,
         score: film.sentimentGraph?.overallScore ?? null,
+        titleDisplay: 'logo',
       },
     ])
     setQuery('')
@@ -92,6 +96,18 @@ export default function ShareListPage() {
 
   function removeFilm(id: string) {
     setFilms((prev) => prev.filter((f) => f.id !== id))
+  }
+
+  function toggleTitleDisplay(id: string) {
+    setFilms((prev) =>
+      prev.map((f) =>
+        f.id === id ? { ...f, titleDisplay: f.titleDisplay === 'logo' ? 'font' : 'logo' } : f
+      )
+    )
+  }
+
+  function setAllTitleDisplay(display: TitleDisplay) {
+    setFilms((prev) => prev.map((f) => ({ ...f, titleDisplay: display })))
   }
 
   // Drag handlers
@@ -125,6 +141,15 @@ export default function ShareListPage() {
     setDragOverIndex(null)
   }
 
+  function buildParams() {
+    return new URLSearchParams({
+      films: films.map((f) => f.id).join(','),
+      title: title || 'Top Films',
+      subtitle: subtitle || '',
+      displays: films.map((f) => f.titleDisplay).join(','),
+    })
+  }
+
   async function generatePoster() {
     if (films.length === 0) return
     setGenerating(true)
@@ -132,12 +157,7 @@ export default function ShareListPage() {
     setPreviewUrl(null)
 
     try {
-      const params = new URLSearchParams({
-        films: films.map((f) => f.id).join(','),
-        title: title || 'Top Films',
-        subtitle: subtitle || '',
-      })
-      const res = await fetch(`/api/og/list?${params}`)
+      const res = await fetch(`/api/og/list?${buildParams()}`)
       if (!res.ok) {
         const text = await res.text()
         try {
@@ -166,12 +186,7 @@ export default function ShareListPage() {
   }
 
   function copyShareLink() {
-    const params = new URLSearchParams({
-      films: films.map((f) => f.id).join(','),
-      title: title || 'Top Films',
-      subtitle: subtitle || '',
-    })
-    const url = `${window.location.origin}/api/og/list?${params}`
+    const url = `${window.location.origin}/api/og/list?${buildParams()}`
     navigator.clipboard.writeText(url)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
@@ -283,9 +298,26 @@ export default function ShareListPage() {
             {/* Draggable film list */}
             {films.length > 0 && (
               <div className="space-y-1">
-                <label className="text-xs text-cinema-muted block mb-2">
-                  Drag to reorder ranking
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs text-cinema-muted">
+                    Drag to reorder ranking
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-cinema-muted/60">Select all:</span>
+                    <button
+                      onClick={() => setAllTitleDisplay('logo')}
+                      className="text-[10px] px-2 py-0.5 rounded border border-[#333] text-cinema-muted hover:text-cinema-cream hover:border-cinema-gold/30 transition-colors"
+                    >
+                      Logo
+                    </button>
+                    <button
+                      onClick={() => setAllTitleDisplay('font')}
+                      className="text-[10px] px-2 py-0.5 rounded border border-[#333] text-cinema-muted hover:text-cinema-cream hover:border-cinema-gold/30 transition-colors"
+                    >
+                      Font
+                    </button>
+                  </div>
+                </div>
                 {films.map((film, i) => (
                   <div
                     key={film.id}
@@ -294,7 +326,7 @@ export default function ShareListPage() {
                     onDragOver={(e) => handleDragOver(e, i)}
                     onDrop={() => handleDrop(i)}
                     onDragEnd={handleDragEnd}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg border cursor-grab active:cursor-grabbing transition-all ${
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-grab active:cursor-grabbing transition-all ${
                       dragOverIndex === i
                         ? 'border-cinema-gold/50 bg-cinema-gold/5'
                         : 'border-[#333] bg-[#1a1a2e]'
@@ -306,6 +338,16 @@ export default function ShareListPage() {
                     <span className="text-sm text-cinema-cream flex-1 truncate">
                       {film.title}
                     </span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleTitleDisplay(film.id) }}
+                      className={`text-[10px] px-2 py-0.5 rounded flex-shrink-0 border transition-colors ${
+                        film.titleDisplay === 'logo'
+                          ? 'border-cinema-teal/40 text-cinema-teal bg-cinema-teal/10'
+                          : 'border-cinema-gold/40 text-cinema-gold bg-cinema-gold/10'
+                      }`}
+                    >
+                      {film.titleDisplay === 'logo' ? 'Logo' : 'Font'}
+                    </button>
                     <span className="text-xs text-cinema-muted flex-shrink-0">
                       {film.year}
                     </span>
