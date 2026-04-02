@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/import-new-films",
-      "schedule": "0 2 * * 1"
+      "schedule": "0 2 * * *"
     },
     {
       "path": "/api/cron/refresh-scores",

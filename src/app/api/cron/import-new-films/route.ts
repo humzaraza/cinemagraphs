@@ -1,7 +1,8 @@
 import { prisma } from '@/lib/prisma'
 import { getMovieDetails, getMovieCredits } from '@/lib/tmdb'
 import { cronLogger } from '@/lib/logger'
-import { invalidateHomepageCache } from '@/lib/cache'
+import { invalidateHomepageCache, invalidateFilmCache } from '@/lib/cache'
+import { generateSentimentGraph } from '@/lib/sentiment-pipeline'
 
 export const maxDuration = 300
 
@@ -120,7 +121,7 @@ export async function GET(request: Request) {
             profilePath: c.profile_path,
           }))
 
-        await prisma.film.create({
+        const createdFilm = await prisma.film.create({
           data: {
             tmdbId: movie.id,
             imdbId: movie.imdb_id ?? null,
@@ -141,6 +142,18 @@ export async function GET(request: Request) {
 
         imported++
         cronLogger.info({ tmdbId, title: movie.title }, 'Film imported')
+
+        // Auto-generate sentiment graph for now_playing films
+        if (nowPlayingIds.has(movie.id)) {
+          try {
+            await generateSentimentGraph(createdFilm.id)
+            await invalidateFilmCache(createdFilm.id)
+            cronLogger.info({ tmdbId, title: movie.title }, 'Sentiment graph generated for new now_playing film')
+          } catch (sentErr) {
+            const sentMsg = sentErr instanceof Error ? sentErr.message : 'Unknown error'
+            cronLogger.error({ tmdbId, title: movie.title, error: sentMsg }, 'Failed to generate sentiment graph for new film')
+          }
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'
         cronLogger.error({ tmdbId, error: message }, 'Failed to import film')
@@ -149,7 +162,7 @@ export async function GET(request: Request) {
     }
 
     const durationMs = Date.now() - startTime
-    cronLogger.info({ imported, skipped, failed, durationMs }, 'Weekly import complete')
+    cronLogger.info({ imported, skipped, failed, durationMs }, 'Daily import complete')
 
     return Response.json({ imported, skipped, failed, nowPlayingRefreshed: nowPlayingIds.size, durationMs })
   } catch (err) {

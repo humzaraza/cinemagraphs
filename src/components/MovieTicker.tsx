@@ -105,8 +105,8 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
                             <stop offset="95%" stopColor={color} stopOpacity={0} />
                           </linearGradient>
                         </defs>
-                        <YAxis domain={[1, 10]} hide />
-                        <ReferenceLine y={5.5} stroke="#888" strokeDasharray="3 3" strokeWidth={0.5} />
+                        <YAxis domain={[0, 10]} hide />
+                        <ReferenceLine y={5.0} stroke="#888" strokeDasharray="3 3" strokeWidth={0.5} />
                         <Area
                           type="monotone"
                           dataKey="score"
