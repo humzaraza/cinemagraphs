@@ -393,7 +393,6 @@ export async function GET(request: NextRequest) {
     const sparkline =
       dataPoints.length >= 2 ? buildSparkline(dataPoints, sparkW, sparkH) : null
 
-    const rankFontSize = rowH > 80 ? 32 : rowH > 60 ? 26 : 20
     const titleFontSize = rowH > 80 ? 22 : rowH > 60 ? 18 : 14
     const yearFontSize = rowH > 80 ? 16 : rowH > 60 ? 14 : 12
     const scoreFontSize = rowH > 80 ? 30 : rowH > 60 ? 24 : 18
@@ -532,26 +531,10 @@ export async function GET(request: NextRequest) {
             width: W,
             height: rowH,
             position: 'relative' as const,
-            padding: '0 40px',
+            padding: '0 24px 0 20px',
             zIndex: 1,
           },
         },
-        // Rank
-        React.createElement(
-          'span',
-          {
-            style: {
-              fontFamily: 'Libre Baskerville',
-              fontWeight: 700,
-              fontSize: rankFontSize,
-              color: GOLD,
-              width: 56,
-              textAlign: 'center' as const,
-              flexShrink: 0,
-            },
-          },
-          String(i + 1)
-        ),
         // Title (logo or font) + year
         titleElement,
         // Sparkline
@@ -563,7 +546,7 @@ export async function GET(request: NextRequest) {
                   display: 'flex',
                   alignItems: 'center',
                   flexShrink: 0,
-                  marginLeft: 48,
+                  marginLeft: 'auto' as const,
                   marginRight: 10,
                 },
               },
