@@ -325,6 +325,7 @@ export async function GET(request: NextRequest) {
   const subtitle = url.searchParams.get('subtitle') || ''
   const displays = (url.searchParams.get('displays') || '').split(',')
   const crops = (url.searchParams.get('crops') || '').split(',')
+  const ratio = url.searchParams.get('ratio') || '16:9'
 
   if (filmIds.length === 0) {
     return Response.json({ error: 'No films specified' }, { status: 400 })
@@ -393,13 +394,28 @@ export async function GET(request: NextRequest) {
     })
   )
 
-  // ── Layout ──
-  const headerH = 120
-  const footerH = 60
+  // ── Layout (ratio-aware) ──
+  const DIMS: Record<string, { w: number; h: number }> = {
+    '16:9': { w: 1080, h: 608 },
+    '1:1': { w: 1080, h: 1080 },
+    '4:5': { w: 1080, h: 1350 },
+    '9:16': { w: 1080, h: 1920 },
+  }
+  const dim = DIMS[ratio] ?? DIMS['16:9']
+  const totalH = dim.h
   const count = ordered.length
-  const rowH = Math.min(120, Math.max(56, Math.floor((1920 - headerH - footerH) / count)))
-  const totalH = headerH + count * rowH + footerH
-  const sparkW = 220
+
+  // Scale header/footer based on available height
+  const isTall = ratio === '9:16'
+  const isSquareOrPortrait = ratio === '1:1' || ratio === '4:5'
+  const headerH = isTall ? 200 : isSquareOrPortrait ? 150 : 120
+  const footerH = isTall ? 100 : isSquareOrPortrait ? 80 : 60
+
+  const rowSpace = totalH - headerH - footerH
+  const rowH = Math.max(40, Math.floor(rowSpace / count))
+
+  // Scale sparkline proportionally with row height
+  const sparkW = isTall ? 280 : isSquareOrPortrait ? 250 : 220
   const sparkH = Math.max(24, rowH - 20)
 
   // ── Build rows ──
@@ -641,7 +657,7 @@ export async function GET(request: NextRequest) {
           style: {
             fontFamily: 'Libre Baskerville',
             fontWeight: 700,
-            fontSize: 36,
+            fontSize: isTall ? 48 : isSquareOrPortrait ? 42 : 36,
             color: IVORY,
             textAlign: 'center' as const,
           },
@@ -654,9 +670,9 @@ export async function GET(request: NextRequest) {
             {
               style: {
                 fontFamily: 'DM Sans',
-                fontSize: 16,
+                fontSize: isTall ? 22 : isSquareOrPortrait ? 18 : 16,
                 color: 'rgba(245,240,232,0.5)',
-                marginTop: 6,
+                marginTop: isTall ? 12 : 6,
                 textAlign: 'center' as const,
               },
             },
@@ -702,7 +718,7 @@ export async function GET(request: NextRequest) {
           style: {
             fontFamily: 'Libre Baskerville',
             fontWeight: 700,
-            fontSize: 16,
+            fontSize: isTall ? 24 : isSquareOrPortrait ? 20 : 16,
             color: GOLD,
           },
         },
@@ -713,7 +729,7 @@ export async function GET(request: NextRequest) {
         {
           style: {
             fontFamily: 'DM Sans',
-            fontSize: 13,
+            fontSize: isTall ? 18 : isSquareOrPortrait ? 15 : 13,
             color: 'rgba(245,240,232,0.35)',
           },
         },

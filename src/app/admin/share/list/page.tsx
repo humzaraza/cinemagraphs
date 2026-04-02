@@ -14,6 +14,14 @@ interface FilmResult {
 }
 
 type TitleDisplay = 'logo' | 'font'
+type AspectRatio = '16:9' | '1:1' | '4:5' | '9:16'
+
+const RATIO_OPTIONS: { value: AspectRatio; label: string }[] = [
+  { value: '16:9', label: 'Twitter/X (16:9)' },
+  { value: '1:1', label: 'Instagram Square (1:1)' },
+  { value: '4:5', label: 'Instagram Portrait (4:5)' },
+  { value: '9:16', label: 'TikTok (9:16)' },
+]
 
 interface SelectedFilm {
   id: string
@@ -40,6 +48,7 @@ export default function ShareListPage() {
   const [error, setError] = useState<string | null>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const [ratio, setRatio] = useState<AspectRatio>('16:9')
   const [copied, setCopied] = useState(false)
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cropTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -136,6 +145,7 @@ export default function ShareListPage() {
         subtitle: subtitle || '',
         displays: currentFilms.map((f) => f.titleDisplay).join(','),
         crops: currentFilms.map((f) => f.cropY).join(','),
+        ratio,
       })
       const res = await fetch(`/api/og/list?${params}`)
       if (!res.ok) {
@@ -195,6 +205,7 @@ export default function ShareListPage() {
       subtitle: subtitle || '',
       displays: films.map((f) => f.titleDisplay).join(','),
       crops: films.map((f) => f.cropY).join(','),
+      ratio,
     })
   }
 
@@ -285,6 +296,26 @@ export default function ShareListPage() {
                   placeholder="Every film ranked by emotional arc"
                   className="w-full bg-[#1a1a2e] border border-[#333] rounded-lg px-3 py-2 text-sm text-cinema-cream placeholder:text-cinema-muted/40 focus:outline-none focus:border-cinema-gold/50"
                 />
+              </div>
+            </div>
+
+            {/* Aspect Ratio */}
+            <div>
+              <label className="text-xs text-cinema-muted block mb-1.5">Aspect Ratio</label>
+              <div className="flex gap-2">
+                {RATIO_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setRatio(opt.value)}
+                    className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                      ratio === opt.value
+                        ? 'border-cinema-gold/50 text-cinema-gold bg-cinema-gold/10'
+                        : 'border-[#333] text-cinema-muted hover:text-cinema-cream hover:border-cinema-gold/30'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -480,7 +511,9 @@ export default function ShareListPage() {
                 </button>
               </div>
             ) : (
-              <div className="rounded-lg border border-[#333] bg-[#1a1a2e] flex items-center justify-center aspect-[9/16] text-cinema-muted/40 text-sm">
+              <div className={`rounded-lg border border-[#333] bg-[#1a1a2e] flex items-center justify-center text-cinema-muted/40 text-sm ${
+                ratio === '16:9' ? 'aspect-[16/9]' : ratio === '1:1' ? 'aspect-square' : ratio === '4:5' ? 'aspect-[4/5]' : 'aspect-[9/16]'
+              }`}>
                 {generating ? 'Generating poster...' : 'Poster preview will appear here'}
               </div>
             )}
