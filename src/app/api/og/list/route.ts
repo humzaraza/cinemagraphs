@@ -83,8 +83,7 @@ function catmullRomPath(
 function buildSparkline(
   dataPoints: SentimentDataPoint[],
   sw: number,
-  sh: number,
-  scale = 1
+  sh: number
 ): React.ReactElement {
   if (dataPoints.length < 2) {
     return React.createElement('svg', { width: sw, height: sh })
@@ -118,20 +117,13 @@ function buildSparkline(
   const neutralColor = 'rgba(232,228,220,0.3)'
 
   const labelColor = 'rgba(232,228,220,0.4)'
-  const labelFontSize = Math.max(6, Math.round(8 * scale))
   const labelStyle = {
     fontFamily: 'DM Sans',
-    fontSize: labelFontSize,
+    fontSize: 8,
     color: labelColor,
     position: 'absolute' as const,
     lineHeight: 1,
   }
-
-  const axisW = Math.max(0.5, 1 * scale)
-  const lineW = Math.max(1, 2 * scale)
-  const dotR = Math.max(2, 3.5 * scale)
-  const dashOn = Math.max(2, 4 * scale)
-  const dashOff = Math.max(2, 3 * scale)
 
   const children: React.ReactElement[] = [
     // Y-axis (left)
@@ -142,7 +134,7 @@ function buildSparkline(
       x2: paddingX,
       y2: paddingY + innerH,
       stroke: axisColor,
-      strokeWidth: axisW,
+      strokeWidth: 1,
     }),
     // Y-axis (right)
     React.createElement('line', {
@@ -152,7 +144,7 @@ function buildSparkline(
       x2: paddingX + innerW,
       y2: paddingY + innerH,
       stroke: axisColor,
-      strokeWidth: axisW,
+      strokeWidth: 1,
     }),
     // X-axis (bottom)
     React.createElement('line', {
@@ -162,7 +154,7 @@ function buildSparkline(
       x2: paddingX + innerW,
       y2: paddingY + innerH,
       stroke: axisColor,
-      strokeWidth: axisW,
+      strokeWidth: 1,
     }),
   ]
 
@@ -199,8 +191,8 @@ function buildSparkline(
       x2: paddingX + innerW,
       y2: midY,
       stroke: neutralColor,
-      strokeWidth: axisW,
-      strokeDasharray: `${dashOn} ${dashOff}`,
+      strokeWidth: 1,
+      strokeDasharray: '4 3',
     })
   )
 
@@ -211,7 +203,7 @@ function buildSparkline(
       d: path,
       fill: 'none',
       stroke: GOLD,
-      strokeWidth: lineW,
+      strokeWidth: 2.5,
       strokeLinecap: 'round',
     }),
     // Peak dot (teal)
@@ -219,7 +211,7 @@ function buildSparkline(
       key: 'peak',
       cx: points[peakIdx].x,
       cy: points[peakIdx].y,
-      r: dotR,
+      r: 3.5,
       fill: TEAL,
     })
   )
@@ -231,7 +223,7 @@ function buildSparkline(
         key: 'low',
         cx: points[lowIdx].x,
         cy: points[lowIdx].y,
-        r: dotR,
+        r: 3.5,
         fill: RED,
       })
     )
@@ -422,11 +414,9 @@ export async function GET(request: NextRequest) {
   const rowSpace = totalH - headerH - footerH
   const rowH = Math.max(40, Math.floor(rowSpace / count))
 
-  // Dynamic sparkline sizing: 45% of row width, 75% of row height
-  const sparkW = Math.round(W * 0.45)
-  const sparkH = Math.round(rowH * 0.75)
-  // Scale factor for line thickness, dots, axis lines (base: 70px height)
-  const sparkScale = sparkH / 70
+  // Sparkline: 40% of poster width, height capped at 90px
+  const sparkW = Math.round(W * 0.4)
+  const sparkH = Math.min(90, Math.round(rowH * 0.75))
 
   // ── Build rows ──
   const rows = ordered.map((film, i) => {
@@ -439,7 +429,7 @@ export async function GET(request: NextRequest) {
     const useLogo = displayMap.get(film.id) === 'logo' && logoSrc != null
 
     const sparkline =
-      dataPoints.length >= 2 ? buildSparkline(dataPoints, sparkW, sparkH, sparkScale) : null
+      dataPoints.length >= 2 ? buildSparkline(dataPoints, sparkW, sparkH) : null
 
     const titleFontSize = rowH > 80 ? 22 : rowH > 60 ? 18 : 14
     const yearFontSize = rowH > 80 ? 16 : rowH > 60 ? 14 : 12
