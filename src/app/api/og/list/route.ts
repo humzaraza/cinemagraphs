@@ -89,9 +89,10 @@ function buildSparkline(
     return React.createElement('svg', { width: sw, height: sh })
   }
 
-  const padding = 6
-  const innerW = sw - padding * 2
-  const innerH = sh - padding * 2
+  const paddingX = 18 // extra horizontal space for y-axis labels
+  const paddingY = 6
+  const innerW = sw - paddingX * 2
+  const innerH = sh - paddingY * 2
 
   // Dynamic y-axis scaling
   const scores = dataPoints.map((dp) => dp.score)
@@ -102,8 +103,8 @@ function buildSparkline(
   const yRange = yMax - yMin
 
   const points = dataPoints.map((dp, i) => ({
-    x: padding + (i / (dataPoints.length - 1)) * innerW,
-    y: padding + innerH - ((dp.score - yMin) / yRange) * innerH,
+    x: paddingX + (i / (dataPoints.length - 1)) * innerW,
+    y: paddingY + innerH - ((dp.score - yMin) / yRange) * innerH,
     score: dp.score,
   }))
 
@@ -115,48 +116,88 @@ function buildSparkline(
   const axisColor = 'rgba(232,228,220,0.5)'
   const neutralColor = 'rgba(232,228,220,0.3)'
 
+  const labelColor = 'rgba(232,228,220,0.4)'
+
   const children: React.ReactElement[] = [
     // Y-axis (left)
     React.createElement('line', {
       key: 'yaxis-l',
-      x1: padding,
-      y1: padding,
-      x2: padding,
-      y2: padding + innerH,
+      x1: paddingX,
+      y1: paddingY,
+      x2: paddingX,
+      y2: paddingY + innerH,
       stroke: axisColor,
       strokeWidth: 1,
     }),
     // Y-axis (right)
     React.createElement('line', {
       key: 'yaxis-r',
-      x1: padding + innerW,
-      y1: padding,
-      x2: padding + innerW,
-      y2: padding + innerH,
+      x1: paddingX + innerW,
+      y1: paddingY,
+      x2: paddingX + innerW,
+      y2: paddingY + innerH,
       stroke: axisColor,
       strokeWidth: 1,
     }),
     // X-axis (bottom)
     React.createElement('line', {
       key: 'xaxis',
-      x1: padding,
-      y1: padding + innerH,
-      x2: padding + innerW,
-      y2: padding + innerH,
+      x1: paddingX,
+      y1: paddingY + innerH,
+      x2: paddingX + innerW,
+      y2: paddingY + innerH,
       stroke: axisColor,
       strokeWidth: 1,
     }),
+    // Y-axis labels: yMax at top, yMin at bottom — left side (right-aligned)
+    React.createElement('text', {
+      key: 'lbl-l-max',
+      x: paddingX - 3,
+      y: paddingY + 4,
+      textAnchor: 'end',
+      fill: labelColor,
+      fontFamily: 'DM Sans',
+      fontSize: 8,
+    }, String(yMax)),
+    React.createElement('text', {
+      key: 'lbl-l-min',
+      x: paddingX - 3,
+      y: paddingY + innerH,
+      textAnchor: 'end',
+      fill: labelColor,
+      fontFamily: 'DM Sans',
+      fontSize: 8,
+    }, String(yMin)),
+    // Y-axis labels: yMax at top, yMin at bottom — right side (left-aligned)
+    React.createElement('text', {
+      key: 'lbl-r-max',
+      x: paddingX + innerW + 3,
+      y: paddingY + 4,
+      textAnchor: 'start',
+      fill: labelColor,
+      fontFamily: 'DM Sans',
+      fontSize: 8,
+    }, String(yMax)),
+    React.createElement('text', {
+      key: 'lbl-r-min',
+      x: paddingX + innerW + 3,
+      y: paddingY + innerH,
+      textAnchor: 'start',
+      fill: labelColor,
+      fontFamily: 'DM Sans',
+      fontSize: 8,
+    }, String(yMin)),
   ]
 
   // Dashed reference line at midpoint of the dynamic y-axis range
   const midScore = (yMin + yMax) / 2
-  const midY = padding + innerH - ((midScore - yMin) / yRange) * innerH
+  const midY = paddingY + innerH - ((midScore - yMin) / yRange) * innerH
   children.push(
     React.createElement('line', {
       key: 'neutral',
-      x1: padding,
+      x1: paddingX,
       y1: midY,
-      x2: padding + innerW,
+      x2: paddingX + innerW,
       y2: midY,
       stroke: neutralColor,
       strokeWidth: 1,
@@ -516,6 +557,7 @@ export async function GET(request: NextRequest) {
                   display: 'flex',
                   alignItems: 'center',
                   flexShrink: 0,
+                  marginLeft: 24,
                   marginRight: 20,
                 },
               },

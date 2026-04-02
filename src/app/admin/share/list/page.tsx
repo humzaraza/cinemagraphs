@@ -42,6 +42,7 @@ export default function ShareListPage() {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [copied, setCopied] = useState(false)
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cropTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Admin gate
   useEffect(() => {
@@ -113,9 +114,47 @@ export default function ShareListPage() {
   }
 
   function setCropY(id: string, value: number) {
-    setFilms((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, cropY: value } : f))
-    )
+    setFilms((prev) => {
+      const updated = prev.map((f) => (f.id === id ? { ...f, cropY: value } : f))
+      // Debounced auto-regenerate if preview exists
+      if (cropTimeout.current) clearTimeout(cropTimeout.current)
+      cropTimeout.current = setTimeout(() => {
+        regeneratePreview(updated)
+      }, 300)
+      return updated
+    })
+  }
+
+  async function regeneratePreview(currentFilms: SelectedFilm[]) {
+    if (currentFilms.length === 0) return
+    setGenerating(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams({
+        films: currentFilms.map((f) => f.id).join(','),
+        title: title || 'Top Films',
+        subtitle: subtitle || '',
+        displays: currentFilms.map((f) => f.titleDisplay).join(','),
+        crops: currentFilms.map((f) => f.cropY).join(','),
+      })
+      const res = await fetch(`/api/og/list?${params}`)
+      if (!res.ok) {
+        const text = await res.text()
+        try {
+          const data = JSON.parse(text)
+          setError(data.error || 'Failed to generate poster')
+        } catch {
+          setError('Failed to generate poster')
+        }
+        return
+      }
+      const blob = await res.blob()
+      setPreviewUrl(URL.createObjectURL(blob))
+    } catch {
+      setError('Failed to generate poster')
+    } finally {
+      setGenerating(false)
+    }
   }
 
   // Drag handlers
@@ -357,7 +396,7 @@ export default function ShareListPage() {
                     >
                       {film.titleDisplay === 'logo' ? 'Logo' : 'Font'}
                     </button>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <div className="flex items-center gap-1 flex-shrink-0">
                       <input
                         type="range"
                         min={0}
@@ -366,7 +405,21 @@ export default function ShareListPage() {
                         onChange={(e) => { e.stopPropagation(); setCropY(film.id, Number(e.target.value)) }}
                         className="w-16 h-1 accent-cinema-teal cursor-pointer"
                       />
-                      <span className="text-[10px] text-cinema-muted w-7 text-right">{film.cropY}%</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={film.cropY}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => {
+                          e.stopPropagation()
+                          const raw = e.target.value.replace(/[^0-9]/g, '')
+                          if (raw === '') { setCropY(film.id, 0); return }
+                          const num = Math.max(0, Math.min(100, Number(raw)))
+                          setCropY(film.id, num)
+                        }}
+                        className="w-8 text-[10px] text-cinema-muted text-right bg-transparent border-b border-[#333] focus:border-cinema-teal/50 focus:text-cinema-cream outline-none px-0"
+                      />
+                      <span className="text-[10px] text-cinema-muted">%</span>
                     </div>
                     <span className="text-xs text-cinema-muted flex-shrink-0">
                       {film.year}
