@@ -148,22 +148,21 @@ function buildSparkline(
     }),
   ]
 
-  // Neutral line at score 5 (only if within y-axis range)
-  if (yMin < 5 && yMax > 5) {
-    const neutralY = padding + innerH - ((5 - yMin) / yRange) * innerH
-    children.push(
-      React.createElement('line', {
-        key: 'neutral',
-        x1: padding,
-        y1: neutralY,
-        x2: padding + innerW,
-        y2: neutralY,
-        stroke: neutralColor,
-        strokeWidth: 1,
-        strokeDasharray: '4 3',
-      })
-    )
-  }
+  // Dashed reference line at midpoint of the dynamic y-axis range
+  const midScore = (yMin + yMax) / 2
+  const midY = padding + innerH - ((midScore - yMin) / yRange) * innerH
+  children.push(
+    React.createElement('line', {
+      key: 'neutral',
+      x1: padding,
+      y1: midY,
+      x2: padding + innerW,
+      y2: midY,
+      stroke: neutralColor,
+      strokeWidth: 1,
+      strokeDasharray: '4 3',
+    })
+  )
 
   children.push(
     // Data line
@@ -278,7 +277,7 @@ export async function GET(request: NextRequest) {
       title: true,
       tmdbId: true,
       releaseDate: true,
-      posterUrl: true,
+      backdropUrl: true,
       sentimentGraph: {
         select: { overallScore: true, dataPoints: true },
       },
@@ -295,18 +294,18 @@ export async function GET(request: NextRequest) {
 
   const fonts = await loadFonts()
 
-  // Pre-fetch poster images + logos as base64 (parallel)
-  const posterCache = new Map<string, string | null>()
+  // Pre-fetch backdrop images + logos as base64 (parallel)
+  const backdropCache = new Map<string, string | null>()
   const logoCache = new Map<string, string | null>()
 
   await Promise.all(
     ordered.flatMap((film) => {
       const tasks: Promise<void>[] = []
-      // Poster image (replacing backdrop)
-      if (film.posterUrl) {
+      // Backdrop image (full-width row background)
+      if (film.backdropUrl) {
         tasks.push(
-          fetchImageAsDataUri(`https://image.tmdb.org/t/p/w780${film.posterUrl}`).then((uri) => {
-            posterCache.set(film.id, uri)
+          fetchImageAsDataUri(`https://image.tmdb.org/t/p/w780${film.backdropUrl}`).then((uri) => {
+            backdropCache.set(film.id, uri)
           })
         )
       }
@@ -336,7 +335,7 @@ export async function GET(request: NextRequest) {
     const year = film.releaseDate ? new Date(film.releaseDate).getFullYear().toString() : ''
     const score = film.sentimentGraph?.overallScore ?? null
     const dataPoints = (film.sentimentGraph?.dataPoints as unknown as SentimentDataPoint[]) ?? []
-    const posterSrc = posterCache.get(film.id) ?? null
+    const backdropSrc = backdropCache.get(film.id) ?? null
     const logoSrc = logoCache.get(film.id) ?? null
     const useLogo = displayMap.get(film.id) === 'logo' && logoSrc != null
 
@@ -446,22 +445,22 @@ export async function GET(request: NextRequest) {
           borderBottom: i < count - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
         },
       },
-      // Poster image: right-aligned at natural aspect ratio, cropped to row height
-      posterSrc
+      // Backdrop image: full-width background
+      backdropSrc
         ? React.createElement('img', {
-            src: posterSrc,
+            src: backdropSrc,
             style: {
               position: 'absolute' as const,
               top: 0,
-              right: 0,
+              left: 0,
+              width: W,
               height: rowH,
-              width: Math.round(rowH * 0.667), // poster 2:3 aspect
               objectFit: 'cover' as const,
-              objectPosition: 'center top',
+              objectPosition: 'center center',
             },
           })
         : null,
-      // Gradient overlay: 95% opacity left, 40% right
+      // Gradient overlay: 92% opacity left, 15% right
       React.createElement('div', {
         style: {
           position: 'absolute' as const,
@@ -469,7 +468,7 @@ export async function GET(request: NextRequest) {
           left: 0,
           width: W,
           height: rowH,
-          background: `linear-gradient(to right, rgba(13,13,26,0.95) 0%, rgba(13,13,26,0.95) 40%, rgba(13,13,26,0.7) 70%, rgba(13,13,26,0.4) 100%)`,
+          background: `linear-gradient(to right, rgba(13,13,26,0.92) 0%, rgba(13,13,26,0.92) 35%, rgba(13,13,26,0.5) 65%, rgba(13,13,26,0.15) 100%)`,
         },
       }),
       // Content row
