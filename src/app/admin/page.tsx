@@ -40,6 +40,7 @@ export default async function AdminPage() {
       isFeatured: true,
       nowPlaying: true,
       nowPlayingOverride: true,
+      tickerOverride: true,
       pinnedSection: true,
       createdAt: true,
       sentimentGraph: {
@@ -70,6 +71,7 @@ export default async function AdminPage() {
     tmdbId: film.tmdbId,
     nowPlaying: film.nowPlaying,
     nowPlayingOverride: film.nowPlayingOverride,
+    tickerOverride: film.tickerOverride,
     pinnedSection: film.pinnedSection,
     hasGraph: !!film.sentimentGraph,
   }))

@@ -18,7 +18,7 @@ export async function PATCH(
     const { id } = await params
     const body = await request.json()
 
-    const allowedFields = ['isFeatured', 'status', 'nowPlaying', 'nowPlayingOverride', 'pinnedSection'] as const
+    const allowedFields = ['isFeatured', 'status', 'nowPlaying', 'nowPlayingOverride', 'tickerOverride', 'pinnedSection'] as const
     const updateData: Record<string, unknown> = {}
 
     for (const field of allowedFields) {
@@ -37,7 +37,7 @@ export async function PATCH(
     })
 
     // Invalidate caches when homepage-affecting fields change
-    const homepageFields = ['nowPlaying', 'nowPlayingOverride', 'isFeatured', 'pinnedSection', 'status']
+    const homepageFields = ['nowPlaying', 'nowPlayingOverride', 'tickerOverride', 'isFeatured', 'pinnedSection', 'status']
     if (homepageFields.some((f) => f in updateData)) {
       await Promise.all([invalidateFilmCache(id), invalidateHomepageCache()])
     }

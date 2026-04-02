@@ -123,6 +123,7 @@ model Film {
   lastReviewCount      Int                   @default(0)
   nowPlaying           Boolean               @default(false)
   nowPlayingOverride   String?               // null = auto (TMDB), "force_show", "force_hide"
+  tickerOverride       String?               // null = auto (nowPlaying), "force_show", "force_hide"
   isFeatured           Boolean               @default(false)
   pinnedSection        String?
   status               FilmStatus            @default(ACTIVE)

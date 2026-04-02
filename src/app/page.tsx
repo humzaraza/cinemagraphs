@@ -126,9 +126,17 @@ export default async function HomePage() {
       sections.inTheaters
         ? getInTheatersFilms()
         : Promise.resolve([] as InTheaterFilm),
-      // For ticker: now playing films with graphs
+      // For ticker: films visible in ticker (tickerOverride-aware)
       prisma.film.findMany({
-        where: { status: 'ACTIVE', nowPlaying: true, sentimentGraph: { isNot: null } },
+        where: {
+          status: 'ACTIVE',
+          sentimentGraph: { isNot: null },
+          OR: [
+            { tickerOverride: 'force_show' },
+            { tickerOverride: null, nowPlaying: true },
+          ],
+          NOT: { tickerOverride: 'force_hide' },
+        },
         include: {
           sentimentGraph: { select: { overallScore: true, previousScore: true, dataPoints: true } },
         },
@@ -243,7 +251,7 @@ export default async function HomePage() {
         delta,
         dataPoints: (f.sentimentGraph!.dataPoints as unknown as any[]).map((dp: any) => ({
           timeMidpoint: dp.timeMidpoint ?? Math.round(((dp.timeStart ?? 0) + (dp.timeEnd ?? 0)) / 2),
-          score: dp.score,
+          score: Math.max(0, Math.min(10, Number(dp.score) || 0)),
         })),
       }
     })

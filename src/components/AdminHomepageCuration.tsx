@@ -10,6 +10,7 @@ interface FilmOption {
   tmdbId: number
   nowPlaying: boolean
   nowPlayingOverride: string | null // null = auto, "force_show", "force_hide"
+  tickerOverride: string | null     // null = auto (nowPlaying), "force_show", "force_hide"
   pinnedSection: string | null
   hasGraph: boolean
 }
@@ -52,6 +53,7 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
   })
   const [localFilms, setLocalFilms] = useState(films)
   const [featuredSearch, setFeaturedSearch] = useState('')
+  const [tickerSearch, setTickerSearch] = useState('')
   const [nowPlayingSearch, setNowPlayingSearch] = useState('')
   const [pinnedSearch, setPinnedSearch] = useState('')
   const [saving, setSaving] = useState<string | null>(null)
@@ -141,6 +143,24 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
     }
   }
 
+  // ── Ticker Override ──
+  const setTickerOverride = async (film: FilmOption, override: string | null) => {
+    const res = await fetch(`/api/admin/films/${film.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tickerOverride: override }),
+    })
+    if (res.ok) {
+      setLocalFilms((prev) =>
+        prev.map((f) =>
+          f.id === film.id ? { ...f, tickerOverride: override } : f,
+        ),
+      )
+      const label = override === 'force_show' ? 'force-shown in ticker' : override === 'force_hide' ? 'hidden from ticker' : 'ticker set to auto'
+      flash(`${film.title} ${label}`)
+    }
+  }
+
   // ── Pinned Section ──
   const setPinnedSection = async (film: FilmOption, section: string | null) => {
     const res = await fetch(`/api/admin/films/${film.id}`, {
@@ -158,6 +178,9 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
   const filteredFeatured = featuredSearch
     ? graphFilms.filter((f) => f.title.toLowerCase().includes(featuredSearch.toLowerCase()) && !featured.some((fe) => fe.filmId === f.id))
     : []
+  const filteredTicker = tickerSearch
+    ? localFilms.filter((f) => f.title.toLowerCase().includes(tickerSearch.toLowerCase()))
+    : localFilms.filter((f) => f.nowPlaying || f.tickerOverride === 'force_show' || f.tickerOverride === 'force_hide')
   const filteredNowPlaying = nowPlayingSearch
     ? localFilms.filter((f) => f.title.toLowerCase().includes(nowPlayingSearch.toLowerCase()))
     : localFilms.filter((f) => f.nowPlaying || f.nowPlayingOverride === 'force_hide')
@@ -323,13 +346,96 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
         </div>
       </section>
 
-      {/* ── 3. In Theaters (Now Playing) Management ── */}
+      {/* ── 3. Movie Market Ticker ── */}
       <section>
         <h3 className="font-[family-name:var(--font-playfair)] text-lg font-bold text-cinema-cream mb-2">
-          In Theaters (Now Playing)
+          Movie Market Ticker
         </h3>
         <p className="text-xs text-cinema-muted mb-3">
-          Films auto-populate from TMDB. Use overrides to force-show or force-hide specific films.
+          Controls which films appear in the scrolling ticker. Independent from the In Theaters section below.
+        </p>
+        <div className="flex gap-3 mb-3 text-[10px] text-cinema-muted">
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#2DD4A8]" /> Auto (now playing)</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cinema-gold" /> Force shown</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Force hidden</span>
+        </div>
+        <input
+          type="text"
+          placeholder="Search films to manage ticker..."
+          value={tickerSearch}
+          onChange={(e) => setTickerSearch(e.target.value)}
+          className="w-full bg-cinema-darker border border-cinema-border rounded-lg px-4 py-2 text-sm text-cinema-cream placeholder:text-cinema-muted focus:outline-none focus:border-cinema-gold mb-3"
+        />
+        <div className="max-h-[28rem] overflow-y-auto border border-cinema-border rounded-lg divide-y divide-cinema-border">
+          {filteredTicker.map((film) => {
+            const override = film.tickerOverride
+            const isAuto = !override
+            const isForceShow = override === 'force_show'
+            const isForceHide = override === 'force_hide'
+            return (
+              <div key={film.id} className="flex items-center justify-between px-4 py-2.5 gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{
+                      backgroundColor: isForceShow ? '#C8A951' : isForceHide ? '#ef4444' : '#2DD4A8',
+                    }}
+                  />
+                  <span className={`text-sm truncate ${isForceHide ? 'text-cinema-muted line-through' : 'text-cinema-cream'}`}>
+                    {film.title}
+                  </span>
+                  {isAuto && film.nowPlaying && (
+                    <span className="text-[9px] text-[#2DD4A8]/60 shrink-0">auto</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={() => setTickerOverride(film, isForceShow ? null : 'force_show')}
+                    className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                      isForceShow
+                        ? 'bg-cinema-gold/20 border-cinema-gold text-cinema-gold'
+                        : 'border-cinema-border text-cinema-muted hover:border-cinema-gold/40 hover:text-cinema-gold'
+                    }`}
+                  >
+                    {isForceShow ? 'Showing' : 'Show'}
+                  </button>
+                  <button
+                    onClick={() => setTickerOverride(film, isForceHide ? null : 'force_hide')}
+                    className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                      isForceHide
+                        ? 'bg-red-500/20 border-red-500 text-red-400'
+                        : 'border-cinema-border text-cinema-muted hover:border-red-500/40 hover:text-red-400'
+                    }`}
+                  >
+                    {isForceHide ? 'Hidden' : 'Hide'}
+                  </button>
+                  {override && (
+                    <button
+                      onClick={() => setTickerOverride(film, null)}
+                      className="text-[10px] px-2 py-0.5 rounded border border-cinema-border text-cinema-muted hover:border-[#2DD4A8]/40 hover:text-[#2DD4A8] transition-colors"
+                    >
+                      Auto
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+          {filteredTicker.length === 0 && (
+            <div className="px-4 py-3 text-sm text-cinema-muted text-center">
+              {tickerSearch ? 'No films found' : 'No films in ticker'}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ── 4. In Theaters Section ── */}
+      <section>
+        <h3 className="font-[family-name:var(--font-playfair)] text-lg font-bold text-cinema-cream mb-2">
+          In Theaters Section
+        </h3>
+        <p className="text-xs text-cinema-muted mb-3">
+          Controls which films appear in the &quot;In Theaters&quot; homepage section. Independent from the ticker above.
         </p>
         <div className="flex gap-3 mb-3 text-[10px] text-cinema-muted">
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#2DD4A8]" /> Auto (TMDB)</span>
@@ -338,7 +444,7 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
         </div>
         <input
           type="text"
-          placeholder="Search films to manage now playing..."
+          placeholder="Search films to manage in theaters..."
           value={nowPlayingSearch}
           onChange={(e) => setNowPlayingSearch(e.target.value)}
           className="w-full bg-cinema-darker border border-cinema-border rounded-lg px-4 py-2 text-sm text-cinema-cream placeholder:text-cinema-muted focus:outline-none focus:border-cinema-gold mb-3"
@@ -406,7 +512,7 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
         </div>
       </section>
 
-      {/* ── 4. Pinned Films ── */}
+      {/* ── 5. Pinned Films ── */}
       <section>
         <h3 className="font-[family-name:var(--font-playfair)] text-lg font-bold text-cinema-cream mb-4">
           Pinned Films
