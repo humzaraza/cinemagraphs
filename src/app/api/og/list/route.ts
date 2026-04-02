@@ -321,10 +321,10 @@ export async function GET(request: NextRequest) {
   // Exact pixel layout: title far left, sparkline+score far right
   const titleStartX = 40
   const titleZoneW = 350
-  const sparkStartX = 700
+  const sparkStartX = 725
   const sparkZoneW = 280
-  const scoreStartX = 980
-  const scoreZoneW = 80
+  const scoreStartX = 1010
+  const scoreZoneW = 60
 
   // Pre-render sparklines at exact display size
   const sparklineCache = new Map<string, { uri: string; w: number; h: number }>()
