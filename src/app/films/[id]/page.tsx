@@ -20,18 +20,74 @@ export default async function FilmPage({
 }) {
   const { id } = await params
 
-  const film = await prisma.film.findUnique({
-    where: { id },
-    include: { sentimentGraph: true },
-  })
+  const [film, userReviews] = await Promise.all([
+    prisma.film.findUnique({
+      where: { id },
+      include: { sentimentGraph: true },
+    }),
+    prisma.userReview.findMany({
+      where: { filmId: id, status: 'approved' },
+      select: {
+        overallRating: true,
+        combinedText: true,
+        createdAt: true,
+        user: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    }),
+  ])
 
   if (!film) notFound()
 
   const trailerKey = await getMovieTrailerKey(film.tmdbId)
   const cast = (film.cast as CastMember[] | null) ?? []
 
+  // Build Schema.org JSON-LD structured data
+  const jsonLd: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'Movie',
+    name: film.title,
+    ...(film.releaseDate && { datePublished: film.releaseDate.toISOString().split('T')[0] }),
+    ...(film.director && { director: { '@type': 'Person', name: film.director } }),
+    ...(film.synopsis && { description: film.synopsis }),
+    ...(film.posterUrl && { image: tmdbImageUrl(film.posterUrl, 'w500') }),
+    ...(film.genres.length > 0 && { genre: film.genres }),
+  }
+
+  if (film.sentimentGraph) {
+    jsonLd.aggregateRating = {
+      '@type': 'AggregateRating',
+      ratingValue: film.sentimentGraph.overallScore,
+      bestRating: 10,
+      worstRating: 1,
+      ratingCount: film.sentimentGraph.reviewCount,
+    }
+  }
+
+  if (userReviews.length > 0) {
+    jsonLd.review = userReviews
+      .filter((r) => r.combinedText)
+      .map((r) => ({
+        '@type': 'Review',
+        author: { '@type': 'Person', name: r.user.name || 'Anonymous' },
+        datePublished: r.createdAt.toISOString().split('T')[0],
+        reviewRating: {
+          '@type': 'Rating',
+          ratingValue: r.overallRating,
+          bestRating: 10,
+          worstRating: 1,
+        },
+        reviewBody: r.combinedText,
+      }))
+  }
+
   return (
     <div>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       {/* Backdrop */}
       <div className="relative h-[40vh] min-h-[300px]">
         {film.backdropUrl ? (
