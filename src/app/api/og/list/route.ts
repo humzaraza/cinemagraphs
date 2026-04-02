@@ -414,14 +414,9 @@ export async function GET(request: NextRequest) {
   const rowSpace = totalH - headerH - footerH
   const rowH = Math.max(40, Math.floor(rowSpace / count))
 
-  // Scale sparkline proportionally — maintain a consistent aspect ratio (~5:1)
-  // so the arc shape doesn't distort at taller ratios
-  const SPARK_RATIO = 5 // width:height
-  const maxSparkW = 400 // cap to leave room for title + score
-  const rawSparkH = Math.max(24, rowH - 20)
-  const rawSparkW = rawSparkH * SPARK_RATIO
-  const sparkW = Math.min(rawSparkW, maxSparkW)
-  const sparkH = sparkW / SPARK_RATIO // cap height if width was capped
+  // Fixed sparkline size — identical across all aspect ratios
+  const sparkW = 200
+  const sparkH = 70
 
   // ── Build rows ──
   const rows = ordered.map((film, i) => {
