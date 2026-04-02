@@ -318,12 +318,15 @@ export async function GET(request: NextRequest) {
   const rowSpace = totalH - headerH - footerH
   const rowH = Math.max(40, Math.floor(rowSpace / count))
 
-  // Layout zones: left 40% = title, middle 40% = sparkline, right 20% = score
-  const titleZoneW = Math.round(W * 0.4)
-  const sparkZoneW = Math.round(W * 0.4)
-  const scoreZoneW = W - titleZoneW - sparkZoneW
+  // Layout zones: 35% title | 5% gap | 35% sparkline | 25% score
+  const titleZoneW = Math.round(W * 0.35)
+  const gapW = Math.round(W * 0.05)
+  const sparkZoneW = Math.round(W * 0.35)
+  const sparkStartX = titleZoneW + gapW            // 40% from left
+  const scoreStartX = sparkStartX + sparkZoneW     // 75% from left
+  const scoreZoneW = W - scoreStartX
 
-  // Pre-render sparklines as PNGs — width = 40% of poster, height = 50% of row
+  // Pre-render sparklines as PNGs — width = 35% of poster, height = 50% of row
   const sparklineCache = new Map<string, { uri: string; w: number; h: number }>()
   const sparkW = sparkZoneW
   const sparkH = Math.round(rowH * 0.5)
@@ -350,9 +353,9 @@ export async function GET(request: NextRequest) {
     const titleFontSize = rowH > 80 ? 22 : rowH > 60 ? 18 : 14
     const yearFontSize = rowH > 80 ? 16 : rowH > 60 ? 14 : 12
     const scoreFontSize = rowH > 80 ? 30 : rowH > 60 ? 24 : 18
-    const logoMaxH = Math.max(20, rowH - 30)
+    const logoMaxH = Math.round(Math.max(16, (rowH - 30) * 0.75))
 
-    // Build title element: logo or text — constrained to left 40% zone
+    // Build title element: logo or text — constrained to left 35% zone
     const titleElement = useLogo
       ? React.createElement(
           'div',
@@ -371,7 +374,7 @@ export async function GET(request: NextRequest) {
             src: logoSrc,
             style: {
               maxHeight: logoMaxH,
-              maxWidth: titleZoneW - 48,
+              maxWidth: Math.round((titleZoneW - 48) * 0.8),
               objectFit: 'contain' as const,
               objectPosition: 'left center',
             },
@@ -491,7 +494,7 @@ export async function GET(request: NextRequest) {
         },
         // Title (logo or font) + year
         titleElement,
-        // Sparkline (pre-rendered PNG) — middle 40% zone, vertically centered
+        // Sparkline (pre-rendered PNG) — 35% zone starting at 40% from left
         sparkData
           ? React.createElement('img', {
               src: sparkData.uri,
@@ -499,20 +502,20 @@ export async function GET(request: NextRequest) {
               height: sparkData.h,
               style: {
                 position: 'absolute' as const,
-                left: titleZoneW,
+                left: sparkStartX,
                 top: Math.round((rowH - sparkData.h) / 2),
                 width: sparkData.w,
                 height: sparkData.h,
               },
             })
           : null,
-        // Score — right 20% zone, centered
+        // Score — 25% zone starting at 75% from left
         React.createElement(
           'span',
           {
             style: {
               position: 'absolute' as const,
-              left: titleZoneW + sparkZoneW,
+              left: scoreStartX,
               top: Math.round((rowH - scoreFontSize * 1.2) / 2),
               width: scoreZoneW,
               fontFamily: score != null ? 'Libre Baskerville' : 'DM Sans',
