@@ -124,6 +124,17 @@ export default function ShareListPage() {
     setFilms((prev) => prev.map((f) => ({ ...f, titleDisplay: display })))
   }
 
+  function setAllSparkH(value: number) {
+    setFilms((prev) => {
+      const updated = prev.map((f) => ({ ...f, sparkH: value }))
+      if (cropTimeout.current) clearTimeout(cropTimeout.current)
+      cropTimeout.current = setTimeout(() => {
+        regeneratePreview(updated)
+      }, 300)
+      return updated
+    })
+  }
+
   function setCropY(id: string, value: number) {
     setFilms((prev) => {
       const updated = prev.map((f) => (f.id === id ? { ...f, cropY: value } : f))
@@ -396,20 +407,46 @@ export default function ShareListPage() {
                   <label className="text-xs text-cinema-muted">
                     Drag to reorder ranking
                   </label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-cinema-muted/60">Select all:</span>
-                    <button
-                      onClick={() => setAllTitleDisplay('logo')}
-                      className="text-[10px] px-2 py-0.5 rounded border border-[#333] text-cinema-muted hover:text-cinema-cream hover:border-cinema-gold/30 transition-colors"
-                    >
-                      Logo
-                    </button>
-                    <button
-                      onClick={() => setAllTitleDisplay('font')}
-                      className="text-[10px] px-2 py-0.5 rounded border border-[#333] text-cinema-muted hover:text-cinema-cream hover:border-cinema-gold/30 transition-colors"
-                    >
-                      Font
-                    </button>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-cinema-muted/60">Select all:</span>
+                      <button
+                        onClick={() => setAllTitleDisplay('logo')}
+                        className="text-[10px] px-2 py-0.5 rounded border border-[#333] text-cinema-muted hover:text-cinema-cream hover:border-cinema-gold/30 transition-colors"
+                      >
+                        Logo
+                      </button>
+                      <button
+                        onClick={() => setAllTitleDisplay('font')}
+                        className="text-[10px] px-2 py-0.5 rounded border border-[#333] text-cinema-muted hover:text-cinema-cream hover:border-cinema-gold/30 transition-colors"
+                      >
+                        Font
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-cinema-muted/50">Graph H:</span>
+                      <input
+                        type="range"
+                        min={50}
+                        max={150}
+                        value={films.length > 0 ? films[0].sparkH : 90}
+                        onChange={(e) => setAllSparkH(Number(e.target.value))}
+                        className="w-14 h-1 accent-cinema-gold cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={films.length > 0 ? films[0].sparkH : 90}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/[^0-9]/g, '')
+                          if (raw === '') { setAllSparkH(50); return }
+                          const num = Math.max(50, Math.min(150, Number(raw)))
+                          setAllSparkH(num)
+                        }}
+                        className="w-7 text-[10px] text-cinema-muted text-right bg-transparent border-b border-[#333] focus:border-cinema-gold/50 focus:text-cinema-cream outline-none px-0"
+                      />
+                      <span className="text-[10px] text-cinema-muted">px</span>
+                    </div>
                   </div>
                 </div>
                 {films.map((film, i) => (
