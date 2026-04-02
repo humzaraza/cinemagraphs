@@ -117,6 +117,13 @@ function buildSparkline(
   const neutralColor = 'rgba(232,228,220,0.3)'
 
   const labelColor = 'rgba(232,228,220,0.4)'
+  const labelStyle = {
+    fontFamily: 'DM Sans',
+    fontSize: 8,
+    color: labelColor,
+    position: 'absolute' as const,
+    lineHeight: 1,
+  }
 
   const children: React.ReactElement[] = [
     // Y-axis (left)
@@ -149,43 +156,27 @@ function buildSparkline(
       stroke: axisColor,
       strokeWidth: 1,
     }),
-    // Y-axis labels: yMax at top, yMin at bottom — left side (right-aligned)
-    React.createElement('text', {
+  ]
+
+  // Y-axis labels as absolutely positioned divs (satori doesn't support SVG <text>)
+  const labels: React.ReactElement[] = [
+    // Left side labels (right-aligned to left axis)
+    React.createElement('span', {
       key: 'lbl-l-max',
-      x: paddingX - 3,
-      y: paddingY + 4,
-      textAnchor: 'end',
-      fill: labelColor,
-      fontFamily: 'DM Sans',
-      fontSize: 8,
+      style: { ...labelStyle, top: paddingY - 4, left: 0, width: paddingX - 3, textAlign: 'right' as const },
     }, String(yMax)),
-    React.createElement('text', {
+    React.createElement('span', {
       key: 'lbl-l-min',
-      x: paddingX - 3,
-      y: paddingY + innerH,
-      textAnchor: 'end',
-      fill: labelColor,
-      fontFamily: 'DM Sans',
-      fontSize: 8,
+      style: { ...labelStyle, bottom: paddingY - 4, left: 0, width: paddingX - 3, textAlign: 'right' as const },
     }, String(yMin)),
-    // Y-axis labels: yMax at top, yMin at bottom — right side (left-aligned)
-    React.createElement('text', {
+    // Right side labels (left-aligned to right axis)
+    React.createElement('span', {
       key: 'lbl-r-max',
-      x: paddingX + innerW + 3,
-      y: paddingY + 4,
-      textAnchor: 'start',
-      fill: labelColor,
-      fontFamily: 'DM Sans',
-      fontSize: 8,
+      style: { ...labelStyle, top: paddingY - 4, right: 0, width: paddingX - 3, textAlign: 'left' as const },
     }, String(yMax)),
-    React.createElement('text', {
+    React.createElement('span', {
       key: 'lbl-r-min',
-      x: paddingX + innerW + 3,
-      y: paddingY + innerH,
-      textAnchor: 'start',
-      fill: labelColor,
-      fontFamily: 'DM Sans',
-      fontSize: 8,
+      style: { ...labelStyle, bottom: paddingY - 4, right: 0, width: paddingX - 3, textAlign: 'left' as const },
     }, String(yMin)),
   ]
 
@@ -238,7 +229,7 @@ function buildSparkline(
     )
   }
 
-  return React.createElement(
+  const svg = React.createElement(
     'svg',
     {
       width: sw,
@@ -247,6 +238,21 @@ function buildSparkline(
       style: { display: 'flex' },
     },
     ...children
+  )
+
+  // Wrap SVG + label divs in a relative container
+  return React.createElement(
+    'div',
+    {
+      style: {
+        position: 'relative' as const,
+        width: sw,
+        height: sh,
+        display: 'flex',
+      },
+    },
+    svg,
+    ...labels
   )
 }
 
