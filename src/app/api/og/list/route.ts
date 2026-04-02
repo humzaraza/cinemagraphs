@@ -93,9 +93,17 @@ function buildSparkline(
   const innerW = sw - padding * 2
   const innerH = sh - padding * 2
 
+  // Dynamic y-axis scaling
+  const scores = dataPoints.map((dp) => dp.score)
+  const lowestScore = Math.min(...scores)
+  const highestScore = Math.max(...scores)
+  const yMin = Math.max(1, Math.floor(lowestScore) - 1)
+  const yMax = Math.min(10, Math.ceil(highestScore) + 1)
+  const yRange = yMax - yMin
+
   const points = dataPoints.map((dp, i) => ({
     x: padding + (i / (dataPoints.length - 1)) * innerW,
-    y: padding + innerH - ((dp.score - 1) / 9) * innerH,
+    y: padding + innerH - ((dp.score - yMin) / yRange) * innerH,
     score: dp.score,
   }))
 
@@ -104,22 +112,29 @@ function buildSparkline(
 
   const path = catmullRomPath(points)
 
-  // Y position of score 5 (neutral line)
-  const neutralY = padding + innerH - ((5 - 1) / 9) * innerH
-
-  const axisColor = 'rgba(232,228,220,0.3)'
-  const neutralColor = 'rgba(232,228,220,0.15)'
+  const axisColor = 'rgba(232,228,220,0.5)'
+  const neutralColor = 'rgba(232,228,220,0.3)'
 
   const children: React.ReactElement[] = [
     // Y-axis (left)
     React.createElement('line', {
-      key: 'yaxis',
+      key: 'yaxis-l',
       x1: padding,
       y1: padding,
       x2: padding,
       y2: padding + innerH,
       stroke: axisColor,
-      strokeWidth: 0.75,
+      strokeWidth: 1,
+    }),
+    // Y-axis (right)
+    React.createElement('line', {
+      key: 'yaxis-r',
+      x1: padding + innerW,
+      y1: padding,
+      x2: padding + innerW,
+      y2: padding + innerH,
+      stroke: axisColor,
+      strokeWidth: 1,
     }),
     // X-axis (bottom)
     React.createElement('line', {
@@ -129,19 +144,28 @@ function buildSparkline(
       x2: padding + innerW,
       y2: padding + innerH,
       stroke: axisColor,
-      strokeWidth: 0.75,
+      strokeWidth: 1,
     }),
-    // Neutral line at score 5
-    React.createElement('line', {
-      key: 'neutral',
-      x1: padding,
-      y1: neutralY,
-      x2: padding + innerW,
-      y2: neutralY,
-      stroke: neutralColor,
-      strokeWidth: 0.75,
-      strokeDasharray: '4 3',
-    }),
+  ]
+
+  // Neutral line at score 5 (only if within y-axis range)
+  if (yMin < 5 && yMax > 5) {
+    const neutralY = padding + innerH - ((5 - yMin) / yRange) * innerH
+    children.push(
+      React.createElement('line', {
+        key: 'neutral',
+        x1: padding,
+        y1: neutralY,
+        x2: padding + innerW,
+        y2: neutralY,
+        stroke: neutralColor,
+        strokeWidth: 1,
+        strokeDasharray: '4 3',
+      })
+    )
+  }
+
+  children.push(
     // Data line
     React.createElement('path', {
       key: 'line',
@@ -158,8 +182,8 @@ function buildSparkline(
       cy: points[peakIdx].y,
       r: 3.5,
       fill: TEAL,
-    }),
-  ]
+    })
+  )
 
   // Low dot only if below 7.5
   if (points[lowIdx].score < 7.5) {
@@ -422,22 +446,22 @@ export async function GET(request: NextRequest) {
           borderBottom: i < count - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
         },
       },
-      // Poster image (replaces backdrop)
+      // Poster image: right-aligned at natural aspect ratio, cropped to row height
       posterSrc
         ? React.createElement('img', {
             src: posterSrc,
             style: {
               position: 'absolute' as const,
               top: 0,
-              left: 0,
-              width: W,
+              right: 0,
               height: rowH,
+              width: Math.round(rowH * 0.667), // poster 2:3 aspect
               objectFit: 'cover' as const,
               objectPosition: 'center top',
             },
           })
         : null,
-      // Gradient overlay: 92% opacity left, 15% right
+      // Gradient overlay: 95% opacity left, 40% right
       React.createElement('div', {
         style: {
           position: 'absolute' as const,
@@ -445,7 +469,7 @@ export async function GET(request: NextRequest) {
           left: 0,
           width: W,
           height: rowH,
-          background: `linear-gradient(to right, rgba(13,13,26,0.92) 0%, rgba(13,13,26,0.92) 35%, rgba(13,13,26,0.5) 65%, rgba(13,13,26,0.15) 100%)`,
+          background: `linear-gradient(to right, rgba(13,13,26,0.95) 0%, rgba(13,13,26,0.95) 40%, rgba(13,13,26,0.7) 70%, rgba(13,13,26,0.4) 100%)`,
         },
       }),
       // Content row
