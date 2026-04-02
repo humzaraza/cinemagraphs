@@ -147,6 +147,21 @@ function buildSparkline(
   )
 }
 
+// ── Image fetching (convert to base64 data URI for satori) ──
+
+async function fetchImageAsDataUri(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const buf = await res.arrayBuffer()
+    const base64 = Buffer.from(buf).toString('base64')
+    const contentType = res.headers.get('content-type') || 'image/jpeg'
+    return `data:${contentType};base64,${base64}`
+  } catch {
+    return null
+  }
+}
+
 // ── Main route ──────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -189,6 +204,19 @@ export async function GET(request: NextRequest) {
 
   const fonts = await loadFonts()
 
+  // Pre-fetch all backdrop images as base64 data URIs (satori can't fetch external URLs)
+  const backdropCache = new Map<string, string | null>()
+  await Promise.all(
+    ordered.map(async (film) => {
+      if (film.backdropUrl) {
+        const dataUri = await fetchImageAsDataUri(
+          `https://image.tmdb.org/t/p/w780${film.backdropUrl}`
+        )
+        backdropCache.set(film.id, dataUri)
+      }
+    })
+  )
+
   // ── Layout ──
   const headerH = 120
   const footerH = 60
@@ -203,9 +231,7 @@ export async function GET(request: NextRequest) {
     const year = film.releaseDate ? new Date(film.releaseDate).getFullYear().toString() : ''
     const score = film.sentimentGraph?.overallScore ?? null
     const dataPoints = (film.sentimentGraph?.dataPoints as unknown as SentimentDataPoint[]) ?? []
-    const backdropSrc = film.backdropUrl
-      ? `https://image.tmdb.org/t/p/w780${film.backdropUrl}`
-      : null
+    const backdropSrc = backdropCache.get(film.id) ?? null
 
     const sparkline =
       dataPoints.length >= 2 ? buildSparkline(dataPoints, sparkW, sparkH) : null
@@ -511,7 +537,8 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (err) {
-    console.error('OG list generation failed:', err)
-    return Response.json({ error: 'Failed to generate poster' }, { status: 500 })
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('OG list generation failed:', message)
+    return Response.json({ error: `Failed to generate poster: ${message}` }, { status: 500 })
   }
 }
