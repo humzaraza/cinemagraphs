@@ -321,10 +321,10 @@ export async function GET(request: NextRequest) {
   // Exact pixel layout: title far left, sparkline+score far right
   const titleStartX = 40
   const titleZoneW = 350
-  const sparkStartX = 648
+  const sparkStartX = 700
   const sparkZoneW = 280
-  const scoreStartX = 940
-  const scoreZoneW = 120
+  const scoreStartX = 990
+  const scoreZoneW = 80
 
   // Pre-render sparklines at exact display size
   const sparklineCache = new Map<string, { uri: string; w: number; h: number }>()
@@ -528,7 +528,7 @@ export async function GET(request: NextRequest) {
               fontSize: score != null ? scoreFontSize : scoreFontSize - 4,
               color: score != null ? GOLD : 'rgba(255,255,255,0.2)',
               textAlign: 'right' as const,
-              paddingRight: 20,
+              paddingRight: 10,
             },
           },
           score != null ? score.toFixed(1) : '--'
