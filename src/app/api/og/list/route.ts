@@ -576,58 +576,44 @@ export async function GET(request: NextRequest) {
         },
         // Title (logo or font) + year
         titleElement,
-        // Sparkline (fixed bounding box, centered vertically)
+        // Sparkline (absolute positioned to avoid satori flex stretching)
         sparkline
           ? React.createElement(
               'div',
               {
                 style: {
+                  position: 'absolute' as const,
+                  top: Math.round((rowH - sparkH) / 2),
+                  right: 24 + 56 + 10, // row padding + score width + gap
+                  width: sparkW,
+                  height: sparkH,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  flexShrink: 0,
-                  width: sparkW,
-                  height: sparkH,
-                  maxHeight: sparkH,
-                  marginLeft: 'auto' as const,
-                  marginRight: 10,
                   overflow: 'hidden' as const,
                 },
               },
               sparkline
             )
           : null,
-        // Score
-        score != null
-          ? React.createElement(
-              'span',
-              {
-                style: {
-                  fontFamily: 'Libre Baskerville',
-                  fontWeight: 700,
-                  fontSize: scoreFontSize,
-                  color: GOLD,
-                  flexShrink: 0,
-                  width: 56,
-                  textAlign: 'right' as const,
-                },
-              },
-              score.toFixed(1)
-            )
-          : React.createElement(
-              'span',
-              {
-                style: {
-                  fontFamily: 'DM Sans',
-                  fontSize: scoreFontSize - 4,
-                  color: 'rgba(255,255,255,0.2)',
-                  flexShrink: 0,
-                  width: 56,
-                  textAlign: 'right' as const,
-                },
-              },
-              '--'
-            )
+        // Score (absolute positioned, right-aligned)
+        React.createElement(
+          'span',
+          {
+            style: {
+              position: 'absolute' as const,
+              top: Math.round((rowH - scoreFontSize * 1.2) / 2),
+              right: 24,
+              fontFamily: score != null ? 'Libre Baskerville' : 'DM Sans',
+              fontWeight: score != null ? 700 : 400,
+              fontSize: score != null ? scoreFontSize : scoreFontSize - 4,
+              color: score != null ? GOLD : 'rgba(255,255,255,0.2)',
+              width: 56,
+              textAlign: 'right' as const,
+            },
+          },
+          score != null ? score.toFixed(1) : '--'
+        )
       )
     )
   })
