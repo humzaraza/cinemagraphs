@@ -377,7 +377,7 @@ export async function GET(request: NextRequest) {
   const count = ordered.length
   const rowH = Math.min(120, Math.max(56, Math.floor((1920 - headerH - footerH) / count)))
   const totalH = headerH + count * rowH + footerH
-  const sparkW = 160
+  const sparkW = 220
   const sparkH = Math.max(24, rowH - 20)
 
   // ── Build rows ──
@@ -563,8 +563,8 @@ export async function GET(request: NextRequest) {
                   display: 'flex',
                   alignItems: 'center',
                   flexShrink: 0,
-                  marginLeft: 24,
-                  marginRight: 20,
+                  marginLeft: 48,
+                  marginRight: 10,
                 },
               },
               sparkline
