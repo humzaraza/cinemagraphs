@@ -31,6 +31,7 @@ interface SelectedFilm {
   score: number | null
   titleDisplay: TitleDisplay
   cropY: number
+  sparkH: number
 }
 
 export default function ShareListPage() {
@@ -100,6 +101,7 @@ export default function ShareListPage() {
         score: film.sentimentGraph?.overallScore ?? null,
         titleDisplay: 'logo',
         cropY: 30,
+        sparkH: 90,
       },
     ])
     setQuery('')
@@ -134,6 +136,17 @@ export default function ShareListPage() {
     })
   }
 
+  function setSparkH(id: string, value: number) {
+    setFilms((prev) => {
+      const updated = prev.map((f) => (f.id === id ? { ...f, sparkH: value } : f))
+      if (cropTimeout.current) clearTimeout(cropTimeout.current)
+      cropTimeout.current = setTimeout(() => {
+        regeneratePreview(updated)
+      }, 300)
+      return updated
+    })
+  }
+
   async function regeneratePreview(currentFilms: SelectedFilm[]) {
     if (currentFilms.length === 0) return
     setGenerating(true)
@@ -145,6 +158,7 @@ export default function ShareListPage() {
         subtitle: subtitle || '',
         displays: currentFilms.map((f) => f.titleDisplay).join(','),
         crops: currentFilms.map((f) => f.cropY).join(','),
+        sparkHeights: currentFilms.map((f) => f.sparkH).join(','),
         ratio,
       })
       const res = await fetch(`/api/og/list?${params}`)
@@ -205,6 +219,7 @@ export default function ShareListPage() {
       subtitle: subtitle || '',
       displays: films.map((f) => f.titleDisplay).join(','),
       crops: films.map((f) => f.cropY).join(','),
+      sparkHeights: films.map((f) => f.sparkH).join(','),
       ratio,
     })
   }
@@ -427,14 +442,14 @@ export default function ShareListPage() {
                     >
                       {film.titleDisplay === 'logo' ? 'Logo' : 'Font'}
                     </button>
-                    <div className="flex items-center gap-1 flex-shrink-0">
+                    <div className="flex items-center gap-1 flex-shrink-0" title="Backdrop crop">
                       <input
                         type="range"
                         min={0}
                         max={100}
                         value={film.cropY}
                         onChange={(e) => { e.stopPropagation(); setCropY(film.id, Number(e.target.value)) }}
-                        className="w-16 h-1 accent-cinema-teal cursor-pointer"
+                        className="w-12 h-1 accent-cinema-teal cursor-pointer"
                       />
                       <input
                         type="text"
@@ -448,9 +463,35 @@ export default function ShareListPage() {
                           const num = Math.max(0, Math.min(100, Number(raw)))
                           setCropY(film.id, num)
                         }}
-                        className="w-8 text-[10px] text-cinema-muted text-right bg-transparent border-b border-[#333] focus:border-cinema-teal/50 focus:text-cinema-cream outline-none px-0"
+                        className="w-7 text-[10px] text-cinema-muted text-right bg-transparent border-b border-[#333] focus:border-cinema-teal/50 focus:text-cinema-cream outline-none px-0"
                       />
                       <span className="text-[10px] text-cinema-muted">%</span>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0" title="Graph height">
+                      <span className="text-[9px] text-cinema-muted/50">G</span>
+                      <input
+                        type="range"
+                        min={50}
+                        max={150}
+                        value={film.sparkH}
+                        onChange={(e) => { e.stopPropagation(); setSparkH(film.id, Number(e.target.value)) }}
+                        className="w-12 h-1 accent-cinema-gold cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={film.sparkH}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => {
+                          e.stopPropagation()
+                          const raw = e.target.value.replace(/[^0-9]/g, '')
+                          if (raw === '') { setSparkH(film.id, 50); return }
+                          const num = Math.max(50, Math.min(150, Number(raw)))
+                          setSparkH(film.id, num)
+                        }}
+                        className="w-7 text-[10px] text-cinema-muted text-right bg-transparent border-b border-[#333] focus:border-cinema-gold/50 focus:text-cinema-cream outline-none px-0"
+                      />
+                      <span className="text-[10px] text-cinema-muted">px</span>
                     </div>
                     <span className="text-xs text-cinema-muted flex-shrink-0">
                       {film.year}
