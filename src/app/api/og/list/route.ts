@@ -229,7 +229,6 @@ export async function GET(request: NextRequest) {
   const subtitle = url.searchParams.get('subtitle') || ''
   const displays = (url.searchParams.get('displays') || '').split(',')
   const crops = (url.searchParams.get('crops') || '').split(',')
-  const sparkHeights = (url.searchParams.get('sparkHeights') || '').split(',')
   const ratio = url.searchParams.get('ratio') || '16:9'
 
   if (filmIds.length === 0) {
@@ -242,11 +241,9 @@ export async function GET(request: NextRequest) {
   // Build display map: filmId -> 'logo' | 'font'
   const displayMap = new Map<string, string>()
   const cropMap = new Map<string, number>()
-  const sparkHeightMap = new Map<string, number>()
   filmIds.forEach((id, i) => {
     displayMap.set(id, displays[i] === 'font' ? 'font' : 'logo')
     cropMap.set(id, crops[i] ? Math.max(0, Math.min(100, Number(crops[i]) || 30)) : 30)
-    sparkHeightMap.set(id, sparkHeights[i] ? Math.max(50, Math.min(150, Number(sparkHeights[i]) || 90)) : 90)
   })
 
   // Fetch films with graph data
@@ -321,16 +318,16 @@ export async function GET(request: NextRequest) {
   const rowSpace = totalH - headerH - footerH
   const rowH = Math.max(40, Math.floor(rowSpace / count))
 
-  // Pre-render sparklines as PNGs with per-film dimensions (parallel)
+  // Pre-render sparklines as PNGs — 60% of row height, width = height * 4.8
   const sparklineCache = new Map<string, { uri: string; w: number; h: number }>()
+  const sparkH = Math.round(rowH * 0.6)
+  const sparkW = Math.round(sparkH * 4.8)
   await Promise.all(
     ordered.map(async (film) => {
       const dataPoints = (film.sentimentGraph?.dataPoints as unknown as SentimentDataPoint[]) ?? []
       if (dataPoints.length >= 2) {
-        const sh = sparkHeightMap.get(film.id) ?? 90
-        const sw = Math.round(sh * 4.8)
-        const uri = await buildSparklinePng(dataPoints, sw, sh)
-        if (uri) sparklineCache.set(film.id, { uri, w: sw, h: sh })
+        const uri = await buildSparklinePng(dataPoints, sparkW, sparkH)
+        if (uri) sparklineCache.set(film.id, { uri, w: sparkW, h: sparkH })
       }
     })
   )
