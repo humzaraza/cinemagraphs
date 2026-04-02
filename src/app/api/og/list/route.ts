@@ -318,15 +318,14 @@ export async function GET(request: NextRequest) {
   const rowSpace = totalH - headerH - footerH
   const rowH = Math.max(40, Math.floor(rowSpace / count))
 
-  // Layout zones: 35% title | 5% gap | 35% sparkline | 25% score
-  const titleZoneW = Math.round(W * 0.35)
-  const gapW = Math.round(W * 0.05)
-  const sparkZoneW = Math.round(W * 0.35)
-  const sparkStartX = titleZoneW + gapW            // 40% from left
-  const scoreStartX = sparkStartX + sparkZoneW     // 75% from left
-  const scoreZoneW = W - scoreStartX
+  // Layout zones: 35% title | gap | 30% sparkline | 20% score (right-aligned)
+  const titleZoneW = Math.round(W * 0.35)   // 378px
+  const sparkZoneW = Math.round(W * 0.3)    // 324px
+  const sparkStartX = Math.round(W * 0.5)   // 540px
+  const scoreStartX = Math.round(W * 0.8)   // 864px
+  const scoreZoneW = W - scoreStartX         // 216px
 
-  // Pre-render sparklines as PNGs — width = 35% of poster, height = 50% of row
+  // Pre-render sparklines as PNGs — width = 30% of poster, height = 50% of row
   const sparklineCache = new Map<string, { uri: string; w: number; h: number }>()
   const sparkW = sparkZoneW
   const sparkH = Math.round(rowH * 0.5)
@@ -494,7 +493,7 @@ export async function GET(request: NextRequest) {
         },
         // Title (logo or font) + year
         titleElement,
-        // Sparkline (pre-rendered PNG) — 35% zone starting at 40% from left
+        // Sparkline (pre-rendered PNG) — 30% zone starting at 50% from left
         sparkData
           ? React.createElement('img', {
               src: sparkData.uri,
@@ -509,7 +508,7 @@ export async function GET(request: NextRequest) {
               },
             })
           : null,
-        // Score — 25% zone starting at 75% from left
+        // Score — 20% zone starting at 80% from left
         React.createElement(
           'span',
           {
