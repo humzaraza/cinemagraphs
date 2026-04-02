@@ -22,6 +22,7 @@ interface SelectedFilm {
   posterUrl: string | null
   score: number | null
   titleDisplay: TitleDisplay
+  cropY: number
 }
 
 export default function ShareListPage() {
@@ -88,6 +89,7 @@ export default function ShareListPage() {
         posterUrl: film.posterUrl,
         score: film.sentimentGraph?.overallScore ?? null,
         titleDisplay: 'logo',
+        cropY: 30,
       },
     ])
     setQuery('')
@@ -108,6 +110,12 @@ export default function ShareListPage() {
 
   function setAllTitleDisplay(display: TitleDisplay) {
     setFilms((prev) => prev.map((f) => ({ ...f, titleDisplay: display })))
+  }
+
+  function setCropY(id: string, value: number) {
+    setFilms((prev) =>
+      prev.map((f) => (f.id === id ? { ...f, cropY: value } : f))
+    )
   }
 
   // Drag handlers
@@ -147,6 +155,7 @@ export default function ShareListPage() {
       title: title || 'Top Films',
       subtitle: subtitle || '',
       displays: films.map((f) => f.titleDisplay).join(','),
+      crops: films.map((f) => f.cropY).join(','),
     })
   }
 
@@ -348,6 +357,17 @@ export default function ShareListPage() {
                     >
                       {film.titleDisplay === 'logo' ? 'Logo' : 'Font'}
                     </button>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={film.cropY}
+                        onChange={(e) => { e.stopPropagation(); setCropY(film.id, Number(e.target.value)) }}
+                        className="w-16 h-1 accent-cinema-teal cursor-pointer"
+                      />
+                      <span className="text-[10px] text-cinema-muted w-7 text-right">{film.cropY}%</span>
+                    </div>
                     <span className="text-xs text-cinema-muted flex-shrink-0">
                       {film.year}
                     </span>

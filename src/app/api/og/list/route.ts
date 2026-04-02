@@ -255,6 +255,7 @@ export async function GET(request: NextRequest) {
   const title = url.searchParams.get('title') || 'Top Films'
   const subtitle = url.searchParams.get('subtitle') || ''
   const displays = (url.searchParams.get('displays') || '').split(',')
+  const crops = (url.searchParams.get('crops') || '').split(',')
 
   if (filmIds.length === 0) {
     return Response.json({ error: 'No films specified' }, { status: 400 })
@@ -265,8 +266,10 @@ export async function GET(request: NextRequest) {
 
   // Build display map: filmId -> 'logo' | 'font'
   const displayMap = new Map<string, string>()
+  const cropMap = new Map<string, number>()
   filmIds.forEach((id, i) => {
     displayMap.set(id, displays[i] === 'font' ? 'font' : 'logo')
+    cropMap.set(id, crops[i] ? Math.max(0, Math.min(100, Number(crops[i]) || 30)) : 30)
   })
 
   // Fetch films with graph data
@@ -336,6 +339,7 @@ export async function GET(request: NextRequest) {
     const score = film.sentimentGraph?.overallScore ?? null
     const dataPoints = (film.sentimentGraph?.dataPoints as unknown as SentimentDataPoint[]) ?? []
     const backdropSrc = backdropCache.get(film.id) ?? null
+    const cropY = cropMap.get(film.id) ?? 30
     const logoSrc = logoCache.get(film.id) ?? null
     const useLogo = displayMap.get(film.id) === 'logo' && logoSrc != null
 
@@ -456,7 +460,7 @@ export async function GET(request: NextRequest) {
               width: W,
               height: rowH,
               objectFit: 'cover' as const,
-              objectPosition: 'center center',
+              objectPosition: `center ${cropY}%`,
             },
           })
         : null,
