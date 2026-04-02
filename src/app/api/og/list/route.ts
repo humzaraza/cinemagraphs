@@ -262,9 +262,31 @@ async function fetchImageAsDataUri(url: string): Promise<string | null> {
   try {
     const res = await fetch(url)
     if (!res.ok) return null
-    const buf = await res.arrayBuffer()
-    const base64 = Buffer.from(buf).toString('base64')
     const contentType = res.headers.get('content-type') || 'image/jpeg'
+    const buf = await res.arrayBuffer()
+
+    // Satori requires SVGs to have a viewBox — inject one if missing
+    if (contentType.includes('svg') || url.endsWith('.svg')) {
+      let svg = Buffer.from(buf).toString('utf-8')
+      if (!svg.includes('viewBox')) {
+        const wMatch = svg.match(/width="([^"]+)"/)
+        const hMatch = svg.match(/height="([^"]+)"/)
+        if (wMatch && hMatch) {
+          const w = parseFloat(wMatch[1])
+          const h = parseFloat(hMatch[1])
+          if (w && h) {
+            svg = svg.replace('<svg', `<svg viewBox="0 0 ${w} ${h}"`)
+          }
+        } else {
+          // Can't determine dimensions — skip this SVG
+          return null
+        }
+      }
+      const base64 = Buffer.from(svg).toString('base64')
+      return `data:image/svg+xml;base64,${base64}`
+    }
+
+    const base64 = Buffer.from(buf).toString('base64')
     return `data:${contentType};base64,${base64}`
   } catch {
     return null
