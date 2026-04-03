@@ -83,7 +83,8 @@ function catmullRomPath(
 async function buildSparklinePng(
   dataPoints: SentimentDataPoint[],
   sw: number,
-  sh: number
+  sh: number,
+  fontBuf: ArrayBuffer
 ): Promise<string | null> {
   if (dataPoints.length < 2) return null
 
@@ -119,16 +120,18 @@ async function buildSparklinePng(
   const midScore = (yMin + yMax) / 2
   const midY = paddingY + innerH - ((midScore - yMin) / yRange) * innerH
 
-  // Build raw SVG string with text labels (sharp supports SVG text)
+  // Embed DM Sans font so sharp/librsvg can render text
+  const fontB64 = Buffer.from(fontBuf).toString('base64')
   const midLabelY = midY + 3.5
   const svgParts: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${sw}" height="${sh}" viewBox="0 0 ${sw} ${sh}">`,
+    `<defs><style>@font-face { font-family: 'SparkLabel'; src: url('data:font/ttf;base64,${fontB64}') format('truetype'); }</style></defs>`,
     // Dashed midpoint line
     `<line x1="${paddingX}" y1="${midY.toFixed(1)}" x2="${paddingX + innerW}" y2="${midY.toFixed(1)}" stroke="${neutralColor}" stroke-width="1" stroke-dasharray="4 3"/>`,
-    // Y-axis labels — left side only, larger font
-    `<text x="${paddingX - 6}" y="${paddingY + 4}" text-anchor="end" fill="${labelColor}" font-family="sans-serif" font-size="10">${yMax.toFixed(1)}</text>`,
-    `<text x="${paddingX - 6}" y="${midLabelY.toFixed(1)}" text-anchor="end" fill="${labelColor}" font-family="sans-serif" font-size="10">${midScore.toFixed(1)}</text>`,
-    `<text x="${paddingX - 6}" y="${paddingY + innerH + 1}" text-anchor="end" fill="${labelColor}" font-family="sans-serif" font-size="10">${yMin.toFixed(1)}</text>`,
+    // Y-axis labels — left side only, embedded font
+    `<text x="${paddingX - 6}" y="${paddingY + 4}" text-anchor="end" fill="${labelColor}" font-family="SparkLabel" font-size="10">${yMax.toFixed(1)}</text>`,
+    `<text x="${paddingX - 6}" y="${midLabelY.toFixed(1)}" text-anchor="end" fill="${labelColor}" font-family="SparkLabel" font-size="10">${midScore.toFixed(1)}</text>`,
+    `<text x="${paddingX - 6}" y="${paddingY + innerH + 1}" text-anchor="end" fill="${labelColor}" font-family="SparkLabel" font-size="10">${yMin.toFixed(1)}</text>`,
     // Data line
     `<path d="${path}" fill="none" stroke="${GOLD}" stroke-width="2.5" stroke-linecap="round"/>`,
     // Peak dot
@@ -333,7 +336,7 @@ export async function GET(request: NextRequest) {
     ordered.map(async (film) => {
       const dataPoints = (film.sentimentGraph?.dataPoints as unknown as SentimentDataPoint[]) ?? []
       if (dataPoints.length >= 2) {
-        const uri = await buildSparklinePng(dataPoints, sparkW, sparkH)
+        const uri = await buildSparklinePng(dataPoints, sparkW, sparkH, fonts.dmSans)
         if (uri) sparklineCache.set(film.id, { uri, w: sparkW, h: sparkH })
       }
     })
