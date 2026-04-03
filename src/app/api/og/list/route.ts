@@ -121,16 +121,21 @@ async function buildSparklinePng(
 
   const path = catmullRomPath(points)
 
-  const neutralColor = 'rgba(232,228,220,0.3)'
+  const axisColor = 'rgba(232,228,220,0.5)'
+  const midColor = 'rgba(232,228,220,0.5)'
 
   // Midpoint dashed line
   const midY = paddingY + innerH - ((midScore - yMin) / yRange) * innerH
 
-  // SVG with no text — labels rendered by satori instead
+  // SVG with axis lines — labels rendered by satori instead
   const svgParts: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${sw}" height="${sh}" viewBox="0 0 ${sw} ${sh}">`,
+    // Left y-axis line
+    `<line x1="${paddingX}" y1="${paddingY}" x2="${paddingX}" y2="${paddingY + innerH}" stroke="${axisColor}" stroke-width="1"/>`,
+    // Bottom x-axis line
+    `<line x1="${paddingX}" y1="${paddingY + innerH}" x2="${paddingX + innerW}" y2="${paddingY + innerH}" stroke="${axisColor}" stroke-width="1"/>`,
     // Dashed midpoint line
-    `<line x1="${paddingX}" y1="${midY.toFixed(1)}" x2="${paddingX + innerW}" y2="${midY.toFixed(1)}" stroke="${neutralColor}" stroke-width="1" stroke-dasharray="4 3"/>`,
+    `<line x1="${paddingX}" y1="${midY.toFixed(1)}" x2="${paddingX + innerW}" y2="${midY.toFixed(1)}" stroke="${midColor}" stroke-width="1" stroke-dasharray="4 3"/>`,
     // Data line
     `<path d="${path}" fill="none" stroke="${GOLD}" stroke-width="2.5" stroke-linecap="round"/>`,
     // Peak dot
@@ -258,6 +263,7 @@ export async function GET(request: NextRequest) {
       releaseDate: true,
       backdropUrl: true,
       posterUrl: true,
+      runtime: true,
       sentimentGraph: {
         select: { overallScore: true, dataPoints: true },
       },
@@ -357,6 +363,10 @@ export async function GET(request: NextRequest) {
     const logoSrc = logoCache.get(film.id) ?? null
     const useLogo = displayMap.get(film.id) === 'logo' && logoSrc != null
     const sparkData = sparklineCache.get(film.id) ?? null
+    const runtimeMin = film.runtime ?? null
+    const runtimeLabel = runtimeMin
+      ? `${Math.floor(runtimeMin / 60)}h ${runtimeMin % 60}m`
+      : null
 
     const titleFontSize = rowH > 80 ? 22 : rowH > 60 ? 18 : 14
     const yearFontSize = rowH > 80 ? 16 : rowH > 60 ? 14 : 12
@@ -509,56 +519,109 @@ export async function GET(request: NextRequest) {
         },
         // Title (logo or font) + year
         titleElement,
-        // Sparkline PNG + y-axis labels rendered by satori
+        // Sparkline PNG + axis labels rendered by satori
         sparkData
           ? React.createElement(
               'div',
               {
                 style: {
                   position: 'absolute' as const,
-                  left: sparkStartX - 28,
-                  top: Math.round((rowH - sparkData.h) / 2),
-                  width: sparkData.w + 28,
-                  height: sparkData.h,
+                  left: sparkStartX - 30,
+                  top: Math.round((rowH - sparkData.h) / 2) - (runtimeLabel ? 0 : 0),
+                  width: sparkData.w + 60,
+                  height: sparkData.h + (runtimeLabel ? 14 : 0),
                   display: 'flex',
-                  flexDirection: 'row' as const,
-                  alignItems: 'stretch',
+                  flexDirection: 'column' as const,
                 },
               },
-              // Y-axis labels column
+              // Main row: left labels + sparkline + right labels
               React.createElement(
                 'div',
                 {
                   style: {
                     display: 'flex',
-                    flexDirection: 'column' as const,
-                    justifyContent: 'space-between',
-                    width: 26,
-                    paddingTop: 0,
-                    paddingBottom: 0,
+                    flexDirection: 'row' as const,
+                    alignItems: 'stretch',
+                    height: sparkData.h,
                   },
                 },
-                React.createElement('span', {
-                  style: { fontFamily: 'DM Sans', fontSize: 9, color: 'rgba(245,240,232,0.5)', textAlign: 'right' as const },
-                }, sparkData.yMax.toFixed(1)),
-                React.createElement('span', {
-                  style: { fontFamily: 'DM Sans', fontSize: 9, color: 'rgba(245,240,232,0.5)', textAlign: 'right' as const },
-                }, sparkData.midScore.toFixed(1)),
-                React.createElement('span', {
-                  style: { fontFamily: 'DM Sans', fontSize: 9, color: 'rgba(245,240,232,0.5)', textAlign: 'right' as const },
-                }, sparkData.yMin.toFixed(1))
-              ),
-              // Sparkline image
-              React.createElement('img', {
-                src: sparkData.uri,
-                width: sparkData.w,
-                height: sparkData.h,
-                style: {
+                // Left y-axis labels
+                React.createElement(
+                  'div',
+                  {
+                    style: {
+                      display: 'flex',
+                      flexDirection: 'column' as const,
+                      justifyContent: 'space-between',
+                      width: 28,
+                    },
+                  },
+                  React.createElement('span', {
+                    style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textAlign: 'right' as const },
+                  }, sparkData.yMax.toFixed(1)),
+                  React.createElement('span', {
+                    style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textAlign: 'right' as const },
+                  }, sparkData.midScore.toFixed(1)),
+                  React.createElement('span', {
+                    style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textAlign: 'right' as const },
+                  }, sparkData.yMin.toFixed(1))
+                ),
+                // Sparkline image
+                React.createElement('img', {
+                  src: sparkData.uri,
                   width: sparkData.w,
                   height: sparkData.h,
-                  marginLeft: 2,
-                },
-              })
+                  style: {
+                    width: sparkData.w,
+                    height: sparkData.h,
+                    marginLeft: 2,
+                    marginRight: 2,
+                  },
+                }),
+                // Right y-axis labels
+                React.createElement(
+                  'div',
+                  {
+                    style: {
+                      display: 'flex',
+                      flexDirection: 'column' as const,
+                      justifyContent: 'space-between',
+                      width: 28,
+                    },
+                  },
+                  React.createElement('span', {
+                    style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textAlign: 'left' as const },
+                  }, sparkData.yMax.toFixed(1)),
+                  React.createElement('span', {
+                    style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textAlign: 'left' as const },
+                  }, sparkData.midScore.toFixed(1)),
+                  React.createElement('span', {
+                    style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textAlign: 'left' as const },
+                  }, sparkData.yMin.toFixed(1))
+                )
+              ),
+              // X-axis runtime labels row
+              runtimeLabel
+                ? React.createElement(
+                    'div',
+                    {
+                      style: {
+                        display: 'flex',
+                        flexDirection: 'row' as const,
+                        justifyContent: 'space-between',
+                        marginLeft: 30,
+                        marginRight: 30,
+                        marginTop: 1,
+                      },
+                    },
+                    React.createElement('span', {
+                      style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)' },
+                    }, '0m'),
+                    React.createElement('span', {
+                      style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)' },
+                    }, runtimeLabel)
+                  )
+                : null
             )
           : null,
         // Score — left: 940px, width: 120px, right-aligned
