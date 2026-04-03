@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
+import Link from 'next/link'
 import FilmCard from '@/components/FilmCard'
 
 interface Film {
@@ -12,6 +14,16 @@ interface Film {
   genres: string[]
   runtime?: number | null
   sentimentGraph?: { overallScore: number; dataPoints?: any[]; biggestSwing?: number } | null
+}
+
+interface TmdbResult {
+  tmdbId: number
+  title: string
+  releaseDate: string | null
+  posterPath: string | null
+  overview: string | null
+  alreadyExists: boolean
+  existingFilmId: string | null
 }
 
 const SORT_OPTIONS = [
@@ -26,6 +38,7 @@ const SORT_OPTIONS = [
 function BrowseContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const { data: session } = useSession()
   const urlGenre = searchParams.get('genre') || ''
 
   const [films, setFilms] = useState<Film[]>([])
@@ -36,6 +49,13 @@ function BrowseContent() {
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+
+  // TMDB search state
+  const [tmdbResults, setTmdbResults] = useState<TmdbResult[]>([])
+  const [tmdbLoading, setTmdbLoading] = useState(false)
+  const [tmdbSearched, setTmdbSearched] = useState(false)
+  const [submittingId, setSubmittingId] = useState<number | null>(null)
+  const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // Sync genre from URL changes
   useEffect(() => {
@@ -73,10 +93,67 @@ function BrowseContent() {
     fetchFilms()
   }, [fetchFilms])
 
-  // Reset page when filters change
+  // Reset page and TMDB state when filters change
   useEffect(() => {
     setPage(1)
+    setTmdbResults([])
+    setTmdbSearched(false)
+    setSubmitMessage(null)
   }, [query, sort, genre])
+
+  async function searchTmdb() {
+    if (!query.trim()) return
+    setTmdbLoading(true)
+    setSubmitMessage(null)
+    try {
+      const res = await fetch(`/api/films/tmdb-search?q=${encodeURIComponent(query.trim())}`)
+      const data = await res.json()
+      setTmdbResults(data.results || [])
+      setTmdbSearched(true)
+    } catch {
+      setTmdbResults([])
+      setTmdbSearched(true)
+    } finally {
+      setTmdbLoading(false)
+    }
+  }
+
+  async function submitFilm(tmdbId: number) {
+    setSubmittingId(tmdbId)
+    setSubmitMessage(null)
+    try {
+      const res = await fetch('/api/films/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tmdbId }),
+      })
+      const data = await res.json()
+      if (res.ok && data.created) {
+        setSubmitMessage({ type: 'success', text: data.message })
+        // Mark as existing in the TMDB results
+        setTmdbResults((prev) =>
+          prev.map((r) =>
+            r.tmdbId === tmdbId ? { ...r, alreadyExists: true, existingFilmId: data.film.id } : r
+          )
+        )
+      } else if (res.ok && data.alreadyExists) {
+        setSubmitMessage({ type: 'success', text: 'This film is already on Cinemagraphs!' })
+        setTmdbResults((prev) =>
+          prev.map((r) =>
+            r.tmdbId === tmdbId ? { ...r, alreadyExists: true, existingFilmId: data.film.id } : r
+          )
+        )
+      } else if (res.status === 429) {
+        setSubmitMessage({ type: 'error', text: data.error })
+      } else {
+        setSubmitMessage({ type: 'error', text: data.error || 'Failed to add film' })
+      }
+    } catch {
+      setSubmitMessage({ type: 'error', text: 'Something went wrong. Please try again.' })
+    } finally {
+      setSubmittingId(null)
+    }
+  }
 
   const removeGenre = () => {
     setGenre('')
@@ -149,8 +226,114 @@ function BrowseContent() {
       {loading ? (
         <div className="text-center py-20 text-cinema-muted">Loading...</div>
       ) : films.length === 0 ? (
-        <div className="text-center py-20 text-cinema-muted">
-          {query ? 'No films match your search.' : 'No films available yet.'}
+        <div className="py-12">
+          {query ? (
+            <div className="max-w-2xl mx-auto">
+              <p className="text-center text-cinema-muted mb-2">
+                We don&apos;t have that film yet, but you can add it yourself or reach out to us on our socials and we&apos;ll get it added.
+              </p>
+
+              {submitMessage && (
+                <div className={`text-center text-sm mb-4 px-4 py-2 rounded-lg ${
+                  submitMessage.type === 'success'
+                    ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20'
+                    : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                }`}>
+                  {submitMessage.text}
+                </div>
+              )}
+
+              {!tmdbSearched && (
+                <div className="text-center">
+                  <button
+                    onClick={searchTmdb}
+                    disabled={tmdbLoading}
+                    className="px-5 py-2.5 bg-cinema-gold text-cinema-dark text-sm font-semibold rounded-lg hover:bg-cinema-gold/90 transition-colors disabled:opacity-50"
+                  >
+                    {tmdbLoading ? 'Searching...' : 'Search for your film'}
+                  </button>
+                </div>
+              )}
+
+              {tmdbSearched && tmdbResults.length === 0 && (
+                <p className="text-center text-cinema-muted text-sm mt-4">
+                  No results found on TMDB either. Try a different search term.
+                </p>
+              )}
+
+              {tmdbResults.length > 0 && (
+                <div className="mt-6 space-y-3">
+                  {tmdbResults.map((movie) => (
+                    <div
+                      key={movie.tmdbId}
+                      className="flex items-center gap-4 bg-cinema-card border border-cinema-border rounded-lg p-3"
+                    >
+                      {/* Poster */}
+                      <div className="w-12 h-[72px] flex-shrink-0 rounded overflow-hidden bg-cinema-darker">
+                        {movie.posterPath ? (
+                          <img
+                            src={`https://image.tmdb.org/t/p/w92${movie.posterPath}`}
+                            alt={movie.title}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-cinema-muted text-xs">
+                            No poster
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-cinema-cream truncate">
+                          {movie.title}
+                        </p>
+                        {movie.releaseDate && (
+                          <p className="text-xs text-cinema-muted">
+                            {new Date(movie.releaseDate).getFullYear()}
+                          </p>
+                        )}
+                        {movie.overview && (
+                          <p className="text-xs text-cinema-muted mt-1 line-clamp-2">
+                            {movie.overview}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Action */}
+                      <div className="flex-shrink-0">
+                        {movie.alreadyExists ? (
+                          <Link
+                            href={`/films/${movie.existingFilmId}`}
+                            className="text-xs text-cinema-gold hover:underline whitespace-nowrap"
+                          >
+                            Already on Cinemagraphs
+                          </Link>
+                        ) : !session ? (
+                          <Link
+                            href="/auth/signin"
+                            className="text-xs text-cinema-muted hover:text-cinema-cream whitespace-nowrap"
+                          >
+                            Sign in to add
+                          </Link>
+                        ) : (
+                          <button
+                            onClick={() => submitFilm(movie.tmdbId)}
+                            disabled={submittingId === movie.tmdbId}
+                            className="px-3 py-1.5 text-xs font-medium bg-cinema-gold/10 text-cinema-gold border border-cinema-gold/30 rounded-lg hover:bg-cinema-gold/20 transition-colors disabled:opacity-50 whitespace-nowrap"
+                          >
+                            {submittingId === movie.tmdbId ? 'Adding...' : 'Add This Film'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-center text-cinema-muted">No films available yet.</p>
+          )}
         </div>
       ) : (
         <>

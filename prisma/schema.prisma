@@ -53,9 +53,11 @@ model User {
   liveReactions        LiveReaction[]
   liveReactionSessions LiveReactionSession[]
   watchlistItems       Watchlist[]
+  lastFilmAddedAt      DateTime?
   followers            Follow[]              @relation("following")
   following            Follow[]              @relation("follower")
   announcements        Announcement[]
+  addedFilms           Film[]                @relation("addedFilms")
 }
 
 model Account {
@@ -124,6 +126,8 @@ model Film {
   nowPlaying           Boolean               @default(false)
   nowPlayingOverride   String?               // null = auto (TMDB), "force_show", "force_hide"
   tickerOverride       String?               // null = auto (nowPlaying), "force_show", "force_hide"
+  addedByUserId        String?
+  addedByUser          User?                 @relation("addedFilms", fields: [addedByUserId], references: [id])
   isFeatured           Boolean               @default(false)
   pinnedSection        String?
   status               FilmStatus            @default(ACTIVE)

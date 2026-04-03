@@ -52,6 +52,7 @@ export async function GET(request: NextRequest) {
           select: {
             userReviews: true,
             liveReactionSessions: true,
+            addedFilms: true,
           },
         },
       },
@@ -70,6 +71,7 @@ export async function GET(request: NextRequest) {
     createdAt: u.createdAt,
     reviewCount: u._count.userReviews,
     reactionCount: u._count.liveReactionSessions,
+    filmsAdded: u._count.addedFilms,
   }))
 
   if (sort === 'reviewCount') {

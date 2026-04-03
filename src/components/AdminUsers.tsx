@@ -13,6 +13,7 @@ interface UserRow {
   createdAt: string
   reviewCount: number
   reactionCount: number
+  filmsAdded: number
 }
 
 interface UsersResponse {
@@ -224,7 +225,7 @@ export default function AdminUsers() {
       ) : (
         <div className="border border-cinema-border rounded-lg overflow-hidden">
           {/* Header */}
-          <div className="grid grid-cols-[44px_1fr_1fr_100px_100px_80px_60px] gap-3 px-4 py-2.5 bg-cinema-card text-xs text-cinema-muted font-medium uppercase tracking-wider border-b border-cinema-border">
+          <div className="grid grid-cols-[44px_1fr_1fr_100px_100px_80px_60px_60px] gap-3 px-4 py-2.5 bg-cinema-card text-xs text-cinema-muted font-medium uppercase tracking-wider border-b border-cinema-border">
             <div />
             <div>Name</div>
             <div>Email</div>
@@ -232,6 +233,7 @@ export default function AdminUsers() {
             <div>Joined</div>
             <div className="text-center">Reviews</div>
             <div className="text-center">React</div>
+            <div className="text-center">Added</div>
           </div>
 
           {users.map((user) => {
@@ -242,7 +244,7 @@ export default function AdminUsers() {
                 {/* Main row */}
                 <button
                   onClick={() => setExpandedId(isExpanded ? null : user.id)}
-                  className="w-full grid grid-cols-[44px_1fr_1fr_100px_100px_80px_60px] gap-3 px-4 py-3 items-center text-left hover:bg-white/[0.02] transition-colors"
+                  className="w-full grid grid-cols-[44px_1fr_1fr_100px_100px_80px_60px_60px] gap-3 px-4 py-3 items-center text-left hover:bg-white/[0.02] transition-colors"
                 >
                   {/* Avatar */}
                   <div className="w-9 h-9 rounded-full bg-cinema-border flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -267,6 +269,7 @@ export default function AdminUsers() {
                   </div>
                   <div className="text-sm text-cinema-cream text-center">{user.reviewCount}</div>
                   <div className="text-sm text-cinema-cream text-center">{user.reactionCount}</div>
+                  <div className="text-sm text-cinema-cream text-center">{user.filmsAdded}</div>
                 </button>
 
                 {/* Expanded details */}
