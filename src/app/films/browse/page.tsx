@@ -225,12 +225,64 @@ function BrowseContent() {
 
       {loading ? (
         <div className="text-center py-20 text-cinema-muted">Loading...</div>
-      ) : films.length === 0 ? (
-        <div className="py-12">
-          {query ? (
-            <div className="max-w-2xl mx-auto">
-              <p className="text-center text-cinema-muted mb-2">
-                We don&apos;t have that film yet, but you can add it yourself or reach out to us on our socials and we&apos;ll get it added.
+      ) : films.length === 0 && !query ? (
+        <div className="text-center py-20 text-cinema-muted">No films available yet.</div>
+      ) : (
+        <>
+          {films.length === 0 && query && (
+            <p className="text-center text-cinema-muted mb-4">No films match your search.</p>
+          )}
+
+          {films.length > 0 && (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {films.map((film) => (
+                  <FilmCard
+                    key={film.id}
+                    id={film.id}
+                    title={film.title}
+                    posterUrl={film.posterUrl}
+                    releaseDate={film.releaseDate}
+                    genres={film.genres}
+                    sentimentScore={film.sentimentGraph?.overallScore}
+                    graphDataPoints={film.sentimentGraph?.dataPoints ?? null}
+                    runtime={film.runtime}
+                  />
+                ))}
+              </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex justify-center gap-3 mt-10">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="px-4 py-2 rounded bg-cinema-card border border-cinema-border text-sm disabled:opacity-30 hover:border-cinema-gold/50 transition-colors"
+                  >
+                    Previous
+                  </button>
+                  <span className="px-4 py-2 text-sm text-cinema-muted">
+                    Page {page} of {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                    className="px-4 py-2 rounded bg-cinema-card border border-cinema-border text-sm disabled:opacity-30 hover:border-cinema-gold/50 transition-colors"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* TMDB search — shown whenever there's an active query */}
+          {query && (
+            <div className="max-w-2xl mx-auto mt-10 pt-8 border-t border-cinema-border">
+              <p className="text-center text-cinema-muted mb-3">
+                {films.length === 0
+                  ? "We don\u2019t have that film yet, but you can add it yourself or reach out to us on our socials and we\u2019ll get it added."
+                  : "Don\u2019t see the right one? Search for your film to add it."}
               </p>
 
               {submitMessage && (
@@ -330,49 +382,6 @@ function BrowseContent() {
                   ))}
                 </div>
               )}
-            </div>
-          ) : (
-            <p className="text-center text-cinema-muted">No films available yet.</p>
-          )}
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {films.map((film) => (
-              <FilmCard
-                key={film.id}
-                id={film.id}
-                title={film.title}
-                posterUrl={film.posterUrl}
-                releaseDate={film.releaseDate}
-                genres={film.genres}
-                sentimentScore={film.sentimentGraph?.overallScore}
-                graphDataPoints={film.sentimentGraph?.dataPoints ?? null}
-                runtime={film.runtime}
-              />
-            ))}
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex justify-center gap-3 mt-10">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="px-4 py-2 rounded bg-cinema-card border border-cinema-border text-sm disabled:opacity-30 hover:border-cinema-gold/50 transition-colors"
-              >
-                Previous
-              </button>
-              <span className="px-4 py-2 text-sm text-cinema-muted">
-                Page {page} of {totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="px-4 py-2 rounded bg-cinema-card border border-cinema-border text-sm disabled:opacity-30 hover:border-cinema-gold/50 transition-colors"
-              >
-                Next
-              </button>
             </div>
           )}
         </>
