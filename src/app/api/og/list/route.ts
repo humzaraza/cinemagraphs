@@ -80,18 +80,25 @@ function catmullRomPath(
   return parts.join(' ')
 }
 
+interface SparklineResult {
+  uri: string
+  w: number
+  h: number
+  yMin: number
+  yMax: number
+  midScore: number
+}
+
 async function buildSparklinePng(
   dataPoints: SentimentDataPoint[],
   sw: number,
-  sh: number,
-  fontBuf: ArrayBuffer
-): Promise<string | null> {
+  sh: number
+): Promise<SparklineResult | null> {
   if (dataPoints.length < 2) return null
 
-  const labelW = 28
-  const paddingX = labelW + 4
+  const paddingX = 6
   const paddingY = 6
-  const innerW = sw - paddingX - 4
+  const innerW = sw - paddingX * 2
   const innerH = sh - paddingY * 2
 
   // Dynamic y-axis scaling
@@ -101,6 +108,7 @@ async function buildSparklinePng(
   const yMin = Math.max(1, Math.floor(lowestScore) - 1)
   const yMax = Math.min(10, Math.ceil(highestScore) + 1)
   const yRange = yMax - yMin
+  const midScore = (yMin + yMax) / 2
 
   const points = dataPoints.map((dp, i) => ({
     x: paddingX + (i / (dataPoints.length - 1)) * innerW,
@@ -114,24 +122,15 @@ async function buildSparklinePng(
   const path = catmullRomPath(points)
 
   const neutralColor = 'rgba(232,228,220,0.3)'
-  const labelColor = 'rgba(232,228,220,0.5)'
 
   // Midpoint dashed line
-  const midScore = (yMin + yMax) / 2
   const midY = paddingY + innerH - ((midScore - yMin) / yRange) * innerH
 
-  // Embed DM Sans font so sharp/librsvg can render text
-  const fontB64 = Buffer.from(fontBuf).toString('base64')
-  const midLabelY = midY + 3.5
+  // SVG with no text — labels rendered by satori instead
   const svgParts: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${sw}" height="${sh}" viewBox="0 0 ${sw} ${sh}">`,
-    `<defs><style>@font-face { font-family: 'SparkLabel'; src: url('data:font/ttf;base64,${fontB64}') format('truetype'); }</style></defs>`,
     // Dashed midpoint line
     `<line x1="${paddingX}" y1="${midY.toFixed(1)}" x2="${paddingX + innerW}" y2="${midY.toFixed(1)}" stroke="${neutralColor}" stroke-width="1" stroke-dasharray="4 3"/>`,
-    // Y-axis labels — left side only, embedded font
-    `<text x="${paddingX - 6}" y="${paddingY + 4}" text-anchor="end" fill="${labelColor}" font-family="SparkLabel" font-size="10">${yMax.toFixed(1)}</text>`,
-    `<text x="${paddingX - 6}" y="${midLabelY.toFixed(1)}" text-anchor="end" fill="${labelColor}" font-family="SparkLabel" font-size="10">${midScore.toFixed(1)}</text>`,
-    `<text x="${paddingX - 6}" y="${paddingY + innerH + 1}" text-anchor="end" fill="${labelColor}" font-family="SparkLabel" font-size="10">${yMin.toFixed(1)}</text>`,
     // Data line
     `<path d="${path}" fill="none" stroke="${GOLD}" stroke-width="2.5" stroke-linecap="round"/>`,
     // Peak dot
@@ -153,7 +152,14 @@ async function buildSparklinePng(
     .png()
     .toBuffer()
 
-  return `data:image/png;base64,${png.toString('base64')}`
+  return {
+    uri: `data:image/png;base64,${png.toString('base64')}`,
+    w: sw,
+    h: sh,
+    yMin,
+    yMax,
+    midScore,
+  }
 }
 
 // ── Image fetching (convert to base64 data URI for satori) ──
@@ -329,15 +335,15 @@ export async function GET(request: NextRequest) {
   const scoreZoneW = 60
 
   // Pre-render sparklines at exact display size
-  const sparklineCache = new Map<string, { uri: string; w: number; h: number }>()
+  const sparklineCache = new Map<string, SparklineResult>()
   const sparkW = sparkZoneW
   const sparkH = Math.round(rowH * 0.5)
   await Promise.all(
     ordered.map(async (film) => {
       const dataPoints = (film.sentimentGraph?.dataPoints as unknown as SentimentDataPoint[]) ?? []
       if (dataPoints.length >= 2) {
-        const uri = await buildSparklinePng(dataPoints, sparkW, sparkH, fonts.dmSans)
-        if (uri) sparklineCache.set(film.id, { uri, w: sparkW, h: sparkH })
+        const result = await buildSparklinePng(dataPoints, sparkW, sparkH)
+        if (result) sparklineCache.set(film.id, result)
       }
     })
   )
@@ -503,20 +509,57 @@ export async function GET(request: NextRequest) {
         },
         // Title (logo or font) + year
         titleElement,
-        // Sparkline — left: 648px, width: 280px
+        // Sparkline PNG + y-axis labels rendered by satori
         sparkData
-          ? React.createElement('img', {
-              src: sparkData.uri,
-              width: sparkData.w,
-              height: sparkData.h,
-              style: {
-                position: 'absolute' as const,
-                left: sparkStartX,
-                top: Math.round((rowH - sparkData.h) / 2),
+          ? React.createElement(
+              'div',
+              {
+                style: {
+                  position: 'absolute' as const,
+                  left: sparkStartX - 28,
+                  top: Math.round((rowH - sparkData.h) / 2),
+                  width: sparkData.w + 28,
+                  height: sparkData.h,
+                  display: 'flex',
+                  flexDirection: 'row' as const,
+                  alignItems: 'stretch',
+                },
+              },
+              // Y-axis labels column
+              React.createElement(
+                'div',
+                {
+                  style: {
+                    display: 'flex',
+                    flexDirection: 'column' as const,
+                    justifyContent: 'space-between',
+                    width: 26,
+                    paddingTop: 0,
+                    paddingBottom: 0,
+                  },
+                },
+                React.createElement('span', {
+                  style: { fontFamily: 'DM Sans', fontSize: 9, color: 'rgba(245,240,232,0.5)', textAlign: 'right' as const },
+                }, sparkData.yMax.toFixed(1)),
+                React.createElement('span', {
+                  style: { fontFamily: 'DM Sans', fontSize: 9, color: 'rgba(245,240,232,0.5)', textAlign: 'right' as const },
+                }, sparkData.midScore.toFixed(1)),
+                React.createElement('span', {
+                  style: { fontFamily: 'DM Sans', fontSize: 9, color: 'rgba(245,240,232,0.5)', textAlign: 'right' as const },
+                }, sparkData.yMin.toFixed(1))
+              ),
+              // Sparkline image
+              React.createElement('img', {
+                src: sparkData.uri,
                 width: sparkData.w,
                 height: sparkData.h,
-              },
-            })
+                style: {
+                  width: sparkData.w,
+                  height: sparkData.h,
+                  marginLeft: 2,
+                },
+              })
+            )
           : null,
         // Score — left: 940px, width: 120px, right-aligned
         React.createElement(
