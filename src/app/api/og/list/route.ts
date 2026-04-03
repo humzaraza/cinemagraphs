@@ -337,7 +337,7 @@ export async function GET(request: NextRequest) {
   const titleZoneW = 350
   const sparkStartX = 725
   const sparkZoneW = 280
-  const scoreStartX = 1010
+  const scoreStartX = 1045
   const scoreZoneW = 60
 
   // Pre-render sparklines at exact display size
