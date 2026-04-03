@@ -87,9 +87,10 @@ async function buildSparklinePng(
 ): Promise<string | null> {
   if (dataPoints.length < 2) return null
 
-  const paddingX = 18
+  const labelW = 28
+  const paddingX = labelW + 4
   const paddingY = 6
-  const innerW = sw - paddingX * 2
+  const innerW = sw - paddingX - 4
   const innerH = sh - paddingY * 2
 
   // Dynamic y-axis scaling
@@ -111,31 +112,23 @@ async function buildSparklinePng(
 
   const path = catmullRomPath(points)
 
-  const axisColor = 'rgba(232,228,220,0.5)'
   const neutralColor = 'rgba(232,228,220,0.3)'
-  const labelColor = 'rgba(232,228,220,0.4)'
+  const labelColor = 'rgba(232,228,220,0.5)'
 
   // Midpoint dashed line
   const midScore = (yMin + yMax) / 2
   const midY = paddingY + innerH - ((midScore - yMin) / yRange) * innerH
 
   // Build raw SVG string with text labels (sharp supports SVG text)
+  const midLabelY = midY + 3.5
   const svgParts: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${sw}" height="${sh}" viewBox="0 0 ${sw} ${sh}">`,
-    // Y-axis left
-    `<line x1="${paddingX}" y1="${paddingY}" x2="${paddingX}" y2="${paddingY + innerH}" stroke="${axisColor}" stroke-width="1"/>`,
-    // Y-axis right
-    `<line x1="${paddingX + innerW}" y1="${paddingY}" x2="${paddingX + innerW}" y2="${paddingY + innerH}" stroke="${axisColor}" stroke-width="1"/>`,
-    // X-axis bottom
-    `<line x1="${paddingX}" y1="${paddingY + innerH}" x2="${paddingX + innerW}" y2="${paddingY + innerH}" stroke="${axisColor}" stroke-width="1"/>`,
     // Dashed midpoint line
     `<line x1="${paddingX}" y1="${midY.toFixed(1)}" x2="${paddingX + innerW}" y2="${midY.toFixed(1)}" stroke="${neutralColor}" stroke-width="1" stroke-dasharray="4 3"/>`,
-    // Y-axis labels — left side
-    `<text x="${paddingX - 3}" y="${paddingY + 4}" text-anchor="end" fill="${labelColor}" font-family="sans-serif" font-size="8">${yMax}</text>`,
-    `<text x="${paddingX - 3}" y="${paddingY + innerH}" text-anchor="end" fill="${labelColor}" font-family="sans-serif" font-size="8">${yMin}</text>`,
-    // Y-axis labels — right side
-    `<text x="${paddingX + innerW + 3}" y="${paddingY + 4}" text-anchor="start" fill="${labelColor}" font-family="sans-serif" font-size="8">${yMax}</text>`,
-    `<text x="${paddingX + innerW + 3}" y="${paddingY + innerH}" text-anchor="start" fill="${labelColor}" font-family="sans-serif" font-size="8">${yMin}</text>`,
+    // Y-axis labels — left side only, larger font
+    `<text x="${paddingX - 6}" y="${paddingY + 4}" text-anchor="end" fill="${labelColor}" font-family="sans-serif" font-size="10">${yMax.toFixed(1)}</text>`,
+    `<text x="${paddingX - 6}" y="${midLabelY.toFixed(1)}" text-anchor="end" fill="${labelColor}" font-family="sans-serif" font-size="10">${midScore.toFixed(1)}</text>`,
+    `<text x="${paddingX - 6}" y="${paddingY + innerH + 1}" text-anchor="end" fill="${labelColor}" font-family="sans-serif" font-size="10">${yMin.toFixed(1)}</text>`,
     // Data line
     `<path d="${path}" fill="none" stroke="${GOLD}" stroke-width="2.5" stroke-linecap="round"/>`,
     // Peak dot
@@ -255,6 +248,7 @@ export async function GET(request: NextRequest) {
       tmdbId: true,
       releaseDate: true,
       backdropUrl: true,
+      posterUrl: true,
       sentimentGraph: {
         select: { overallScore: true, dataPoints: true },
       },
@@ -278,10 +272,15 @@ export async function GET(request: NextRequest) {
   await Promise.all(
     ordered.flatMap((film) => {
       const tasks: Promise<void>[] = []
-      // Backdrop image (full-width row background)
-      if (film.backdropUrl) {
+      // Backdrop image (full-width row background), fall back to poster
+      const bgUrl = film.backdropUrl
+        ? `https://image.tmdb.org/t/p/w780${film.backdropUrl}`
+        : film.posterUrl
+          ? `https://image.tmdb.org/t/p/w780${film.posterUrl}`
+          : null
+      if (bgUrl) {
         tasks.push(
-          fetchImageAsDataUri(`https://image.tmdb.org/t/p/w780${film.backdropUrl}`).then((uri) => {
+          fetchImageAsDataUri(bgUrl).then((uri) => {
             backdropCache.set(film.id, uri)
           })
         )
@@ -457,7 +456,7 @@ export async function GET(request: NextRequest) {
           borderBottom: i < count - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
         },
       },
-      // Backdrop image: full-width background
+      // Backdrop image: full-width background (backdrop or poster fallback)
       backdropSrc
         ? React.createElement('img', {
             src: backdropSrc,
@@ -472,7 +471,7 @@ export async function GET(request: NextRequest) {
             },
           })
         : null,
-      // Gradient overlay: 92% opacity left, 15% right
+      // Gradient overlay
       React.createElement('div', {
         style: {
           position: 'absolute' as const,
@@ -480,7 +479,9 @@ export async function GET(request: NextRequest) {
           left: 0,
           width: W,
           height: rowH,
-          background: `linear-gradient(to right, rgba(13,13,26,0.92) 0%, rgba(13,13,26,0.92) 35%, rgba(13,13,26,0.5) 65%, rgba(13,13,26,0.15) 100%)`,
+          background: backdropSrc
+            ? `linear-gradient(to right, rgba(13,13,26,0.92) 0%, rgba(13,13,26,0.92) 35%, rgba(13,13,26,0.5) 65%, rgba(13,13,26,0.15) 100%)`
+            : `linear-gradient(to right, rgba(13,13,26,1) 0%, rgba(20,20,40,0.95) 50%, rgba(30,30,50,0.9) 100%)`,
         },
       }),
       // Content row
