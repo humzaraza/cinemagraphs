@@ -337,7 +337,7 @@ export async function GET(request: NextRequest) {
   const titleZoneW = 350
   const sparkStartX = 725
   const sparkZoneW = 280
-  const scoreStartX = 1045
+  const scoreStartX = 1010
   const scoreZoneW = 60
 
   // Pre-render sparklines at exact display size
@@ -528,7 +528,7 @@ export async function GET(request: NextRequest) {
                   position: 'absolute' as const,
                   left: sparkStartX - 30,
                   top: Math.round((rowH - sparkData.h) / 2) - (runtimeLabel ? 0 : 0),
-                  width: sparkData.w + 60,
+                  width: sparkData.w + 32,
                   height: sparkData.h + (runtimeLabel ? 14 : 0),
                   display: 'flex',
                   flexDirection: 'column' as const,
@@ -575,30 +575,8 @@ export async function GET(request: NextRequest) {
                     width: sparkData.w,
                     height: sparkData.h,
                     marginLeft: 2,
-                    marginRight: 2,
                   },
-                }),
-                // Right y-axis labels
-                React.createElement(
-                  'div',
-                  {
-                    style: {
-                      display: 'flex',
-                      flexDirection: 'column' as const,
-                      justifyContent: 'space-between',
-                      width: 28,
-                    },
-                  },
-                  React.createElement('span', {
-                    style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textAlign: 'left' as const },
-                  }, sparkData.yMax.toFixed(1)),
-                  React.createElement('span', {
-                    style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textAlign: 'left' as const },
-                  }, sparkData.midScore.toFixed(1)),
-                  React.createElement('span', {
-                    style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textAlign: 'left' as const },
-                  }, sparkData.yMin.toFixed(1))
-                )
+                })
               ),
               // X-axis runtime labels row
               runtimeLabel
