@@ -11,6 +11,7 @@ export const TTL = {
   TICKER: 1800,         // 30 minutes
   TMDB_NOW_PLAYING: 21600, // 6 hours
   OMDB: 86400,          // 24 hours
+  PERSON: 3600,         // 1 hour
 } as const
 
 // ── Key builders ──
@@ -21,6 +22,7 @@ export const KEYS = {
   ticker: () => 'ticker:data',
   tmdbNowPlaying: (region: string) => `tmdb:now_playing:${region}`,
   omdb: (imdbId: string) => `omdb:${imdbId}`,
+  person: (tmdbPersonId: number) => `person:${tmdbPersonId}`,
 } as const
 
 // ── Low-level get/set/del ──

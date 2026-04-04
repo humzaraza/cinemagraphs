@@ -90,6 +90,19 @@ export async function getMovieTrailerKey(tmdbId: number): Promise<string | null>
   }
 }
 
+interface TMDBPerson {
+  id: number
+  biography: string
+  birthday: string | null
+  deathday: string | null
+  place_of_birth: string | null
+  known_for_department: string | null
+}
+
+export async function getPersonDetails(tmdbPersonId: number): Promise<TMDBPerson> {
+  return tmdbFetch<TMDBPerson>(`/person/${tmdbPersonId}`)
+}
+
 export async function getNowPlayingMovies(region: string = 'CA'): Promise<TMDBMovie[]> {
   return cachedQuery(KEYS.tmdbNowPlaying(region), TTL.TMDB_NOW_PLAYING, async () => {
     const data = await tmdbFetch<{ results: TMDBMovie[] }>('/movie/now_playing', { region })
