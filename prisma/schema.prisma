@@ -20,6 +20,16 @@ enum FilmStatus {
   PENDING
 }
 
+enum PersonRole {
+  ACTOR
+  DIRECTOR
+  CINEMATOGRAPHER
+  COMPOSER
+  EDITOR
+  WRITER
+  PRODUCER
+}
+
 enum ReviewSource {
   TMDB
   IMDB
@@ -140,6 +150,7 @@ model Film {
   liveReactionSessions LiveReactionSession[]
   featuredFilm         FeaturedFilm?
   watchlistItems       Watchlist[]
+  filmPersons          FilmPerson[]
 
   @@index([tmdbId])
   @@index([title])
@@ -316,4 +327,35 @@ model Follow {
   @@unique([followerId, followingId])
   @@index([followerId])
   @@index([followingId])
+}
+
+model Person {
+  id                 String       @id @default(cuid())
+  name               String
+  slug               String       @unique
+  tmdbPersonId       Int          @unique
+  profilePath        String?
+  biography          String?      @db.Text
+  birthday           String?
+  deathday           String?
+  knownForDepartment String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  films              FilmPerson[]
+}
+
+model FilmPerson {
+  id        String     @id @default(cuid())
+  filmId    String
+  personId  String
+  role      PersonRole
+  character String?
+  order     Int?
+  film      Film       @relation(fields: [filmId], references: [id], onDelete: Cascade)
+  person    Person     @relation(fields: [personId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now())
+
+  @@unique([filmId, personId, role])
+  @@index([filmId])
+  @@index([personId])
 }
