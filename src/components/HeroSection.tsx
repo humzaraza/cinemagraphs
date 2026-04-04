@@ -120,6 +120,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
             src={tmdbImageUrl(film.backdropUrl, 'w1280')}
             alt=""
             fill
+            unoptimized
             className="object-cover opacity-40"
             priority
           />

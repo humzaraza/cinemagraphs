@@ -108,6 +108,7 @@ export function PersonFilmography({ filmography }: { filmography: FilmEntry[] })
                     src={tmdbImageUrl(film.posterUrl, 'w92')}
                     alt={film.title}
                     fill
+                    unoptimized
                     className="object-cover"
                     sizes="45px"
                   />

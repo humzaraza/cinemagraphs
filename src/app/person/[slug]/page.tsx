@@ -255,6 +255,7 @@ export default async function PersonPage({ params }: Props) {
                   src={tmdbImageUrl(person.profilePath, 'w185')}
                   alt={person.name}
                   fill
+                  unoptimized
                   className="object-cover"
                   priority
                 />

@@ -348,6 +348,7 @@ export default function ShareListPage() {
                             alt=""
                             width={28}
                             height={42}
+                            unoptimized
                             className="rounded"
                           />
                         )}

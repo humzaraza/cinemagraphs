@@ -56,6 +56,7 @@ export default async function CategoriesPage() {
                     src={tmdbImageUrl(path, 'w300')}
                     alt=""
                     fill
+                    unoptimized
                     sizes="(max-width: 640px) 25vw, 15vw"
                     className="object-cover"
                   />

@@ -105,6 +105,7 @@ export default function AdminFilmImport() {
                   alt={movie.title}
                   width={48}
                   height={72}
+                  unoptimized
                   className="rounded object-cover"
                 />
               ) : (

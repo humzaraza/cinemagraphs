@@ -53,6 +53,7 @@ export function FilmFullCast({ cast }: { cast: CastEntry[] }) {
                     src={tmdbImageUrl(member.profilePath, 'w45')}
                     alt={member.name}
                     fill
+                    unoptimized
                     className="object-cover"
                     sizes="36px"
                   />

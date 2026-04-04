@@ -378,6 +378,7 @@ function WatchlistCard({ film }: { film: FilmData }) {
               src={`https://image.tmdb.org/t/p/w342${film.posterUrl}`}
               alt={film.title}
               fill
+              unoptimized
               className="object-cover group-hover:scale-105 transition-transform duration-500"
               sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
             />
@@ -439,6 +440,7 @@ function ReviewCard({
               alt={film.title}
               width={80}
               height={120}
+              unoptimized
               className="rounded object-cover"
             />
           ) : (
@@ -616,6 +618,7 @@ function ReactionCard({
               alt={film.title}
               width={40}
               height={60}
+              unoptimized
               className="rounded object-cover"
             />
           </Link>

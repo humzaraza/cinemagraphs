@@ -43,6 +43,7 @@ export default function FilmCard({
               src={tmdbImageUrl(posterUrl, 'w500')}
               alt={title}
               fill
+              unoptimized
               className="object-cover group-hover:scale-105 transition-transform duration-500"
               sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
             />

@@ -139,6 +139,7 @@ export default async function FilmPage({
             src={tmdbImageUrl(film.backdropUrl, 'w1280')}
             alt={film.title}
             fill
+            unoptimized
             className="object-cover"
             priority
           />
@@ -158,6 +159,7 @@ export default async function FilmPage({
                   src={tmdbImageUrl(film.posterUrl, 'w500')}
                   alt={film.title}
                   fill
+                  unoptimized
                   className="object-cover"
                   priority
                 />
