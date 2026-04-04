@@ -11,7 +11,18 @@ import TrailerButton from '@/components/TrailerButton'
 import WatchlistButton from '@/components/WatchlistButton'
 import FilmCommunityTabs from '@/components/FilmCommunityTabs'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { FilmFullCast } from '@/components/FilmFullCast'
 import type { CastMember, PeakLowMoment, SentimentDataPoint } from '@/lib/types'
+
+const CREW_ROLE_LABELS: Record<string, string> = {
+  CINEMATOGRAPHER: 'Cinematography',
+  COMPOSER: 'Music',
+  EDITOR: 'Editor',
+  WRITER: 'Writer',
+  PRODUCER: 'Producer',
+}
+
+const CREW_ROLE_ORDER = ['CINEMATOGRAPHER', 'COMPOSER', 'EDITOR', 'WRITER', 'PRODUCER']
 
 export default async function FilmPage({
   params,
@@ -23,7 +34,17 @@ export default async function FilmPage({
   const [film, userReviews] = await Promise.all([
     prisma.film.findUnique({
       where: { id },
-      include: { sentimentGraph: true },
+      include: {
+        sentimentGraph: true,
+        filmPersons: {
+          include: {
+            person: {
+              select: { name: true, slug: true, profilePath: true },
+            },
+          },
+          orderBy: { order: 'asc' },
+        },
+      },
     }),
     prisma.userReview.findMany({
       where: { filmId: id, status: 'approved' },
@@ -41,15 +62,38 @@ export default async function FilmPage({
   if (!film) notFound()
 
   const trailerKey = await getMovieTrailerKey(film.tmdbId)
-  const cast = (film.cast as CastMember[] | null) ?? []
+
+  // Derive cast/crew from FilmPerson records
+  const hasFilmPersons = film.filmPersons.length > 0
+  const directors = film.filmPersons.filter((fp) => fp.role === 'DIRECTOR')
+  const allCast = film.filmPersons
+    .filter((fp) => fp.role === 'ACTOR')
+    .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+  const topCast = allCast.slice(0, 6)
+  const remainingCastCount = Math.max(0, allCast.length - 6)
+
+  // Crew grouped by role
+  const crewByRole: { role: string; label: string; people: { name: string; slug: string }[] }[] = []
+  for (const roleKey of CREW_ROLE_ORDER) {
+    const members = film.filmPersons
+      .filter((fp) => fp.role === roleKey)
+      .map((fp) => ({ name: fp.person.name, slug: fp.person.slug }))
+    if (members.length > 0) {
+      crewByRole.push({ role: roleKey, label: CREW_ROLE_LABELS[roleKey], people: members })
+    }
+  }
+
+  // Fallback to old cast JSON if no FilmPerson records
+  const legacyCast = (film.cast as CastMember[] | null) ?? []
 
   // Build Schema.org JSON-LD structured data
+  const directorName = directors.length > 0 ? directors[0].person.name : film.director
   const jsonLd: Record<string, unknown> = {
     '@context': 'https://schema.org',
     '@type': 'Movie',
     name: film.title,
     ...(film.releaseDate && { datePublished: film.releaseDate.toISOString().split('T')[0] }),
-    ...(film.director && { director: { '@type': 'Person', name: film.director } }),
+    ...(directorName && { director: { '@type': 'Person', name: directorName } }),
     ...(film.synopsis && { description: film.synopsis }),
     ...(film.posterUrl && { image: tmdbImageUrl(film.posterUrl, 'w500') }),
     ...(film.genres.length > 0 && { genre: film.genres }),
@@ -134,9 +178,9 @@ export default async function FilmPage({
             <div className="flex flex-wrap items-center gap-3 text-sm text-cinema-muted mb-4">
               {film.releaseDate && <span>{formatDate(film.releaseDate)}</span>}
               {film.runtime && <span>&middot; {formatRuntime(film.runtime)}</span>}
-              {film.director && <span>&middot; Dir. {film.director}</span>}
             </div>
 
+            {/* Genre pills */}
             {film.genres.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-4">
                 {film.genres.map((genre) => (
@@ -148,6 +192,63 @@ export default async function FilmPage({
                     {genre}
                   </Link>
                 ))}
+              </div>
+            )}
+
+            {/* Director card(s) */}
+            {hasFilmPersons && directors.length > 0 ? (
+              <div className="mb-3">
+                <span className="text-[11px] uppercase tracking-wider text-cinema-gold font-semibold">
+                  Directed by
+                </span>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {directors.map((fp) => (
+                    <Link
+                      key={fp.person.slug}
+                      href={`/person/${fp.person.slug}`}
+                      className="text-sm font-medium text-cinema-gold bg-[#C8A95112] border border-[#C8A95133] rounded-lg px-3 py-1.5 hover:bg-[#C8A95125] hover:border-[#C8A95166] transition-colors"
+                    >
+                      {fp.person.name}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              film.director && (
+                <div className="mb-3">
+                  <span className="text-[11px] uppercase tracking-wider text-cinema-gold font-semibold">
+                    Directed by
+                  </span>
+                  <p className="text-sm font-medium text-cinema-gold mt-1">{film.director}</p>
+                </div>
+              )
+            )}
+
+            {/* Cast pills (top 6) */}
+            {hasFilmPersons && topCast.length > 0 && (
+              <div className="mb-4">
+                <span className="text-[11px] uppercase tracking-wider text-[#888] font-semibold">
+                  Cast
+                </span>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {topCast.map((fp) => (
+                    <Link
+                      key={fp.person.slug}
+                      href={`/person/${fp.person.slug}`}
+                      className="text-[13px] text-[#2DD4A8] bg-[#2DD4A808] border border-[#2DD4A833] rounded-full px-2.5 py-0.5 hover:bg-[#2DD4A818] hover:border-[#2DD4A866] transition-colors"
+                    >
+                      {fp.person.name}
+                    </Link>
+                  ))}
+                  {remainingCastCount > 0 && (
+                    <a
+                      href="#full-cast"
+                      className="text-[13px] text-[#888] bg-transparent border border-[#88888833] rounded-full px-2.5 py-0.5 hover:border-[#88888866] transition-colors"
+                    >
+                      +{remainingCastCount} more ↓
+                    </a>
+                  )}
+                </div>
               </div>
             )}
 
@@ -204,6 +305,72 @@ export default async function FilmPage({
           </ErrorBoundary>
         </div>
 
+        {/* Full Cast Grid */}
+        {hasFilmPersons && allCast.length > 0 ? (
+          <div className="mt-10" id="full-cast">
+            <FilmFullCast
+              cast={allCast.map((fp) => ({
+                name: fp.person.name,
+                slug: fp.person.slug,
+                character: fp.character,
+                profilePath: fp.person.profilePath,
+              }))}
+            />
+          </div>
+        ) : (
+          legacyCast.length > 0 && (
+            <div className="mt-10 pb-4" id="full-cast">
+              <h2 className="font-[family-name:var(--font-playfair)] text-xl font-bold mb-4">
+                Cast
+              </h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                {legacyCast.map((member) => (
+                  <div
+                    key={member.name}
+                    className="bg-cinema-card border border-cinema-border rounded-lg p-3"
+                  >
+                    <p className="text-sm font-semibold text-cinema-cream truncate">
+                      {member.name}
+                    </p>
+                    <p className="text-xs text-cinema-muted truncate">{member.character}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        )}
+
+        {/* Crew Section */}
+        {crewByRole.length > 0 && (
+          <div className="mt-8">
+            <h2 className="font-[family-name:var(--font-playfair)] text-xl font-bold mb-4">
+              Crew
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+              {crewByRole.map((group) => (
+                <div key={group.role} className="flex items-baseline gap-3 py-1.5">
+                  <span className="text-sm text-[#888] flex-shrink-0 w-28">
+                    {group.label}
+                  </span>
+                  <span className="text-sm">
+                    {group.people.map((p, i) => (
+                      <span key={p.slug}>
+                        {i > 0 && ', '}
+                        <Link
+                          href={`/person/${p.slug}`}
+                          className="text-[#2DD4A8] hover:underline"
+                        >
+                          {p.name}
+                        </Link>
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Community Reviews & Live Reactions */}
         <div className="mt-10">
           <FilmCommunityTabs
@@ -220,27 +387,8 @@ export default async function FilmPage({
           />
         </div>
 
-        {/* Cast */}
-        {cast.length > 0 && (
-          <div className="mt-10 pb-12">
-            <h2 className="font-[family-name:var(--font-playfair)] text-xl font-bold mb-4">
-              Cast
-            </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-              {cast.map((member) => (
-                <div
-                  key={member.name}
-                  className="bg-cinema-card border border-cinema-border rounded-lg p-3"
-                >
-                  <p className="text-sm font-semibold text-cinema-cream truncate">
-                    {member.name}
-                  </p>
-                  <p className="text-xs text-cinema-muted truncate">{member.character}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Bottom spacer */}
+        <div className="pb-12" />
       </div>
     </div>
   )
