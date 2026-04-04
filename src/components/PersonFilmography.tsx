@@ -9,12 +9,23 @@ interface SparklinePoint {
   score: number
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  DIRECTOR: 'Director',
+  ACTOR: 'Actor',
+  CINEMATOGRAPHER: 'Cinematographer',
+  COMPOSER: 'Composer',
+  EDITOR: 'Editor',
+  WRITER: 'Writer',
+  PRODUCER: 'Producer',
+}
+
 interface FilmEntry {
   filmId: string
   title: string
   posterUrl: string | null
   releaseDate: string | null
   role: string
+  roles?: string[]
   character: string | null
   overallScore: number | null
   sparklineData: SparklinePoint[]
@@ -86,7 +97,7 @@ export function PersonFilmography({ filmography }: { filmography: FilmEntry[] })
 
           return (
             <Link
-              key={`${film.filmId}-${film.role}`}
+              key={film.filmId}
               href={`/films/${film.filmId}`}
               className="flex items-center gap-3 rounded-lg border border-cinema-border bg-cinema-card p-3 hover:border-cinema-gold/50 transition-colors"
             >
@@ -117,7 +128,12 @@ export function PersonFilmography({ filmography }: { filmography: FilmEntry[] })
                     <span className="text-xs text-cinema-muted flex-shrink-0">{year}</span>
                   )}
                 </div>
-                {film.character && (
+                {film.roles && film.roles.length > 1 && (
+                  <p className="text-xs text-cinema-muted truncate mt-0.5">
+                    {film.roles.map((r) => ROLE_LABELS[r] || r).join(', ')}
+                  </p>
+                )}
+                {film.character && (!film.roles || film.roles.length <= 1) && (
                   <p className="text-xs text-cinema-muted truncate mt-0.5">
                     as {film.character}
                   </p>

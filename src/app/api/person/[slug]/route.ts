@@ -106,22 +106,43 @@ async function fetchPersonData(tmdbPersonId: number) {
   // Derive distinct roles
   const roles = [...new Set(person.films.map((fp) => fp.role))]
 
-  // Build filmography with downsampled sparkline data
-  const filmography = person.films
-    .map((fp) => {
+  // Build filmography with downsampled sparkline data — deduplicate by filmId
+  const filmMap = new Map<string, {
+    filmId: string
+    title: string
+    posterUrl: string | null
+    releaseDate: Date | null
+    runtime: number | null
+    roles: string[]
+    character: string | null
+    overallScore: number | null
+    sparklineData: { percent: number; score: number }[]
+  }>()
+  for (const fp of person.films) {
+    const existing = filmMap.get(fp.film.id)
+    if (existing) {
+      if (!existing.roles.includes(fp.role)) existing.roles.push(fp.role)
+      if (!existing.character && fp.character) existing.character = fp.character
+    } else {
       const dataPoints = (fp.film.sentimentGraph?.dataPoints ?? []) as unknown as SentimentDataPoint[]
-      return {
+      filmMap.set(fp.film.id, {
         filmId: fp.film.id,
         title: fp.film.title,
         posterUrl: fp.film.posterUrl,
         releaseDate: fp.film.releaseDate,
         runtime: fp.film.runtime,
-        role: fp.role,
+        roles: [fp.role],
         character: fp.character,
         overallScore: fp.film.sentimentGraph?.overallScore ?? null,
         sparklineData: downsampleDataPoints(dataPoints, 10),
-      }
-    })
+      })
+    }
+  }
+  const filmography = Array.from(filmMap.values())
+    .map((f) => ({
+      ...f,
+      role: f.roles.includes('DIRECTOR') ? 'DIRECTOR' : f.roles.includes('ACTOR') ? 'ACTOR' : f.roles[0],
+    }))
     .sort((a, b) => {
       const dateA = a.releaseDate ? new Date(a.releaseDate).getTime() : 0
       const dateB = b.releaseDate ? new Date(b.releaseDate).getTime() : 0
