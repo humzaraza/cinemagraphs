@@ -19,7 +19,7 @@ const CREW_JOB_MAP: Record<string, string> = {
   'Executive Producer': 'PRODUCER',
 }
 
-function generatePersonSlug(name: string, tmdbPersonId: number): string {
+export function generatePersonSlug(name: string, tmdbPersonId: number): string {
   const nameSlug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
