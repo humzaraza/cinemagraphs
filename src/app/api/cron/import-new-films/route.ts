@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { getMovieDetails, getMovieCredits } from '@/lib/tmdb'
+import { syncFilmCredits } from '@/lib/person-sync'
 import { cronLogger } from '@/lib/logger'
 import { invalidateHomepageCache, invalidateFilmCache } from '@/lib/cache'
 import { generateSentimentGraph } from '@/lib/sentiment-pipeline'
@@ -139,6 +140,13 @@ export async function GET(request: Request) {
             nowPlaying: nowPlayingIds.has(movie.id),
           },
         })
+
+        // Sync Person/FilmPerson records from credits
+        try {
+          await syncFilmCredits(createdFilm.id, movie.id)
+        } catch (syncErr) {
+          cronLogger.error({ tmdbId, error: syncErr instanceof Error ? syncErr.message : 'Unknown' }, 'Failed to sync credits')
+        }
 
         imported++
         cronLogger.info({ tmdbId, title: movie.title }, 'Film imported')

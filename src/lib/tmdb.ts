@@ -147,5 +147,9 @@ export async function importMovie(tmdbId: number) {
     },
   })
 
+  // Sync Person/FilmPerson records from credits (non-blocking)
+  const { syncFilmCredits } = await import('./person-sync')
+  syncFilmCredits(film.id, tmdbId).catch(() => {})
+
   return film
 }
