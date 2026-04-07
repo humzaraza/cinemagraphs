@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
       where.nowPlaying = true
     }
     if (ticker) {
-      where.tickerOverride = true
+      where.tickerOverride = 'force_show'
     }
 
     // Build orderBy
