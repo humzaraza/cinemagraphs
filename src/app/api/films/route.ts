@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
     const genre = searchParams.get('genre') || ''
     const q = searchParams.get('q')?.trim().slice(0, 200) || ''
     const nowPlaying = searchParams.get('nowPlaying') === 'true'
+    const ticker = searchParams.get('ticker') === 'true'
 
     // Build where clause
     const where: Record<string, unknown> = { status: 'ACTIVE' }
@@ -23,6 +24,9 @@ export async function GET(request: NextRequest) {
     }
     if (nowPlaying) {
       where.nowPlaying = true
+    }
+    if (ticker) {
+      where.tickerOverride = true
     }
 
     // Build orderBy
