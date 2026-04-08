@@ -268,7 +268,7 @@ export default function ProfilePage() {
         <StatBox label="Reviews" value={stats.totalReviews} />
         <StatBox label="Avg Rating" value={stats.avgRating.toFixed(1)} />
         <StatBox label="Graphs" value={stats.graphsContributed} />
-        <StatBox label="Films Reacted" value={stats.filmsReacted} />
+        {/* <StatBox label="Films Reacted" value={stats.filmsReacted} /> */}{/* hidden — re-enable when ready */}
       </div>
 
       {/* Tabs */}
@@ -276,7 +276,7 @@ export default function ProfilePage() {
         {([
           ['reviews', `All Reviews (${reviews.length})`],
           ['graphs', `My Graphs (${graphReviews.length})`],
-          ['reactions', `Live Reactions (${reactionsByFilm.size})`],
+          // ['reactions', `Live Reactions (${reactionsByFilm.size})`], // hidden — re-enable when ready
           ['watchlist', `Watchlist (${watchlist.length})`],
         ] as [Tab, string][]).map(([key, label]) => (
           <button
@@ -294,16 +294,8 @@ export default function ProfilePage() {
       </div>
 
       {/* Tab Content */}
-      {tab === 'reactions' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {Array.from(reactionsByFilm.values()).map(({ film, reactions: filmReactions }) => (
-            <ReactionCard key={film.id} film={film} reactions={filmReactions} />
-          ))}
-          {reactionsByFilm.size === 0 && (
-            <p className="text-cinema-muted col-span-2 text-center py-8">No live reactions yet.</p>
-          )}
-        </div>
-      ) : tab === 'watchlist' ? (
+      {/* Live Reactions tab content hidden — re-enable when ready */}
+      {tab === 'watchlist' ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {watchlist.map((film) => (
             <WatchlistCard key={film.id} film={film} />
