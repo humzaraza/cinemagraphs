@@ -1,5 +1,4 @@
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { sendFeedbackNotification } from '@/lib/email'
 import { apiLogger } from '@/lib/logger'
@@ -8,7 +7,7 @@ const VALID_TYPES = ['bug', 'suggestion', 'support', 'other']
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getMobileOrServerSession()
     const body = await request.json()
 
     const { type, message, page } = body as {

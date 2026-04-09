@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { signMobileToken } from '@/lib/mobile-auth'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { apiLogger } from '@/lib/logger'
 
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { email, code } = body
+    const { email, code, mobile } = body
 
     if (!email || !code) {
       return NextResponse.json({ error: 'Email and code are required' }, { status: 400 })
@@ -40,15 +41,39 @@ export async function POST(request: NextRequest) {
     }
 
     // Mark user as verified
-    await prisma.user.update({
+    const verifiedUser = await prisma.user.update({
       where: { email: emailLower },
       data: { emailVerified: new Date() },
+      select: { id: true, email: true, name: true, image: true, role: true },
     })
 
     // Clean up token
     await prisma.verificationToken.deleteMany({
       where: { identifier: emailLower },
     })
+
+    // For mobile clients, return a JWT so the user is logged in immediately
+    if (mobile) {
+      const mobileToken = signMobileToken({
+        id: verifiedUser.id,
+        email: verifiedUser.email,
+        name: verifiedUser.name,
+        role: verifiedUser.role,
+        picture: verifiedUser.image,
+      })
+
+      return NextResponse.json({
+        message: 'Email verified successfully',
+        token: mobileToken,
+        user: {
+          id: verifiedUser.id,
+          email: verifiedUser.email,
+          name: verifiedUser.name,
+          image: verifiedUser.image,
+          role: verifiedUser.role,
+        },
+      })
+    }
 
     return NextResponse.json({ message: 'Email verified successfully' })
   } catch (err) {

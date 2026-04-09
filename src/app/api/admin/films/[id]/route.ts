@@ -1,5 +1,4 @@
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
 import { invalidateFilmCache, invalidateHomepageCache } from '@/lib/cache'
@@ -9,7 +8,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getMobileOrServerSession()
 
     if (!session?.user || session.user.role !== 'ADMIN') {
       return Response.json({ error: 'Unauthorized', code: 'FORBIDDEN' }, { status: 403 })
@@ -54,7 +53,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getMobileOrServerSession()
 
     if (!session?.user || session.user.role !== 'ADMIN') {
       return Response.json({ error: 'Unauthorized' }, { status: 403 })

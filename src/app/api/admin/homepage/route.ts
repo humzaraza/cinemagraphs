@@ -1,12 +1,11 @@
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
 import { invalidateHomepageCache } from '@/lib/cache'
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getMobileOrServerSession()
     if (!session?.user || session.user.role !== 'ADMIN') {
       return Response.json({ error: 'Unauthorized' }, { status: 403 })
     }
@@ -56,7 +55,7 @@ export async function GET() {
 // Save featured films
 export async function PUT(request: Request) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getMobileOrServerSession()
     if (!session?.user || session.user.role !== 'ADMIN') {
       return Response.json({ error: 'Unauthorized' }, { status: 403 })
     }
@@ -106,7 +105,7 @@ export async function PUT(request: Request) {
 /** Manual cache flush — forces homepage to re-fetch from DB on next load */
 export async function DELETE() {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getMobileOrServerSession()
     if (!session?.user || session.user.role !== 'ADMIN') {
       return Response.json({ error: 'Unauthorized' }, { status: 403 })
     }

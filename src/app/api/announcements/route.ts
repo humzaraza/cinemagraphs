@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAdmin } from '@/lib/middleware'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { getMobileOrServerSession } from '@/lib/mobile-auth'
 
 export async function POST(request: NextRequest) {
   const auth = await requireAdmin()
   if (!auth.authorized) return auth.errorResponse!
 
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getMobileOrServerSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Session user not found' }, { status: 401 })
     }

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { extractSentiment } from '@/lib/sentiment-extract'
 import { maybeBlendAndUpdate } from '@/lib/review-blender'
@@ -60,7 +59,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getMobileOrServerSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
@@ -184,7 +183,7 @@ export async function GET(
     const limit = 5
 
     // Check if current user has a review (any status)
-    const session = await getServerSession(authOptions)
+    const session = await getMobileOrServerSession()
     let myReview = null
     if (session?.user?.id) {
       myReview = await prisma.userReview.findUnique({

@@ -1,5 +1,4 @@
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { generateSentimentGraph } from '@/lib/sentiment-pipeline'
 import { apiLogger } from '@/lib/logger'
 import { invalidateFilmCache, invalidateHomepageCache } from '@/lib/cache'
@@ -8,7 +7,7 @@ export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions)
+  const session = await getMobileOrServerSession()
   if (!session?.user || session.user.role !== 'ADMIN') {
     return Response.json({ error: 'Unauthorized', code: 'FORBIDDEN' }, { status: 403 })
   }

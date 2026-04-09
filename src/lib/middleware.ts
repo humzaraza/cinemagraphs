@@ -1,11 +1,10 @@
-import { getServerSession } from 'next-auth'
-import { authOptions } from './auth'
+import { getMobileOrServerSession } from './mobile-auth'
 import { prisma } from './prisma'
 import type { UserRole } from '@/generated/prisma/client'
 
 export interface AuthResult {
   authorized: boolean
-  session: Awaited<ReturnType<typeof getServerSession>> | null
+  session: Awaited<ReturnType<typeof getMobileOrServerSession>> | null
   errorResponse?: Response
 }
 
@@ -14,7 +13,7 @@ export interface AuthResult {
  * Role hierarchy: ADMIN > MODERATOR > USER > BANNED
  */
 export async function requireRole(requiredRole: UserRole): Promise<AuthResult> {
-  const session = await getServerSession(authOptions)
+  const session = await getMobileOrServerSession()
 
   if (!session?.user) {
     return {

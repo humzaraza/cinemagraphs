@@ -52,6 +52,9 @@ model User {
   role                 UserRole              @default(USER)
   suspendedUntil       DateTime?
   isPublic             Boolean               @default(true)
+  publicProfile        Boolean               @default(true)
+  allowFollowers       Boolean               @default(true)
+  privateGraphs        Boolean               @default(false)
   points               Int                   @default(0)
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
@@ -68,6 +71,7 @@ model User {
   following            Follow[]              @relation("follower")
   announcements        Announcement[]
   addedFilms           Film[]                @relation("addedFilms")
+  lists                List[]
 }
 
 model Account {
@@ -151,6 +155,7 @@ model Film {
   featuredFilm         FeaturedFilm?
   watchlistItems       Watchlist[]
   filmPersons          FilmPerson[]
+  listFilms            ListFilm[]
 
   @@index([tmdbId])
   @@index([title])
@@ -358,4 +363,26 @@ model FilmPerson {
   @@unique([filmId, personId, role])
   @@index([filmId])
   @@index([personId])
+}
+
+model List {
+  id        String     @id @default(cuid())
+  name      String
+  genreTag  String?
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  films     ListFilm[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model ListFilm {
+  id      String   @id @default(cuid())
+  listId  String
+  filmId  String
+  list    List     @relation(fields: [listId], references: [id], onDelete: Cascade)
+  film    Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
+  addedAt DateTime @default(now())
+
+  @@unique([listId, filmId])
 }

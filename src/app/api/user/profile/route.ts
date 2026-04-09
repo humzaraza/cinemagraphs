@@ -1,13 +1,75 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
 import type { Prisma } from '@/generated/prisma/client'
 
+export async function GET() {
+  try {
+    const session = await getMobileOrServerSession()
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        bio: true,
+        image: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        _count: {
+          select: {
+            userReviews: true,
+            watchlistItems: true,
+            lists: true,
+            following: true,
+            followers: true,
+          },
+        },
+      },
+    })
+
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    // Count "watched" as films the user has reviewed (completed watching)
+    const watchedCount = user._count.userReviews
+
+    return NextResponse.json({
+      user: {
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        bio: user.bio,
+        image: user.image,
+        email: user.email,
+        role: user.role,
+        createdAt: user.createdAt,
+      },
+      stats: {
+        reviewCount: user._count.userReviews,
+        watchedCount,
+        watchlistCount: user._count.watchlistItems,
+        listCount: user._count.lists,
+        followingCount: user._count.following,
+        followerCount: user._count.followers,
+      },
+    })
+  } catch (err) {
+    apiLogger.error({ err }, 'Failed to fetch user profile')
+    return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
+  }
+}
+
 export async function PATCH(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getMobileOrServerSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }

@@ -1,11 +1,10 @@
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { importMovie, searchMovies } from '@/lib/tmdb'
 import { apiLogger } from '@/lib/logger'
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getMobileOrServerSession()
 
     if (!session?.user || session.user.role !== 'ADMIN') {
       return Response.json({ error: 'Unauthorized', code: 'FORBIDDEN' }, { status: 403 })

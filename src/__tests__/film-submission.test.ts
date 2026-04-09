@@ -70,8 +70,8 @@ function makeRequest(body: Record<string, unknown>): NextRequest {
 
 function authedSession(userId = 'user-1') {
   return {
-    authorized: true,
-    session: { user: { id: userId, role: 'USER' } },
+    authorized: true as const,
+    session: { user: { id: userId, role: 'USER' as const, name: 'Test User', email: 'test@test.com', image: null } },
   }
 }
 
@@ -105,7 +105,7 @@ describe('Film Submission API', () => {
     it('returns 403 for banned users', async () => {
       mockRequireUser.mockResolvedValue({
         authorized: false,
-        session: { user: { id: 'user-1', role: 'BANNED' } },
+        session: { user: { id: 'user-1', role: 'BANNED', name: 'Banned User', email: 'banned@test.com', image: null } },
         errorResponse: Response.json(
           { error: 'Account suspended', code: 'BANNED' },
           { status: 403 }
