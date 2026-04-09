@@ -4,6 +4,7 @@ import { syncFilmCredits } from '@/lib/person-sync'
 import { cronLogger } from '@/lib/logger'
 import { invalidateHomepageCache, invalidateFilmCache } from '@/lib/cache'
 import { generateSentimentGraph } from '@/lib/sentiment-pipeline'
+import { checkCronQualityGates, type CronSkipCounts } from '@/lib/cron-quality-gates'
 
 export const maxDuration = 300
 
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
       return Response.json({ error: 'Unauthorized', code: 'UNAUTHORIZED' }, { status: 401 })
     }
 
-    // Fetch now_playing (pages 1–3) for "In Theaters" tracking
+    // Fetch now_playing (pages 1-3) for "In Theaters" tracking
     const nowPlayingPages = await Promise.all([
       fetchTMDBPage('/movie/now_playing', 1),
       fetchTMDBPage('/movie/now_playing', 2),
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // Fetch upcoming (pages 1–3) for new imports
+    // Fetch upcoming (pages 1-3) for new imports
     const upcomingPages = await Promise.all([
       fetchTMDBPage('/movie/upcoming', 1),
       fetchTMDBPage('/movie/upcoming', 2),
@@ -97,8 +98,16 @@ export async function GET(request: Request) {
     cronLogger.info({ newCount: newTmdbIds.length, skippedExisting: existingSet.size }, 'After de-duplication')
 
     let imported = 0
-    let skipped = 0
     let failed = 0
+    const skipCounts: CronSkipCounts = {
+      total: 0,
+      lowVotes: 0,
+      lowPopularity: 0,
+      excludedGenre: 0,
+      noPoster: 0,
+      shortRuntime: 0,
+      noOverview: 0,
+    }
 
     for (const tmdbId of newTmdbIds) {
       try {
@@ -107,8 +116,11 @@ export async function GET(request: Request) {
           getMovieCredits(tmdbId),
         ])
 
-        if (!movie.poster_path || !movie.runtime || movie.runtime <= 60 || !movie.overview) {
-          skipped++
+        const gateResult = checkCronQualityGates(movie)
+        if (!gateResult.pass) {
+          skipCounts.total++
+          skipCounts[gateResult.reason]++
+          cronLogger.info({ tmdbId, title: movie.title, reason: gateResult.reason }, 'Film skipped by quality gate')
           continue
         }
 
@@ -170,9 +182,12 @@ export async function GET(request: Request) {
     }
 
     const durationMs = Date.now() - startTime
-    cronLogger.info({ imported, skipped, failed, durationMs }, 'Daily import complete')
+    cronLogger.info(
+      { imported, skipped: skipCounts.total, failed, skipCounts, durationMs },
+      `TMDB sync complete: ${imported} films added, ${skipCounts.total} films skipped (${skipCounts.lowVotes} low votes, ${skipCounts.lowPopularity} low popularity, ${skipCounts.excludedGenre} excluded genre)`
+    )
 
-    return Response.json({ imported, skipped, failed, nowPlayingRefreshed: nowPlayingIds.size, durationMs })
+    return Response.json({ imported, skipped: skipCounts.total, skipCounts, failed, nowPlayingRefreshed: nowPlayingIds.size, durationMs })
   } catch (err) {
     cronLogger.error({ err, durationMs: Date.now() - startTime }, 'Import cron failed')
     return Response.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })

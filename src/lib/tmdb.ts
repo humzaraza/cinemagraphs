@@ -16,6 +16,7 @@ interface TMDBMovie {
   genres?: { id: number; name: string }[]
   vote_average?: number
   vote_count?: number
+  popularity?: number
 }
 
 interface TMDBCredits {
