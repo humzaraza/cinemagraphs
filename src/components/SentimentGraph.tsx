@@ -547,6 +547,8 @@ export default function SentimentGraph({
                 dot={(props: any) => {
                   const { cx, cy, payload, index } = props
                   if (cx == null || cy == null) return <circle r={0} />
+                  // Skip dot on the anchored 5.0 starting point
+                  if (index === 0) return <circle key={`dot-${index}`} r={0} />
                   const isHighlighted = highlightedIndex === index
                   const baseR = confidenceRadius(payload.confidence)
                   const r = isHighlighted ? baseR + 4 : baseR
@@ -594,6 +596,7 @@ export default function SentimentGraph({
                 activeDot={(props: any) => {
                   const { cx, cy, payload, index } = props
                   if (cx == null || cy == null) return <circle r={0} />
+                  if (index === 0) return <circle r={0} />
                   const r = confidenceRadius(payload.confidence) + 3
                   const color = scoreColor(payload.score)
                   return (
@@ -624,8 +627,8 @@ export default function SentimentGraph({
               />
             )}
 
-            {/* Lowest moment (shown with critics line) */}
-            {showCritics && lowestMoment && (
+            {/* Lowest moment (shown with critics line, skip if it falls on the anchored 5.0 start) */}
+            {showCritics && lowestMoment && lowestMoment.time !== dataPoints[0]?.time && (
               <ReferenceDot
                 x={lowestMoment.time}
                 y={lowestMoment.score}
