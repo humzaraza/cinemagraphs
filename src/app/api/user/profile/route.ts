@@ -12,23 +12,17 @@ export async function GET() {
     }
 
     const userId = session.user.id
-    const userEmail = session.user.email
 
-    console.error('[profile] Looking up user', { userId, userEmail })
+    console.error('[profile] Looking up user', { userId })
 
-    // Look up by email first (more reliable across auth methods), fall back to id
-    const user = userEmail
-      ? await prisma.user.findUnique({ where: { email: userEmail }, select: profileSelect })
-      : await prisma.user.findUnique({ where: { id: userId }, select: profileSelect })
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: profileSelect,
+    })
 
     if (!user) {
-      console.error('[profile] User not found by email, trying by id', { userId, userEmail })
-      const fallback = await prisma.user.findUnique({ where: { id: userId }, select: profileSelect })
-      if (!fallback) {
-        console.error('[profile] User not found by id either — returning 404', { userId, userEmail })
-        return NextResponse.json({ error: 'User not found' }, { status: 404 })
-      }
-      return buildProfileResponse(fallback)
+      console.error('[profile] User not found — returning 404', { userId })
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
     console.error('[profile] User found', { id: user.id, email: user.email })
