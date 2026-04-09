@@ -628,7 +628,7 @@ export default function SentimentGraph({
             )}
 
             {/* Lowest moment (shown with critics line, skip if it falls on the anchored 5.0 start) */}
-            {showCritics && lowestMoment && lowestMoment.time !== dataPoints[0]?.time && (
+            {showCritics && lowestMoment && lowestMoment.time !== dataPoints[0]?.timeMidpoint && (
               <ReferenceDot
                 x={lowestMoment.time}
                 y={lowestMoment.score}
