@@ -11,60 +11,85 @@ export async function GET() {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        bio: true,
-        image: true,
-        email: true,
-        role: true,
-        createdAt: true,
-        _count: {
-          select: {
-            userReviews: true,
-            watchlistItems: true,
-            lists: true,
-            following: true,
-            followers: true,
-          },
-        },
-      },
-    })
+    const userId = session.user.id
+    const userEmail = session.user.email
+
+    console.error('[profile] Looking up user', { userId, userEmail })
+
+    // Look up by email first (more reliable across auth methods), fall back to id
+    const user = userEmail
+      ? await prisma.user.findUnique({ where: { email: userEmail }, select: profileSelect })
+      : await prisma.user.findUnique({ where: { id: userId }, select: profileSelect })
 
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+      console.error('[profile] User not found by email, trying by id', { userId, userEmail })
+      const fallback = await prisma.user.findUnique({ where: { id: userId }, select: profileSelect })
+      if (!fallback) {
+        console.error('[profile] User not found by id either — returning 404', { userId, userEmail })
+        return NextResponse.json({ error: 'User not found' }, { status: 404 })
+      }
+      return buildProfileResponse(fallback)
     }
 
-    // Count "watched" as films the user has reviewed (completed watching)
-    const watchedCount = user._count.userReviews
-
-    return NextResponse.json({
-      user: {
-        id: user.id,
-        name: user.name,
-        username: user.username,
-        bio: user.bio,
-        image: user.image,
-        email: user.email,
-        role: user.role,
-        createdAt: user.createdAt,
-      },
-      stats: {
-        reviewCount: user._count.userReviews,
-        watchedCount,
-        watchlistCount: user._count.watchlistItems,
-        listCount: user._count.lists,
-        followingCount: user._count.following,
-        followerCount: user._count.followers,
-      },
-    })
+    console.error('[profile] User found', { id: user.id, email: user.email })
+    return buildProfileResponse(user)
   } catch (err) {
     apiLogger.error({ err }, 'Failed to fetch user profile')
     return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
   }
+}
+
+const profileSelect = {
+  id: true,
+  name: true,
+  username: true,
+  bio: true,
+  image: true,
+  email: true,
+  role: true,
+  createdAt: true,
+  _count: {
+    select: {
+      userReviews: true,
+      watchlistItems: true,
+      lists: true,
+      following: true,
+      followers: true,
+    },
+  },
+} as const
+
+function buildProfileResponse(user: {
+  id: string
+  name: string | null
+  username: string | null
+  bio: string | null
+  image: string | null
+  email: string
+  role: string
+  createdAt: Date
+  _count: { userReviews: number; watchlistItems: number; lists: number; following: number; followers: number }
+}) {
+  return NextResponse.json({
+    user: {
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      bio: user.bio,
+      image: user.image,
+      email: user.email,
+      role: user.role,
+      createdAt: user.createdAt,
+    },
+    stats: {
+      reviewCount: user._count.userReviews,
+      watchedCount: user._count.userReviews,
+      watchlistCount: user._count.watchlistItems,
+      listCount: user._count.lists,
+      followingCount: user._count.following,
+      followerCount: user._count.followers,
+    },
+  })
 }
 
 export async function PATCH(request: NextRequest) {
