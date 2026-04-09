@@ -21,14 +21,35 @@ const JWT_SECRET = process.env.NEXTAUTH_SECRET!
 export async function verifyMobileToken(): Promise<MobileTokenPayload | null> {
   const headersList = await headers()
   const authHeader = headersList.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) return null
 
+  if (!authHeader?.startsWith('Bearer ')) {
+    console.error('[mobile-auth] No Bearer token detected in Authorization header', {
+      authHeaderPresent: !!authHeader,
+      authHeaderPrefix: authHeader?.slice(0, 10) ?? null,
+    })
+    return null
+  }
+
+  console.error('[mobile-auth] Bearer token detected, attempting verification...')
   const token = authHeader.slice(7)
   try {
     const payload = jwt.verify(token, JWT_SECRET) as MobileTokenPayload
-    if (!payload.id) return null
+    if (!payload.id) {
+      console.error('[mobile-auth] Token verified but payload has no id', { payload })
+      return null
+    }
+    console.error('[mobile-auth] Token verification SUCCESS', {
+      id: payload.id,
+      email: payload.email,
+      role: payload.role,
+      name: payload.name,
+    })
     return payload
-  } catch {
+  } catch (err) {
+    console.error('[mobile-auth] Token verification FAILED', {
+      error: err instanceof Error ? err.message : 'Unknown error',
+      name: err instanceof Error ? err.name : undefined,
+    })
     return null
   }
 }
@@ -49,6 +70,7 @@ export async function getMobileOrServerSession() {
   // 1. Try web cookie session via NextAuth
   const session = await getServerSession(authOptions)
   if (session?.user?.id) {
+    console.error('[mobile-auth] Web cookie session found', { userId: session.user.id })
     return {
       user: {
         id: session.user.id,
@@ -60,9 +82,12 @@ export async function getMobileOrServerSession() {
     }
   }
 
+  console.error('[mobile-auth] No web cookie session, trying Bearer token...')
+
   // 2. Fall back to mobile Bearer token
   const mobilePayload = await verifyMobileToken()
   if (mobilePayload) {
+    console.error('[mobile-auth] Mobile auth resolved', { userId: mobilePayload.id })
     return {
       user: {
         id: mobilePayload.id,
@@ -74,5 +99,6 @@ export async function getMobileOrServerSession() {
     }
   }
 
+  console.error('[mobile-auth] Both auth methods failed — returning null')
   return null
 }
