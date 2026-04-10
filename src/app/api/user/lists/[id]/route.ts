@@ -58,6 +58,7 @@ export async function GET(
           year: f.film.releaseDate ? new Date(f.film.releaseDate).getFullYear() : null,
           score: f.film.sentimentGraph?.overallScore ?? null,
           sparklineData: dp?.map((d) => d.score) ?? null,
+          dominantColor: null,
           addedAt: f.addedAt,
         }
       }),
