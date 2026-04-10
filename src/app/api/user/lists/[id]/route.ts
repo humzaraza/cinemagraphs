@@ -49,15 +49,18 @@ export async function GET(
 
     return NextResponse.json({
       ...list,
-      films: list.films.map((f) => ({
-        id: f.film.id,
-        title: f.film.title,
-        posterUrl: f.film.posterUrl,
-        year: f.film.releaseDate ? new Date(f.film.releaseDate).getFullYear() : null,
-        score: f.film.sentimentGraph?.overallScore ?? null,
-        sparkline: f.film.sentimentGraph?.dataPoints ?? null,
-        addedAt: f.addedAt,
-      })),
+      films: list.films.map((f) => {
+        const dp = f.film.sentimentGraph?.dataPoints as { score: number }[] | null | undefined
+        return {
+          id: f.film.id,
+          title: f.film.title,
+          posterUrl: f.film.posterUrl,
+          year: f.film.releaseDate ? new Date(f.film.releaseDate).getFullYear() : null,
+          score: f.film.sentimentGraph?.overallScore ?? null,
+          sparklineData: dp?.map((d) => d.score) ?? null,
+          addedAt: f.addedAt,
+        }
+      }),
     })
   } catch (err) {
     apiLogger.error({ err }, 'Failed to fetch list detail')
