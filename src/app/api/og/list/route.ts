@@ -172,8 +172,18 @@ async function buildSparklinePng(
 async function fetchImageAsDataUri(url: string): Promise<string | null> {
   try {
     const res = await fetch(url)
-    if (!res.ok) return null
+    if (!res.ok) {
+      console.error('[og/list] Image fetch failed:', { url, status: res.status })
+      return null
+    }
     const contentType = res.headers.get('content-type') || 'image/jpeg'
+
+    // Reject non-image responses (TMDB can return HTML error pages)
+    if (!contentType.startsWith('image/')) {
+      console.error('[og/list] Non-image content-type, skipping:', { url, contentType })
+      return null
+    }
+
     const buf = await res.arrayBuffer()
 
     // Satori requires SVGs to have a viewBox — inject one if missing
@@ -189,7 +199,6 @@ async function fetchImageAsDataUri(url: string): Promise<string | null> {
             svg = svg.replace('<svg', `<svg viewBox="0 0 ${w} ${h}"`)
           }
         } else {
-          // Can't determine dimensions — skip this SVG
           return null
         }
       }
@@ -199,7 +208,8 @@ async function fetchImageAsDataUri(url: string): Promise<string | null> {
 
     const base64 = Buffer.from(buf).toString('base64')
     return `data:${contentType};base64,${base64}`
-  } catch {
+  } catch (err) {
+    console.error('[og/list] Image fetch error:', { url, error: String(err) })
     return null
   }
 }
@@ -312,6 +322,17 @@ export async function GET(request: NextRequest) {
       return tasks
     })
   )
+
+  // Log image fetch results
+  ordered.forEach((film) => {
+    console.error('[og/list] Image cache:', {
+      filmId: film.id,
+      filmTitle: film.title,
+      hasBackdrop: !!backdropCache.get(film.id),
+      hasLogo: !!logoCache.get(film.id),
+      display: displayMap.get(film.id),
+    })
+  })
 
   // ── Layout (ratio-aware) ──
   const DIMS: Record<string, { w: number; h: number }> = {
@@ -748,16 +769,39 @@ export async function GET(request: NextRequest) {
     )
   )
 
+  const satoriOpts = {
+    width: W,
+    height: totalH,
+    fonts: [
+      { name: 'Libre Baskerville', data: fonts.baskerville, style: 'normal' as const, weight: 400 },
+      { name: 'Libre Baskerville', data: fonts.baskervilleBold, style: 'normal' as const, weight: 700 },
+      { name: 'DM Sans', data: fonts.dmSans, style: 'normal' as const, weight: 400 },
+    ],
+  }
+
+  // Test each row individually to find which one crashes satori
+  for (let i = 0; i < rows.length; i++) {
+    try {
+      const testEl = React.createElement('div', { style: { display: 'flex', width: W, height: 100 } }, rows[i])
+      await satori(testEl, { ...satoriOpts, height: 100 })
+    } catch (rowErr) {
+      const film = ordered[i]
+      console.error(`[og/list] Row ${i} crashes satori:`, {
+        filmId: film.id,
+        filmTitle: film.title,
+        hasBackdrop: !!backdropCache.get(film.id),
+        hasLogo: !!logoCache.get(film.id),
+        hasSparkline: !!sparklineCache.get(film.id),
+        display: displayMap.get(film.id),
+        error: rowErr instanceof Error ? rowErr.message : String(rowErr),
+      })
+    }
+  }
+
+  console.error('[og/list] Row tests complete, rendering full poster...')
+
   try {
-    const svg = await satori(element, {
-      width: W,
-      height: totalH,
-      fonts: [
-        { name: 'Libre Baskerville', data: fonts.baskerville, style: 'normal' as const, weight: 400 },
-        { name: 'Libre Baskerville', data: fonts.baskervilleBold, style: 'normal' as const, weight: 700 },
-        { name: 'DM Sans', data: fonts.dmSans, style: 'normal' as const, weight: 400 },
-      ],
-    })
+    const svg = await satori(element, satoriOpts)
 
     const png = await sharp(Buffer.from(svg)).png().toBuffer()
 
