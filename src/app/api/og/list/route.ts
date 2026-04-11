@@ -231,9 +231,10 @@ export async function GET(request: NextRequest) {
   if (!auth.authorized) return auth.errorResponse!
 
   const url = request.nextUrl
-  const filmIds = (url.searchParams.get('films') || '').split(',').filter(Boolean)
-  const title = url.searchParams.get('title') || 'Top Films'
-  const subtitle = url.searchParams.get('subtitle') || ''
+  const rawFilms = url.searchParams.get('films') || ''
+  const filmIds = rawFilms.split(',').map((s) => s.trim()).filter(Boolean)
+  const title = (url.searchParams.get('title') || 'Top Films').normalize('NFC')
+  const subtitle = (url.searchParams.get('subtitle') || '').normalize('NFC')
   const displays = (url.searchParams.get('displays') || '').split(',')
   const crops = (url.searchParams.get('crops') || '').split(',')
   const ratio = url.searchParams.get('ratio') || '16:9'
@@ -346,7 +347,8 @@ export async function GET(request: NextRequest) {
   const sparkH = Math.round(rowH * 0.5)
   await Promise.all(
     ordered.map(async (film) => {
-      const dataPoints = (film.sentimentGraph?.dataPoints as unknown as SentimentDataPoint[]) ?? []
+      const raw = film.sentimentGraph?.dataPoints
+      const dataPoints = (Array.isArray(raw) ? raw : []) as SentimentDataPoint[]
       if (dataPoints.length >= 2) {
         const result = await buildSparklinePng(dataPoints, sparkW, sparkH)
         if (result) sparklineCache.set(film.id, result)
@@ -356,6 +358,7 @@ export async function GET(request: NextRequest) {
 
   // ── Build rows ──
   const rows = ordered.map((film, i) => {
+    const filmTitle = String(film.title || '').normalize('NFC')
     const year = film.releaseDate ? new Date(film.releaseDate).getFullYear().toString() : ''
     const score = film.sentimentGraph?.overallScore ?? null
     const backdropSrc = backdropCache.get(film.id) ?? null
@@ -443,7 +446,7 @@ export async function GET(request: NextRequest) {
                 whiteSpace: 'nowrap' as const,
               },
             },
-            film.title
+            filmTitle
           ),
           year
             ? React.createElement(
