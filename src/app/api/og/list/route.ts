@@ -348,7 +348,7 @@ export async function GET(request: NextRequest) {
   await Promise.all(
     ordered.map(async (film) => {
       const raw = film.sentimentGraph?.dataPoints
-      const dataPoints = (Array.isArray(raw) ? raw : []) as SentimentDataPoint[]
+      const dataPoints = (Array.isArray(raw) ? raw : []) as unknown as SentimentDataPoint[]
       if (dataPoints.length >= 2) {
         const result = await buildSparklinePng(dataPoints, sparkW, sparkH)
         if (result) sparklineCache.set(film.id, result)

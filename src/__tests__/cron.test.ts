@@ -51,7 +51,7 @@ describe('Cron Job Behavior', () => {
 
   it('rejects requests without valid CRON_SECRET', () => {
     const cronSecret = 'my-secret-123'
-    const authHeader = 'Bearer wrong-secret'
+    const authHeader: string = 'Bearer wrong-secret'
 
     const isAuthorized = cronSecret && authHeader === `Bearer ${cronSecret}`
 
