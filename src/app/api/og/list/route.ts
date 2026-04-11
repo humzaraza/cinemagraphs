@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import satori from 'satori'
+import satori, { type SatoriOptions } from 'satori'
 import sharp from 'sharp'
 import React from 'react'
 import type { SentimentDataPoint } from '@/lib/types'
@@ -769,7 +769,7 @@ export async function GET(request: NextRequest) {
     )
   )
 
-  const satoriOpts = {
+  const satoriOpts: SatoriOptions = {
     width: W,
     height: totalH,
     fonts: [
@@ -783,7 +783,7 @@ export async function GET(request: NextRequest) {
   for (let i = 0; i < rows.length; i++) {
     try {
       const testEl = React.createElement('div', { style: { display: 'flex', width: W, height: 100 } }, rows[i])
-      await satori(testEl, { ...satoriOpts, height: 100 })
+      await satori(testEl, { width: satoriOpts.width, height: 100, fonts: satoriOpts.fonts })
     } catch (rowErr) {
       const film = ordered[i]
       console.error(`[og/list] Row ${i} crashes satori:`, {
