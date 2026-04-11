@@ -386,14 +386,21 @@ export async function GET(request: NextRequest) {
   )
 
   // ── Build rows ──
-  const rows = ordered.map((film, i) => {
+  // Set of film IDs forced to font display (populated on satori failures)
+  const forceFont = new Set<string>()
+
+  function buildRows() {
+    return ordered.map((film, i) => buildRow(film, i))
+  }
+
+  function buildRow(film: typeof ordered[number], i: number) {
     const filmTitle = String(film.title || '').normalize('NFC')
     const year = film.releaseDate ? new Date(film.releaseDate).getFullYear().toString() : ''
     const score = film.sentimentGraph?.overallScore ?? null
     const backdropSrc = backdropCache.get(film.id) ?? null
     const cropY = cropMap.get(film.id) ?? 30
     const logoSrc = logoCache.get(film.id) ?? null
-    const useLogo = displayMap.get(film.id) === 'logo' && logoSrc != null
+    const useLogo = !forceFont.has(film.id) && displayMap.get(film.id) === 'logo' && logoSrc != null
     const sparkData = sparklineCache.get(film.id) ?? null
     const runtimeMin = film.runtime ?? null
     const runtimeLabel = runtimeMin
@@ -655,119 +662,116 @@ export async function GET(request: NextRequest) {
         )
       )
     )
-  })
+  }
+
+  let rows = buildRows()
 
   // ── Full poster element ──
-  const element = React.createElement(
+  // ── Shared chrome (header, separators, footer) ──
+  const headerEl = React.createElement(
     'div',
     {
       style: {
         display: 'flex',
         flexDirection: 'column' as const,
-        width: W,
-        height: totalH,
-        backgroundColor: BG,
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: headerH,
+        padding: '0 40px',
       },
     },
-    // Header
     React.createElement(
+      'span',
+      {
+        style: {
+          fontFamily: 'Libre Baskerville',
+          fontWeight: 700,
+          fontSize: isTall ? 48 : isSquareOrPortrait ? 42 : 36,
+          color: IVORY,
+          textAlign: 'center' as const,
+        },
+      },
+      title
+    ),
+    subtitle
+      ? React.createElement(
+          'span',
+          {
+            style: {
+              fontFamily: 'DM Sans',
+              fontSize: isTall ? 22 : isSquareOrPortrait ? 18 : 16,
+              color: 'rgba(245,240,232,0.5)',
+              marginTop: isTall ? 12 : 6,
+              textAlign: 'center' as const,
+            },
+          },
+          subtitle
+        )
+      : null
+  )
+  const separatorEl = React.createElement('div', {
+    style: {
+      width: W - 80,
+      height: 1,
+      backgroundColor: 'rgba(200,169,81,0.2)',
+      marginLeft: 40,
+    },
+  })
+  const footerEl = React.createElement(
+    'div',
+    {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: footerH,
+        gap: 16,
+      },
+    },
+    React.createElement(
+      'span',
+      {
+        style: {
+          fontFamily: 'Libre Baskerville',
+          fontWeight: 700,
+          fontSize: isTall ? 24 : isSquareOrPortrait ? 20 : 16,
+          color: GOLD,
+        },
+      },
+      'Cinemagraphs'
+    ),
+    React.createElement(
+      'span',
+      {
+        style: {
+          fontFamily: 'DM Sans',
+          fontSize: isTall ? 18 : isSquareOrPortrait ? 15 : 13,
+          color: 'rgba(245,240,232,0.35)',
+        },
+      },
+      'Movie reviews, visualized'
+    )
+  )
+
+  function buildElement(currentRows: React.ReactElement[]) {
+    return React.createElement(
       'div',
       {
         style: {
           display: 'flex',
           flexDirection: 'column' as const,
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: headerH,
-          padding: '0 40px',
+          width: W,
+          height: totalH,
+          backgroundColor: BG,
         },
       },
-      React.createElement(
-        'span',
-        {
-          style: {
-            fontFamily: 'Libre Baskerville',
-            fontWeight: 700,
-            fontSize: isTall ? 48 : isSquareOrPortrait ? 42 : 36,
-            color: IVORY,
-            textAlign: 'center' as const,
-          },
-        },
-        title
-      ),
-      subtitle
-        ? React.createElement(
-            'span',
-            {
-              style: {
-                fontFamily: 'DM Sans',
-                fontSize: isTall ? 22 : isSquareOrPortrait ? 18 : 16,
-                color: 'rgba(245,240,232,0.5)',
-                marginTop: isTall ? 12 : 6,
-                textAlign: 'center' as const,
-              },
-            },
-            subtitle
-          )
-        : null
-    ),
-    // Separator
-    React.createElement('div', {
-      style: {
-        width: W - 80,
-        height: 1,
-        backgroundColor: 'rgba(200,169,81,0.2)',
-        marginLeft: 40,
-      },
-    }),
-    // Rows
-    ...rows,
-    // Separator
-    React.createElement('div', {
-      style: {
-        width: W - 80,
-        height: 1,
-        backgroundColor: 'rgba(200,169,81,0.2)',
-        marginLeft: 40,
-      },
-    }),
-    // Footer
-    React.createElement(
-      'div',
-      {
-        style: {
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: footerH,
-          gap: 16,
-        },
-      },
-      React.createElement(
-        'span',
-        {
-          style: {
-            fontFamily: 'Libre Baskerville',
-            fontWeight: 700,
-            fontSize: isTall ? 24 : isSquareOrPortrait ? 20 : 16,
-            color: GOLD,
-          },
-        },
-        'Cinemagraphs'
-      ),
-      React.createElement(
-        'span',
-        {
-          style: {
-            fontFamily: 'DM Sans',
-            fontSize: isTall ? 18 : isSquareOrPortrait ? 15 : 13,
-            color: 'rgba(245,240,232,0.35)',
-          },
-        },
-        'Movie reviews, visualized'
-      )
+      headerEl,
+      separatorEl,
+      ...currentRows,
+      separatorEl,
+      footerEl,
     )
-  )
+  }
 
   const satoriOpts: SatoriOptions = {
     width: W,
@@ -779,29 +783,27 @@ export async function GET(request: NextRequest) {
     ],
   }
 
-  // Test each row individually to find which one crashes satori
+  // Test each row individually — if a logo crashes satori, fall back to font
   for (let i = 0; i < rows.length; i++) {
     try {
       const testEl = React.createElement('div', { style: { display: 'flex', width: W, height: 100 } }, rows[i])
       await satori(testEl, { width: satoriOpts.width, height: 100, fonts: satoriOpts.fonts })
     } catch (rowErr) {
       const film = ordered[i]
-      console.error(`[og/list] Row ${i} crashes satori:`, {
-        filmId: film.id,
-        filmTitle: film.title,
-        hasBackdrop: !!backdropCache.get(film.id),
-        hasLogo: !!logoCache.get(film.id),
-        hasSparkline: !!sparklineCache.get(film.id),
-        display: displayMap.get(film.id),
+      console.error(`[og/list] Row ${i} ("${film.title}") crashed satori, falling back to font display`, {
         error: rowErr instanceof Error ? rowErr.message : String(rowErr),
       })
+      forceFont.add(film.id)
     }
   }
 
-  console.error('[og/list] Row tests complete, rendering full poster...')
+  // Rebuild rows with font fallbacks if any logos crashed
+  if (forceFont.size > 0) {
+    rows = buildRows()
+  }
 
   try {
-    const svg = await satori(element, satoriOpts)
+    const svg = await satori(buildElement(rows), satoriOpts)
 
     const png = await sharp(Buffer.from(svg)).png().toBuffer()
 
@@ -813,10 +815,7 @@ export async function GET(request: NextRequest) {
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    const stack = err instanceof Error ? err.stack : undefined
     console.error('OG list generation failed:', message)
-    console.error('OG list stack trace:', stack)
-    console.error('OG list film titles:', ordered.map((f) => f.title))
     return Response.json({ error: `Failed to generate poster: ${message}` }, { status: 500 })
   }
 }
