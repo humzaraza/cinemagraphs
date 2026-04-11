@@ -150,14 +150,15 @@ export const authOptions: NextAuthOptions = {
           if (dbUser.image) token.picture = dbUser.image
         }
       }
-      // On every token refresh, fetch latest name/image from DB
+      // On every token refresh, fetch latest name/image/role from DB
       if (token.id && !user && !account) {
         const dbUser = await prisma.user.findUnique({
           where: { id: token.id as string },
-          select: { name: true, email: true, image: true },
+          select: { name: true, email: true, image: true, role: true },
         })
         if (dbUser) {
           token.name = dbUser.name || dbUser.email.split('@')[0]
+          token.role = dbUser.role
           if (dbUser.image) token.picture = dbUser.image
         }
       }
