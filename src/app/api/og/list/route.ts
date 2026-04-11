@@ -348,6 +348,14 @@ export async function GET(request: NextRequest) {
   await Promise.all(
     ordered.map(async (film) => {
       const raw = film.sentimentGraph?.dataPoints
+      console.error('[og/list] Film sparkline debug:', {
+        filmId: film.id,
+        filmTitle: film.title,
+        hasSentimentGraph: !!film.sentimentGraph,
+        typeofDataPoints: typeof raw,
+        isArray: Array.isArray(raw),
+        dataPointsPreview: JSON.stringify(raw)?.substring(0, 200),
+      })
       const dataPoints = (Array.isArray(raw) ? raw : []) as unknown as SentimentDataPoint[]
       if (dataPoints.length >= 2) {
         const result = await buildSparklinePng(dataPoints, sparkW, sparkH)
@@ -761,7 +769,10 @@ export async function GET(request: NextRequest) {
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
+    const stack = err instanceof Error ? err.stack : undefined
     console.error('OG list generation failed:', message)
+    console.error('OG list stack trace:', stack)
+    console.error('OG list film titles:', ordered.map((f) => f.title))
     return Response.json({ error: `Failed to generate poster: ${message}` }, { status: 500 })
   }
 }
