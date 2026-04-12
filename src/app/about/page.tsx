@@ -39,21 +39,6 @@ function TealDashedGraph() {
   )
 }
 
-function LiveReactionGraph() {
-  return (
-    <svg viewBox="0 0 280 80" className="w-full h-auto" aria-hidden="true">
-      <line x1="0" y1="20" x2="280" y2="20" stroke="#2a2a3e" strokeWidth="0.5" />
-      <line x1="0" y1="40" x2="280" y2="40" stroke="#2a2a3e" strokeWidth="0.5" />
-      <line x1="0" y1="60" x2="280" y2="60" stroke="#2a2a3e" strokeWidth="0.5" />
-      <path d="M0,55 L20,52 L40,48 L60,50 L80,38 L100,30 L120,35 L140,25 L160,28 L180,20 L200,32 L220,26 L240,30 L260,22 L280,18" fill="none" stroke="#2DD4A8" strokeWidth="2" strokeDasharray="4 3" />
-      {/* reaction dots */}
-      <circle cx="80" cy="38" r="3" fill="#2DD4A8" opacity="0.6" />
-      <circle cx="140" cy="25" r="3" fill="#C8A951" opacity="0.6" />
-      <circle cx="180" cy="20" r="3" fill="#2DD4A8" opacity="0.6" />
-      <circle cx="240" cy="30" r="3" fill="#ef4444" opacity="0.4" />
-    </svg>
-  )
-}
 
 /* ── FAQ data ── */
 
@@ -140,7 +125,7 @@ export default function AboutPage() {
             How the graphs are built
           </h2>
           <p className="text-sm md:text-base text-cinema-muted max-w-xl mx-auto">
-            Every Cinemagraphs sentiment graph is built from up to three sources of data.
+            Every Cinemagraphs sentiment graph is built from up to two sources of data.
           </p>
         </div>
 
@@ -210,46 +195,6 @@ export default function AboutPage() {
           </div>
         </div>
 
-        {/* Source 3 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 items-center">
-          <div>
-            <span className="text-xs text-cinema-gold uppercase tracking-wider font-semibold">03</span>
-            <h3 className="font-[family-name:var(--font-playfair)] text-xl md:text-2xl font-bold text-cinema-cream mt-2 mb-4">
-              Live reactions while watching
-            </h3>
-            <p className="text-sm text-cinema-muted leading-relaxed mb-3">
-              Live React mode lets you tap reaction buttons in real time as you watch a film. Each reaction is timestamped and contributes to the community sentiment line. Five reaction types are available:
-            </p>
-            <div className="flex gap-3 text-xl">
-              {['👍', '👎', '🤩', '😱', '😂'].map((emoji) => (
-                <span
-                  key={emoji}
-                  className="w-9 h-9 flex items-center justify-center rounded-lg bg-cinema-dark border border-cinema-border text-base"
-                >
-                  {emoji}
-                </span>
-              ))}
-            </div>
-          </div>
-          <div className="bg-cinema-darker rounded-xl border border-cinema-border p-5">
-            <div className="flex items-center justify-center gap-2 mb-4">
-              {['👍', '👎', '🤩', '😱', '😂'].map((emoji) => (
-                <button
-                  key={emoji}
-                  className="w-10 h-10 flex items-center justify-center rounded-lg bg-cinema-dark/80 border border-cinema-border/60 text-lg hover:border-cinema-gold/30 transition-colors cursor-default"
-                  disabled
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              <span className="text-[10px] text-cinema-muted uppercase tracking-wider">Live session active</span>
-            </div>
-            <LiveReactionGraph />
-          </div>
-        </div>
       </section>
 
       {/* ── 3b. The Movie Market ── */}
