@@ -61,31 +61,49 @@ const GRAPH_PAD_BOTTOM = 6
 const GRAPH_PAD_LEFT = 12
 const GRAPH_PAD_RIGHT = 12
 
-function buildLinePath(points: { score: number }[], w: number, h: number): string {
+// Dynamic y-axis: floor one whole number below the lowest data point, ceiling always 10
+function computeYFloor(points: { score: number }[]): number {
+  if (points.length === 0) return 0
+  const minScore = Math.min(...points.map((p) => p.score))
+  return Math.max(0, Math.floor(minScore) - 1)
+}
+
+function computeYLabels(yFloor: number): number[] {
+  const range = 10 - yFloor
+  const step = range > 5 ? 2 : 1
+  const labels: number[] = []
+  for (let v = 10; v >= yFloor; v -= step) labels.push(v)
+  if (labels[labels.length - 1] !== yFloor) labels.push(yFloor)
+  return labels
+}
+
+function buildLinePath(points: { score: number }[], w: number, h: number, yFloor: number): string {
   if (points.length < 2) return ''
+  const range = 10 - yFloor
   const drawW = w - GRAPH_PAD_LEFT - GRAPH_PAD_RIGHT
   const drawH = h - GRAPH_PAD_TOP - GRAPH_PAD_BOTTOM
   return points
     .map((dp, i) => {
       const px = GRAPH_PAD_LEFT + (i / (points.length - 1)) * drawW
-      const py = GRAPH_PAD_TOP + drawH - ((dp.score - 1) / 9) * drawH
+      const py = GRAPH_PAD_TOP + drawH - ((dp.score - yFloor) / range) * drawH
       return `${i === 0 ? 'M' : 'L'}${px.toFixed(1)},${py.toFixed(1)}`
     })
     .join(' ')
 }
 
-function buildFillPath(points: { score: number }[], w: number, h: number): string {
+function buildFillPath(points: { score: number }[], w: number, h: number, yFloor: number): string {
   if (points.length < 2) return ''
   const drawW = w - GRAPH_PAD_LEFT - GRAPH_PAD_RIGHT
-  const line = buildLinePath(points, w, h)
+  const line = buildLinePath(points, w, h, yFloor)
   const lastX = GRAPH_PAD_LEFT + drawW
   const firstX = GRAPH_PAD_LEFT
   return `${line} L${lastX.toFixed(1)},${h.toFixed(1)} L${firstX.toFixed(1)},${h.toFixed(1)} Z`
 }
 
-function yForScore(score: number, h: number): number {
+function yForScore(score: number, h: number, yFloor: number): number {
+  const range = 10 - yFloor
   const drawH = h - GRAPH_PAD_TOP - GRAPH_PAD_BOTTOM
-  return GRAPH_PAD_TOP + drawH - ((score - 1) / 9) * drawH
+  return GRAPH_PAD_TOP + drawH - ((score - yFloor) / range) * drawH
 }
 
 // Build graph panel with Y-axis labels + SVG chart (for Cinematic Overlay — with container)
@@ -94,13 +112,16 @@ function buildGraphPanel(
   gw: number,
   gh: number
 ): React.ReactElement {
-  const linePath = buildLinePath(points, gw, gh)
-  const fillPath = buildFillPath(points, gw, gh)
-  const midY = yForScore(5, gh)
+  const yFloor = computeYFloor(points)
+  const range = 10 - yFloor
+  const linePath = buildLinePath(points, gw, gh, yFloor)
+  const fillPath = buildFillPath(points, gw, gh, yFloor)
+  const midScore = yFloor + range / 2
+  const midY = yForScore(midScore, gh, yFloor)
 
   const svgChildren: React.ReactElement[] = []
 
-  // Dashed midline at score 5
+  // Dashed midline at midpoint of visible range
   svgChildren.push(
     React.createElement('line', {
       key: 'mid', x1: 0, y1: midY, x2: gw, y2: midY,
@@ -127,16 +148,16 @@ function buildGraphPanel(
   const drawH = gh - GRAPH_PAD_TOP - GRAPH_PAD_BOTTOM
   points.forEach((dp, i) => {
     const px = GRAPH_PAD_LEFT + (i / (points.length - 1)) * drawW
-    const py = GRAPH_PAD_TOP + drawH - ((dp.score - 1) / 9) * drawH
+    const py = GRAPH_PAD_TOP + drawH - ((dp.score - yFloor) / range) * drawH
     svgChildren.push(
       React.createElement('circle', { key: `d${i}`, cx: px, cy: py, r: 5, fill: GOLD })
     )
   })
 
-  // Y-axis labels
-  const yLabels = [10, 7, 5, 1]
+  // Y-axis labels — dynamic based on data range
+  const yLabels = computeYLabels(yFloor)
   const labelEls = yLabels.map((val) => {
-    const topPct = ((10 - val) / 9) * 100
+    const topPct = ((10 - val) / range) * 100
     return React.createElement('div', {
       key: `y${val}`,
       style: {
@@ -166,14 +187,17 @@ function buildBorderlessGraph(
   gh: number,
   runtimeMin?: number | null
 ): React.ReactElement {
-  const linePath = buildLinePath(points, gw, gh)
-  const fillPath = buildFillPath(points, gw, gh)
+  const yFloor = computeYFloor(points)
+  const range = 10 - yFloor
+  const linePath = buildLinePath(points, gw, gh, yFloor)
+  const fillPath = buildFillPath(points, gw, gh, yFloor)
 
   const svgChildren: React.ReactElement[] = []
 
-  // Faint horizontal grid lines at scores 2, 4, 6, 8, 10
-  for (const score of [2, 4, 6, 8, 10]) {
-    const y = yForScore(score, gh)
+  // Faint horizontal grid lines at y-axis label positions
+  const yLabels = computeYLabels(yFloor)
+  for (const score of yLabels) {
+    const y = yForScore(score, gh, yFloor)
     svgChildren.push(
       React.createElement('line', {
         key: `grid${score}`, x1: 0, y1: y, x2: gw, y2: y,
@@ -201,7 +225,7 @@ function buildBorderlessGraph(
   const drawH2 = gh - GRAPH_PAD_TOP - GRAPH_PAD_BOTTOM
   points.forEach((dp, i) => {
     const px = GRAPH_PAD_LEFT + (i / (points.length - 1)) * drawW2
-    const py = GRAPH_PAD_TOP + drawH2 - ((dp.score - 1) / 9) * drawH2
+    const py = GRAPH_PAD_TOP + drawH2 - ((dp.score - yFloor) / range) * drawH2
     // Outer glow
     svgChildren.push(
       React.createElement('circle', { key: `glow${i}`, cx: px, cy: py, r: 10, fill: `${GOLD}30` })
@@ -211,10 +235,9 @@ function buildBorderlessGraph(
     )
   })
 
-  // Y-axis labels
-  const yLabels = [10, 8, 6, 4, 2]
+  // Y-axis labels — dynamic based on data range
   const labelEls = yLabels.map((val) => {
-    const topPct = ((10 - val) / 9) * 100
+    const topPct = ((10 - val) / range) * 100
     return React.createElement('div', {
       key: `y${val}`,
       style: {
