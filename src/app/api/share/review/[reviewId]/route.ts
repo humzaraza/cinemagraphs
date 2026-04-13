@@ -55,12 +55,17 @@ function buildUserDataPoints(
     .map((dp) => ({ label: dp.label, score: beatRatings[dp.label] }))
 }
 
+// Padding to prevent dots at 10.0 / 1.0 from being clipped
+const GRAPH_PAD_TOP = 14
+const GRAPH_PAD_BOTTOM = 6
+
 function buildLinePath(points: { score: number }[], w: number, h: number): string {
   if (points.length < 2) return ''
+  const drawH = h - GRAPH_PAD_TOP - GRAPH_PAD_BOTTOM
   return points
     .map((dp, i) => {
       const px = (i / (points.length - 1)) * w
-      const py = h - ((dp.score - 1) / 9) * h
+      const py = GRAPH_PAD_TOP + drawH - ((dp.score - 1) / 9) * drawH
       return `${i === 0 ? 'M' : 'L'}${px.toFixed(1)},${py.toFixed(1)}`
     })
     .join(' ')
@@ -73,7 +78,8 @@ function buildFillPath(points: { score: number }[], w: number, h: number): strin
 }
 
 function yForScore(score: number, h: number): number {
-  return h - ((score - 1) / 9) * h
+  const drawH = h - GRAPH_PAD_TOP - GRAPH_PAD_BOTTOM
+  return GRAPH_PAD_TOP + drawH - ((score - 1) / 9) * drawH
 }
 
 // Build graph panel with Y-axis labels + SVG chart (for Cinematic Overlay — with container)
@@ -111,9 +117,10 @@ function buildGraphPanel(
   }
 
   // Dots
+  const drawH = gh - GRAPH_PAD_TOP - GRAPH_PAD_BOTTOM
   points.forEach((dp, i) => {
     const px = (i / (points.length - 1)) * gw
-    const py = gh - ((dp.score - 1) / 9) * gh
+    const py = GRAPH_PAD_TOP + drawH - ((dp.score - 1) / 9) * drawH
     svgChildren.push(
       React.createElement('circle', { key: `d${i}`, cx: px, cy: py, r: 5, fill: GOLD })
     )
@@ -149,7 +156,8 @@ function buildGraphPanel(
 function buildBorderlessGraph(
   points: { score: number }[],
   gw: number,
-  gh: number
+  gh: number,
+  runtimeMin?: number | null
 ): React.ReactElement {
   const linePath = buildLinePath(points, gw, gh)
   const fillPath = buildFillPath(points, gw, gh)
@@ -182,9 +190,10 @@ function buildBorderlessGraph(
   }
 
   // Dots — slightly larger
+  const drawH2 = gh - GRAPH_PAD_TOP - GRAPH_PAD_BOTTOM
   points.forEach((dp, i) => {
     const px = (i / (points.length - 1)) * gw
-    const py = gh - ((dp.score - 1) / 9) * gh
+    const py = GRAPH_PAD_TOP + drawH2 - ((dp.score - 1) / 9) * drawH2
     // Outer glow
     svgChildren.push(
       React.createElement('circle', { key: `glow${i}`, cx: px, cy: py, r: 10, fill: `${GOLD}30` })
@@ -208,15 +217,41 @@ function buildBorderlessGraph(
     }, val.toString())
   })
 
+  // X-axis runtime labels
+  const runtimeLabel = runtimeMin
+    ? `${Math.floor(runtimeMin / 60)}h ${runtimeMin % 60}m`
+    : null
+
+  const xAxisEl = runtimeLabel
+    ? React.createElement('div', {
+        style: {
+          display: 'flex', flexDirection: 'row', justifyContent: 'space-between',
+          marginLeft: 48, marginRight: 0, marginTop: 4,
+        },
+      },
+        React.createElement('span', {
+          style: { fontSize: 16, color: 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans' },
+        }, '0m'),
+        React.createElement('span', {
+          style: { fontSize: 16, color: 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans' },
+        }, runtimeLabel)
+      )
+    : null
+
   return React.createElement('div', {
-    style: { display: 'flex', flexDirection: 'row', width: '100%', height: '100%' },
+    style: { display: 'flex', flexDirection: 'column', width: '100%', height: '100%' },
   },
     React.createElement('div', {
-      style: { width: 48, position: 'relative', flexShrink: 0, display: 'flex', flexDirection: 'column' },
-    }, ...labelEls),
-    React.createElement('svg', {
-      width: gw, height: gh, viewBox: `0 0 ${gw} ${gh}`, style: { flex: 1 },
-    }, ...svgChildren)
+      style: { display: 'flex', flexDirection: 'row', flex: 1 },
+    },
+      React.createElement('div', {
+        style: { width: 48, position: 'relative', flexShrink: 0, display: 'flex', flexDirection: 'column' },
+      }, ...labelEls),
+      React.createElement('svg', {
+        width: gw, height: gh, viewBox: `0 0 ${gw} ${gh}`, style: { flex: 1 },
+      }, ...svgChildren)
+    ),
+    xAxisEl
   )
 }
 
@@ -242,6 +277,7 @@ export async function GET(
             posterUrl: true,
             releaseDate: true,
             director: true,
+            runtime: true,
             sentimentGraph: { select: { dataPoints: true } },
           },
         },
@@ -367,7 +403,7 @@ export async function GET(
               position: 'absolute', top: 1260, left: 40, right: 40, height: graphH,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             },
-          }, buildBorderlessGraph(userPoints, graphW, graphH))
+          }, buildBorderlessGraph(userPoints, graphW, graphH, review.film.runtime))
         : null,
 
       // Compact quote
