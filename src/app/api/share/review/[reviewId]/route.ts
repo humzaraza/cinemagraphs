@@ -255,6 +255,235 @@ function buildBorderlessGraph(
   )
 }
 
+// ──────────────────────────────────────────────
+// Cinematic poster builder (16:9 landscape)
+// Backdrop left, graph right, score + title overlay
+// ──────────────────────────────────────────────
+function buildCinematicPoster(
+  filmTitle: string,
+  year: string,
+  director: string,
+  score: number,
+  username: string,
+  quoteText: string,
+  backdropSrc: string | null,
+  userPoints: { label: string; score: number }[],
+  hasGraph: boolean,
+  runtimeMin: number | null
+): React.ReactElement {
+  const CW = 1080
+  const CH = 608
+  const graphSvgW = 432
+  const graphH = 380
+
+  const runtimeLabel = runtimeMin
+    ? `${Math.floor(runtimeMin / 60)}h ${runtimeMin % 60}m`
+    : null
+
+  const children: (React.ReactElement | null)[] = []
+
+  // Full backdrop image
+  children.push(
+    backdropSrc
+      ? React.createElement('img', {
+          key: 'bg', src: backdropSrc,
+          style: {
+            position: 'absolute', top: 0, left: 0, width: CW, height: CH,
+            objectFit: 'cover', objectPosition: 'center center',
+          },
+        })
+      : React.createElement('div', {
+          key: 'bg',
+          style: { position: 'absolute', top: 0, left: 0, width: CW, height: CH, backgroundColor: '#1a1d28' },
+        })
+  )
+
+  // Gradient: left→right (backdrop visible left, dark right for graph)
+  children.push(
+    React.createElement('div', {
+      key: 'grad-lr',
+      style: {
+        position: 'absolute', top: 0, left: 0, width: CW, height: CH,
+        background: 'linear-gradient(to right, rgba(15,17,23,0.25) 0%, rgba(15,17,23,0.55) 35%, rgba(15,17,23,0.88) 55%, rgba(15,17,23,0.97) 70%)',
+      },
+    })
+  )
+
+  // Gradient: top→bottom (text readability on left)
+  children.push(
+    React.createElement('div', {
+      key: 'grad-bt',
+      style: {
+        position: 'absolute', top: 0, left: 0, width: CW, height: CH,
+        background: 'linear-gradient(to bottom, rgba(15,17,23,0.15) 0%, rgba(15,17,23,0.3) 60%, rgba(15,17,23,0.7) 100%)',
+      },
+    })
+  )
+
+  // Top-left branding
+  children.push(
+    React.createElement('div', {
+      key: 'brand',
+      style: {
+        position: 'absolute', top: 30, left: 44,
+        fontSize: 11, fontWeight: 700, color: GOLD, letterSpacing: 5, fontFamily: 'DM Sans',
+      },
+    }, 'CINEMAGRAPHS')
+  )
+
+  // Left column: title + year/director + score
+  const leftContent: (React.ReactElement | null)[] = [
+    React.createElement('div', {
+      key: 'title',
+      style: {
+        fontSize: 28, fontWeight: 700, color: IVORY, fontFamily: 'Playfair Display', lineHeight: 1.2,
+      },
+    }, filmTitle),
+  ]
+  if (year || director) {
+    leftContent.push(
+      React.createElement('div', {
+        key: 'meta',
+        style: { fontSize: 13, color: 'rgba(255,255,255,0.45)', marginTop: 6, fontFamily: 'DM Sans' },
+      }, [year, director].filter(Boolean).join('  \u00b7  '))
+    )
+  }
+  leftContent.push(
+    React.createElement('div', {
+      key: 'score',
+      style: { display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 24 },
+    },
+      React.createElement('div', {
+        style: { fontSize: 52, fontWeight: 700, color: GOLD, fontFamily: 'Playfair Display', lineHeight: 1 },
+      }, score.toFixed(1)),
+      React.createElement('div', {
+        style: { fontSize: 14, color: 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans' },
+      }, '/ 10')
+    )
+  )
+  children.push(
+    React.createElement('div', {
+      key: 'left',
+      style: {
+        position: 'absolute', top: 72, left: 44, width: 440,
+        display: 'flex', flexDirection: 'column',
+      },
+    }, ...leftContent)
+  )
+
+  // Left bottom: quote or username
+  if (quoteText) {
+    children.push(
+      React.createElement('div', {
+        key: 'quote',
+        style: {
+          position: 'absolute', bottom: 44, left: 44, width: 420,
+          display: 'flex', flexDirection: 'row',
+        },
+      },
+        React.createElement('div', {
+          style: { width: 2, backgroundColor: GOLD, borderRadius: 1, marginRight: 14, flexShrink: 0 },
+        }),
+        React.createElement('div', {
+          style: { display: 'flex', flexDirection: 'column', flex: 1 },
+        },
+          React.createElement('div', {
+            style: {
+              fontSize: 14, fontStyle: 'italic', color: 'rgba(255,255,255,0.45)',
+              lineHeight: 1.5, fontFamily: 'DM Sans',
+            },
+          }, `\u201c${truncateAtWord(quoteText, 90)}\u201d`),
+          React.createElement('div', {
+            style: { fontSize: 12, color: GOLD, marginTop: 3, fontFamily: 'DM Sans', alignSelf: 'flex-end' },
+          }, `\u2014 ${username}`)
+        )
+      )
+    )
+  } else {
+    children.push(
+      React.createElement('div', {
+        key: 'user',
+        style: {
+          position: 'absolute', bottom: 50, left: 44,
+          fontSize: 14, color: 'rgba(255,255,255,0.35)', fontFamily: 'DM Sans',
+        },
+      }, `reviewed by ${username}`)
+    )
+  }
+
+  // Right side: SENTIMENT ARC label
+  if (hasGraph) {
+    children.push(
+      React.createElement('div', {
+        key: 'arc-label',
+        style: {
+          position: 'absolute', top: 36, left: 560,
+          fontSize: 11, fontWeight: 700, color: GOLD, letterSpacing: 5, fontFamily: 'DM Sans',
+        },
+      }, 'SENTIMENT ARC')
+    )
+
+    // Graph panel + x-axis runtime labels
+    const graphChildren: (React.ReactElement | null)[] = [
+      buildGraphPanel(userPoints, graphSvgW, graphH),
+    ]
+    if (runtimeLabel) {
+      graphChildren.push(
+        React.createElement('div', {
+          key: 'xaxis',
+          style: {
+            display: 'flex', justifyContent: 'space-between', marginLeft: 48, marginTop: 4,
+          },
+        },
+          React.createElement('span', {
+            style: { fontSize: 12, color: 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans' },
+          }, '0m'),
+          React.createElement('span', {
+            style: { fontSize: 12, color: 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans' },
+          }, runtimeLabel)
+        )
+      )
+    }
+    children.push(
+      React.createElement('div', {
+        key: 'graph',
+        style: {
+          position: 'absolute', top: 62, left: 560, width: 480, height: graphH + 30,
+          display: 'flex', flexDirection: 'column',
+        },
+      }, ...graphChildren)
+    )
+  }
+
+  // Bottom-right branding
+  children.push(
+    React.createElement('div', {
+      key: 'footer',
+      style: {
+        position: 'absolute', bottom: 14, right: 40,
+        fontSize: 12, color: 'rgba(255,255,255,0.2)', fontFamily: 'DM Sans',
+      },
+    }, 'cinemagraphs.ca')
+  )
+
+  // Gold accent bar
+  children.push(
+    React.createElement('div', {
+      key: 'gold-bar',
+      style: {
+        position: 'absolute', bottom: 0, left: 0, width: CW, height: 3, backgroundColor: GOLD,
+      },
+    })
+  )
+
+  return React.createElement('div', {
+    style: {
+      width: CW, height: CH, display: 'flex', flexDirection: 'column',
+      backgroundColor: DARK, position: 'relative', overflow: 'hidden',
+    },
+  }, ...children)
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ reviewId: string }> }
@@ -266,6 +495,7 @@ export async function GET(
     }
 
     const { reviewId } = await params
+    const style = request.nextUrl.searchParams.get('style') || 'graph-hero'
 
     const review = await prisma.userReview.findUnique({
       where: { id: reviewId },
@@ -275,6 +505,7 @@ export async function GET(
           select: {
             title: true,
             posterUrl: true,
+            backdropUrl: true,
             releaseDate: true,
             director: true,
             runtime: true,
@@ -310,7 +541,39 @@ export async function GET(
     const userPoints = buildUserDataPoints(beatRatings, graphLabels)
     const hasGraph = userPoints.length >= 2
 
+    // Backdrop for cinematic style (landscape backdrop, fall back to poster)
+    const backdropSrc = review.film.backdropUrl
+      ? `https://image.tmdb.org/t/p/w1280${review.film.backdropUrl}`
+      : posterUrl
+
     const fonts = await loadFonts()
+    const satoriFonts = [
+      { name: 'Playfair Display', data: fonts.playfair, style: 'normal' as const, weight: 700 as const },
+      { name: 'DM Sans', data: fonts.dmSans, style: 'normal' as const, weight: 400 as const },
+      { name: 'DM Sans', data: fonts.dmSansItalic, style: 'italic' as const, weight: 400 as const },
+    ]
+
+    // ──────────────────────────────────────────────
+    // Cinematic style (16:9 landscape) — early return
+    // ──────────────────────────────────────────────
+    if (style === 'cinematic') {
+      const cinElement = buildCinematicPoster(
+        filmTitle, year, director, score, username, quoteText,
+        backdropSrc, userPoints, hasGraph, review.film.runtime
+      )
+      const cinSvg = await satori(cinElement, { width: 1080, height: 608, fonts: satoriFonts })
+      const cinPng = await sharp(Buffer.from(cinSvg)).png().toBuffer()
+      return new NextResponse(new Uint8Array(cinPng), {
+        headers: {
+          'Content-Type': 'image/png',
+          'Cache-Control': 'public, max-age=0, must-revalidate',
+        },
+      })
+    }
+
+    // ──────────────────────────────────────────────
+    // Graph Hero style (9:16 vertical) — default
+    // ──────────────────────────────────────────────
     let element: React.ReactElement
 
     const graphW = W - 200
@@ -445,15 +708,7 @@ export async function GET(
       })
     )
 
-    const svg = await satori(element, {
-      width: W,
-      height: H,
-      fonts: [
-        { name: 'Playfair Display', data: fonts.playfair, style: 'normal', weight: 700 },
-        { name: 'DM Sans', data: fonts.dmSans, style: 'normal', weight: 400 },
-        { name: 'DM Sans', data: fonts.dmSansItalic, style: 'italic', weight: 400 },
-      ],
-    })
+    const svg = await satori(element, { width: W, height: H, fonts: satoriFonts })
 
     const png = await sharp(Buffer.from(svg)).png().toBuffer()
 
