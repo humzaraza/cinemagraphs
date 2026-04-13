@@ -25,6 +25,20 @@ export async function GET(request: NextRequest) {
       orderBy: { title: 'asc' },
     })
 
+    // Sort by match quality: exact > starts-with > contains, then alphabetical
+    const qLower = sanitizedQuery.toLowerCase()
+    films.sort((a, b) => {
+      const aLower = a.title.toLowerCase()
+      const bLower = b.title.toLowerCase()
+      const aExact = aLower === qLower
+      const bExact = bLower === qLower
+      if (aExact !== bExact) return aExact ? -1 : 1
+      const aStarts = aLower.startsWith(qLower)
+      const bStarts = bLower.startsWith(qLower)
+      if (aStarts !== bStarts) return aStarts ? -1 : 1
+      return aLower.localeCompare(bLower)
+    })
+
     return Response.json({ films, query: sanitizedQuery })
   } catch (err) {
     apiLogger.error({ err }, 'Failed to search films')

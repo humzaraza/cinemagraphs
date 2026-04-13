@@ -52,6 +52,47 @@ export async function GET(request: NextRequest) {
         break
     }
 
+    // When searching by title, sort by match quality (exact > starts-with > contains)
+    // then paginate in JS so the best match appears first across all pages
+    if (q) {
+      const allMatches = await prisma.film.findMany({
+        where,
+        include: {
+          sentimentGraph: {
+            select: { overallScore: true, dataPoints: true, biggestSwing: true },
+          },
+        },
+        orderBy,
+        take: 500,
+      })
+
+      const qLower = q.toLowerCase()
+      allMatches.sort((a, b) => {
+        const aLower = a.title.toLowerCase()
+        const bLower = b.title.toLowerCase()
+        const aExact = aLower === qLower
+        const bExact = bLower === qLower
+        if (aExact !== bExact) return aExact ? -1 : 1
+        const aStarts = aLower.startsWith(qLower)
+        const bStarts = bLower.startsWith(qLower)
+        if (aStarts !== bStarts) return aStarts ? -1 : 1
+        return aLower.localeCompare(bLower)
+      })
+
+      const total = allMatches.length
+      const films = allMatches.slice(skip, skip + limit)
+
+      return Response.json({
+        films,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      })
+    }
+
     const [films, total] = await Promise.all([
       prisma.film.findMany({
         where,

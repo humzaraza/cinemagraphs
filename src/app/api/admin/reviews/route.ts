@@ -37,6 +37,21 @@ export async function GET(request: NextRequest) {
       },
     })
 
+    // Sort by match quality when searching: exact > starts-with > contains
+    if (search.trim()) {
+      const qLower = search.trim().toLowerCase()
+      reviews.sort((a, b) => {
+        const tier = (r: (typeof reviews)[number]) => {
+          const fields = [r.film.title, r.user.name ?? '', r.user.email ?? '']
+          const lower = fields.map((f) => f.toLowerCase())
+          if (lower.some((f) => f === qLower)) return 0
+          if (lower.some((f) => f.startsWith(qLower))) return 1
+          return 2
+        }
+        return tier(a) - tier(b)
+      })
+    }
+
     // Also return flagged count for badge
     const flaggedCount = await prisma.userReview.count({ where: { status: 'flagged' } })
 
