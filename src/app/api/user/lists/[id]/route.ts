@@ -33,6 +33,7 @@ export async function GET(
                 title: true,
                 posterUrl: true,
                 releaseDate: true,
+                runtime: true,
                 sentimentGraph: {
                   select: { overallScore: true, dataPoints: true },
                 },
@@ -57,6 +58,7 @@ export async function GET(
           posterUrl: f.film.posterUrl,
           year: f.film.releaseDate ? new Date(f.film.releaseDate).getFullYear() : null,
           score: f.film.sentimentGraph?.overallScore ?? null,
+          runtime: f.film.runtime ?? null,
           sparklineData: dp?.map((d) => d.score) ?? null,
           dominantColor: null,
           addedAt: f.addedAt,
