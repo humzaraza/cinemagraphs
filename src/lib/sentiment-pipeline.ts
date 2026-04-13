@@ -152,6 +152,45 @@ async function lookupImdbId(tmdbId: number): Promise<string | null> {
   }
 }
 
+/**
+ * Fetch reviews from all sources and check if quality threshold is met.
+ * Does NOT call Claude API — safe to run without cost concerns.
+ * Stores fetched reviews in DB (deduplicates automatically).
+ */
+export async function fetchReviewsAndCheckThreshold(filmId: string): Promise<{
+  qualityCount: number
+  minRequired: number
+  meetsThreshold: boolean
+}> {
+  const film = await prisma.film.findUnique({ where: { id: filmId } })
+  if (!film) throw new Error(`Film not found: ${filmId}`)
+
+  // Ensure IMDb ID for review sources that need it
+  if (!film.imdbId) {
+    const imdbId = await lookupImdbId(film.tmdbId)
+    if (imdbId) {
+      await prisma.film.update({ where: { id: filmId }, data: { imdbId } })
+      film.imdbId = imdbId
+    }
+  }
+
+  // Fetch and store reviews from all sources (deduplicates on store)
+  await fetchAllReviews(film)
+
+  // Count quality reviews
+  const allReviews = await prisma.review.findMany({
+    where: { filmId },
+    select: { reviewText: true },
+  })
+  const qualityCount = allReviews.filter((r) => isQualityReview(r.reviewText)).length
+
+  const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
+  const isRecent = film.releaseDate && film.releaseDate > sixMonthsAgo
+  const minRequired = isRecent ? 1 : 2
+
+  return { qualityCount, minRequired, meetsThreshold: qualityCount >= minRequired }
+}
+
 export async function generateSentimentGraph(filmId: string): Promise<void> {
   // 1. Get film from database
   const film = await prisma.film.findUnique({ where: { id: filmId } })
