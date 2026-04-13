@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
 
     const sanitizedQuery = query.trim().slice(0, 200)
 
-    const films = await prisma.film.findMany({
+    const allMatches = await prisma.film.findMany({
       where: {
         status: 'ACTIVE',
         title: {
@@ -21,13 +21,13 @@ export async function GET(request: NextRequest) {
         },
       },
       include: { sentimentGraph: { select: { overallScore: true } } },
-      take: 20,
       orderBy: { title: 'asc' },
+      take: 200,
     })
 
     // Sort by match quality: exact > starts-with > contains, then alphabetical
     const qLower = sanitizedQuery.toLowerCase()
-    films.sort((a, b) => {
+    allMatches.sort((a, b) => {
       const aLower = a.title.toLowerCase()
       const bLower = b.title.toLowerCase()
       const aExact = aLower === qLower
@@ -38,6 +38,8 @@ export async function GET(request: NextRequest) {
       if (aStarts !== bStarts) return aStarts ? -1 : 1
       return aLower.localeCompare(bLower)
     })
+
+    const films = allMatches.slice(0, 20)
 
     return Response.json({ films, query: sanitizedQuery })
   } catch (err) {
