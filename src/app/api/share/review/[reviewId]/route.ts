@@ -55,16 +55,19 @@ function buildUserDataPoints(
     .map((dp) => ({ label: dp.label, score: beatRatings[dp.label] }))
 }
 
-// Padding to prevent dots at 10.0 / 1.0 from being clipped
+// Padding to prevent dots at edges from being clipped
 const GRAPH_PAD_TOP = 14
 const GRAPH_PAD_BOTTOM = 6
+const GRAPH_PAD_LEFT = 12
+const GRAPH_PAD_RIGHT = 12
 
 function buildLinePath(points: { score: number }[], w: number, h: number): string {
   if (points.length < 2) return ''
+  const drawW = w - GRAPH_PAD_LEFT - GRAPH_PAD_RIGHT
   const drawH = h - GRAPH_PAD_TOP - GRAPH_PAD_BOTTOM
   return points
     .map((dp, i) => {
-      const px = (i / (points.length - 1)) * w
+      const px = GRAPH_PAD_LEFT + (i / (points.length - 1)) * drawW
       const py = GRAPH_PAD_TOP + drawH - ((dp.score - 1) / 9) * drawH
       return `${i === 0 ? 'M' : 'L'}${px.toFixed(1)},${py.toFixed(1)}`
     })
@@ -73,8 +76,11 @@ function buildLinePath(points: { score: number }[], w: number, h: number): strin
 
 function buildFillPath(points: { score: number }[], w: number, h: number): string {
   if (points.length < 2) return ''
+  const drawW = w - GRAPH_PAD_LEFT - GRAPH_PAD_RIGHT
   const line = buildLinePath(points, w, h)
-  return `${line} L${w.toFixed(1)},${h.toFixed(1)} L0,${h.toFixed(1)} Z`
+  const lastX = GRAPH_PAD_LEFT + drawW
+  const firstX = GRAPH_PAD_LEFT
+  return `${line} L${lastX.toFixed(1)},${h.toFixed(1)} L${firstX.toFixed(1)},${h.toFixed(1)} Z`
 }
 
 function yForScore(score: number, h: number): number {
@@ -117,9 +123,10 @@ function buildGraphPanel(
   }
 
   // Dots
+  const drawW = gw - GRAPH_PAD_LEFT - GRAPH_PAD_RIGHT
   const drawH = gh - GRAPH_PAD_TOP - GRAPH_PAD_BOTTOM
   points.forEach((dp, i) => {
-    const px = (i / (points.length - 1)) * gw
+    const px = GRAPH_PAD_LEFT + (i / (points.length - 1)) * drawW
     const py = GRAPH_PAD_TOP + drawH - ((dp.score - 1) / 9) * drawH
     svgChildren.push(
       React.createElement('circle', { key: `d${i}`, cx: px, cy: py, r: 5, fill: GOLD })
@@ -190,9 +197,10 @@ function buildBorderlessGraph(
   }
 
   // Dots — slightly larger
+  const drawW2 = gw - GRAPH_PAD_LEFT - GRAPH_PAD_RIGHT
   const drawH2 = gh - GRAPH_PAD_TOP - GRAPH_PAD_BOTTOM
   points.forEach((dp, i) => {
-    const px = (i / (points.length - 1)) * gw
+    const px = GRAPH_PAD_LEFT + (i / (points.length - 1)) * drawW2
     const py = GRAPH_PAD_TOP + drawH2 - ((dp.score - 1) / 9) * drawH2
     // Outer glow
     svgChildren.push(
