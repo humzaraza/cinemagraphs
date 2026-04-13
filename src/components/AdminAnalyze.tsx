@@ -6,6 +6,8 @@ interface Film {
   id: string
   title: string
   hasGraph: boolean
+  hasBeats: boolean
+  beatSource: 'graph' | 'wikipedia' | 'none'
   reviewCount: number
   graphDate: string | null
   graphDateRaw: string | null
@@ -17,9 +19,12 @@ type SortOption = 'recent' | 'title-asc' | 'title-desc' | 'reviews' | 'analyzed'
 export default function AdminAnalyze({ films: initialFilms }: { films: Film[] }) {
   const [films, setFilms] = useState(initialFilms)
   const [analyzing, setAnalyzing] = useState<string | null>(null)
+  const [generatingBeats, setGeneratingBeats] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [batchRunning, setBatchRunning] = useState(false)
+  const [beatsBatchRunning, setBeatsBatchRunning] = useState(false)
   const [results, setResults] = useState<Record<string, 'success' | 'error' | 'pending'>>({})
+  const [beatResults, setBeatResults] = useState<Record<string, 'success' | 'error'>>({})
   const [message, setMessage] = useState('')
   const [toast, setToast] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<SortOption>('recent')
@@ -76,6 +81,82 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
       setMessage(err instanceof Error ? err.message : 'Batch failed')
     } finally {
       setBatchRunning(false)
+    }
+  }
+
+  async function generateWikiBeats(filmId: string, force: boolean = false) {
+    setGeneratingBeats(filmId)
+    setMessage('')
+    try {
+      const res = await fetch(`/api/admin/films/${filmId}/generate-wiki-beats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed')
+
+      if (data.status === 'generated') {
+        setBeatResults((prev) => ({ ...prev, [filmId]: 'success' }))
+        setFilms((prev) =>
+          prev.map((f) => (f.id === filmId ? { ...f, hasBeats: true, beatSource: 'wikipedia' } : f))
+        )
+        setMessage(`Wikipedia beats generated (${data.beatCount} beats). Refresh to see in the film page.`)
+      } else {
+        setBeatResults((prev) => ({ ...prev, [filmId]: 'error' }))
+        setMessage(`Skipped: ${data.status.replace(/_/g, ' ')}`)
+      }
+    } catch (err) {
+      setBeatResults((prev) => ({ ...prev, [filmId]: 'error' }))
+      setMessage(err instanceof Error ? err.message : 'Wiki beat generation failed')
+    } finally {
+      setGeneratingBeats(null)
+    }
+  }
+
+  async function generateAllWikiBeats() {
+    const candidates = films.filter((f) => !f.hasGraph && !f.hasBeats)
+    if (candidates.length === 0) {
+      setMessage('All films already have graphs or Wikipedia beats!')
+      return
+    }
+    const confirmed = window.confirm(
+      `Generate Wikipedia beats for ${Math.min(candidates.length, 20)} films (max 20 per batch)?`
+    )
+    if (!confirmed) return
+
+    setBeatsBatchRunning(true)
+    setMessage(`Generating Wikipedia beats for up to 20 films...`)
+    try {
+      const filmIds = candidates.slice(0, 20).map((f) => f.id)
+      const res = await fetch('/api/admin/films/generate-wiki-beats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filmIds }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Batch failed')
+
+      for (const r of data.results || []) {
+        if (r.status === 'generated') {
+          setBeatResults((prev) => ({ ...prev, [r.filmId]: 'success' }))
+          setFilms((prev) =>
+            prev.map((f) =>
+              f.id === r.filmId ? { ...f, hasBeats: true, beatSource: 'wikipedia' } : f
+            )
+          )
+        } else {
+          setBeatResults((prev) => ({ ...prev, [r.filmId]: 'error' }))
+        }
+      }
+
+      setMessage(
+        `Wiki beat batch complete: ${data.generated} generated, ${data.skipped} skipped, ${data.failed} failed`
+      )
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Wiki beat batch failed')
+    } finally {
+      setBeatsBatchRunning(false)
     }
   }
 
@@ -137,6 +218,7 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
     : sortedFilms
 
   const filmsWithoutGraphs = films.filter((f) => !f.hasGraph).length
+  const filmsWithoutAnyBeats = films.filter((f) => !f.hasGraph && !f.hasBeats).length
 
   return (
     <div>
@@ -189,15 +271,29 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
             </select>
           </div>
         </div>
-        {filmsWithoutGraphs > 0 && (
-          <button
-            onClick={analyzeAll}
-            disabled={batchRunning}
-            className="px-4 py-2 bg-cinema-teal/20 text-cinema-teal border border-cinema-teal/30 rounded-lg text-sm hover:bg-cinema-teal/30 disabled:opacity-50 transition-colors"
-          >
-            {batchRunning ? 'Analyzing...' : `Generate All (${filmsWithoutGraphs})`}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {filmsWithoutAnyBeats > 0 && (
+            <button
+              onClick={generateAllWikiBeats}
+              disabled={beatsBatchRunning}
+              className="px-4 py-2 bg-cinema-gold/10 text-cinema-gold border border-cinema-gold/30 rounded-lg text-sm hover:bg-cinema-gold/20 disabled:opacity-50 transition-colors"
+              title="Generate Wikipedia story beats for films that have no NLP graph and no beats yet (max 20 per click)"
+            >
+              {beatsBatchRunning
+                ? 'Generating beats...'
+                : `Generate Wiki Beats (${Math.min(filmsWithoutAnyBeats, 20)})`}
+            </button>
+          )}
+          {filmsWithoutGraphs > 0 && (
+            <button
+              onClick={analyzeAll}
+              disabled={batchRunning}
+              className="px-4 py-2 bg-cinema-teal/20 text-cinema-teal border border-cinema-teal/30 rounded-lg text-sm hover:bg-cinema-teal/30 disabled:opacity-50 transition-colors"
+            >
+              {batchRunning ? 'Analyzing...' : `Generate All (${filmsWithoutGraphs})`}
+            </button>
+          )}
+        </div>
       </div>
 
       {message && (
@@ -212,54 +308,96 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
             <tr className="border-b border-cinema-border text-left text-cinema-muted">
               <th className="py-2 pr-4">Title</th>
               <th className="py-2 pr-4">Graph</th>
+              <th className="py-2 pr-4">Beats</th>
               <th className="py-2 pr-4">Reviews</th>
               <th className="py-2 pr-4">Last Analyzed</th>
               <th className="py-2">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {displayedFilms.map((film) => (
-              <tr key={film.id} className="border-b border-cinema-border/50">
-                <td className="py-2 pr-4 text-cinema-cream">{film.title}</td>
-                <td className="py-2 pr-4">
-                  {results[film.id] === 'success' || film.hasGraph ? (
-                    <span className="text-xs px-2 py-0.5 rounded bg-cinema-teal/10 text-cinema-teal">
-                      Ready
-                    </span>
-                  ) : results[film.id] === 'error' ? (
-                    <span className="text-xs px-2 py-0.5 rounded bg-red-500/10 text-red-400">
-                      Failed
-                    </span>
-                  ) : (
-                    <span className="text-xs px-2 py-0.5 rounded bg-cinema-muted/10 text-cinema-muted">
-                      None
-                    </span>
-                  )}
-                </td>
-                <td className="py-2 pr-4 text-cinema-muted">{film.reviewCount}</td>
-                <td className="py-2 pr-4 text-cinema-muted text-xs">
-                  {film.graphDate || '—'}
-                </td>
-                <td className="py-2">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => analyzeFilm(film.id)}
-                      disabled={analyzing === film.id || batchRunning}
-                      className="text-xs px-3 py-1 bg-cinema-gold/10 text-cinema-gold border border-cinema-gold/20 rounded hover:bg-cinema-gold/20 disabled:opacity-50 transition-colors"
-                    >
-                      {analyzing === film.id ? 'Analyzing...' : film.hasGraph ? 'Regenerate' : 'Generate'}
-                    </button>
-                    <button
-                      onClick={() => deleteFilm(film)}
-                      disabled={deleting === film.id}
-                      className="text-xs px-3 py-1 bg-red-500/10 text-red-400 border border-red-500/20 rounded hover:bg-red-500/20 disabled:opacity-50 transition-colors"
-                    >
-                      {deleting === film.id ? 'Deleting...' : 'Delete'}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+            {displayedFilms.map((film) => {
+              const effectiveSource: 'graph' | 'wikipedia' | 'none' =
+                film.hasGraph
+                  ? 'graph'
+                  : beatResults[film.id] === 'success' || film.beatSource === 'wikipedia'
+                    ? 'wikipedia'
+                    : 'none'
+              return (
+                <tr key={film.id} className="border-b border-cinema-border/50">
+                  <td className="py-2 pr-4 text-cinema-cream">{film.title}</td>
+                  <td className="py-2 pr-4">
+                    {results[film.id] === 'success' || film.hasGraph ? (
+                      <span className="text-xs px-2 py-0.5 rounded bg-cinema-teal/10 text-cinema-teal">
+                        Ready
+                      </span>
+                    ) : results[film.id] === 'error' ? (
+                      <span className="text-xs px-2 py-0.5 rounded bg-red-500/10 text-red-400">
+                        Failed
+                      </span>
+                    ) : (
+                      <span className="text-xs px-2 py-0.5 rounded bg-cinema-muted/10 text-cinema-muted">
+                        None
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-4">
+                    {effectiveSource === 'graph' ? (
+                      <span className="text-xs px-2 py-0.5 rounded bg-cinema-teal/10 text-cinema-teal">
+                        NLP
+                      </span>
+                    ) : effectiveSource === 'wikipedia' ? (
+                      <span className="text-xs px-2 py-0.5 rounded bg-cinema-gold/10 text-cinema-gold">
+                        Wikipedia
+                      </span>
+                    ) : beatResults[film.id] === 'error' ? (
+                      <span className="text-xs px-2 py-0.5 rounded bg-red-500/10 text-red-400">
+                        Failed
+                      </span>
+                    ) : (
+                      <span className="text-xs px-2 py-0.5 rounded bg-cinema-muted/10 text-cinema-muted">
+                        None
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-4 text-cinema-muted">{film.reviewCount}</td>
+                  <td className="py-2 pr-4 text-cinema-muted text-xs">
+                    {film.graphDate || '—'}
+                  </td>
+                  <td className="py-2">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => analyzeFilm(film.id)}
+                        disabled={analyzing === film.id || batchRunning}
+                        className="text-xs px-3 py-1 bg-cinema-gold/10 text-cinema-gold border border-cinema-gold/20 rounded hover:bg-cinema-gold/20 disabled:opacity-50 transition-colors"
+                      >
+                        {analyzing === film.id ? 'Analyzing...' : film.hasGraph ? 'Regenerate' : 'Generate'}
+                      </button>
+                      {!film.hasGraph && (
+                        <button
+                          onClick={() => generateWikiBeats(film.id, effectiveSource === 'wikipedia')}
+                          disabled={generatingBeats === film.id || beatsBatchRunning}
+                          className="text-xs px-3 py-1 bg-cinema-gold/5 text-cinema-gold border border-cinema-gold/20 rounded hover:bg-cinema-gold/10 disabled:opacity-50 transition-colors"
+                          title="Generate story beats from Wikipedia plot"
+                        >
+                          {generatingBeats === film.id
+                            ? 'Generating...'
+                            : effectiveSource === 'wikipedia'
+                              ? 'Regen Beats'
+                              : 'Wiki Beats'}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => deleteFilm(film)}
+                        disabled={deleting === film.id}
+                        className="text-xs px-3 py-1 bg-red-500/10 text-red-400 border border-red-500/20 rounded hover:bg-red-500/20 disabled:opacity-50 transition-colors"
+                      >
+                        {deleting === film.id ? 'Deleting...' : 'Delete'}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

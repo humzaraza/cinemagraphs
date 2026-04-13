@@ -29,16 +29,21 @@ interface Props {
   filmId: string
   hasGraph: boolean
   beats: BeatInfo[]
+  beatSource: 'graph' | 'wiki' | 'none'
 }
 
-/** Select up to 8 beats: peak, lowest, first, last, + 4 evenly distributed */
-function selectBeats(beats: BeatInfo[]): { beat: BeatInfo; tag: 'peak' | 'lowest' | null }[] {
+/** Select up to 8 beats: peak, lowest, first, last, + 4 evenly distributed.
+ *  When `taggingEnabled` is false (wiki source), peak/lowest tags are suppressed. */
+function selectBeats(
+  beats: BeatInfo[],
+  taggingEnabled: boolean
+): { beat: BeatInfo; tag: 'peak' | 'lowest' | null }[] {
   if (beats.length <= 8) {
     const peakIdx = beats.reduce((best, b, i) => (b.score > beats[best].score ? i : best), 0)
     const lowIdx = beats.reduce((best, b, i) => (b.score < beats[best].score ? i : best), 0)
     return beats.map((b, i) => ({
       beat: b,
-      tag: i === peakIdx ? 'peak' : i === lowIdx ? 'lowest' : null,
+      tag: !taggingEnabled ? null : i === peakIdx ? 'peak' : i === lowIdx ? 'lowest' : null,
     }))
   }
 
@@ -48,8 +53,10 @@ function selectBeats(beats: BeatInfo[]): { beat: BeatInfo; tag: 'peak' | 'lowest
   const selectedIndices = new Set<number>()
   selectedIndices.add(0) // first
   selectedIndices.add(beats.length - 1) // last
-  selectedIndices.add(peakIdx)
-  selectedIndices.add(lowIdx)
+  if (taggingEnabled) {
+    selectedIndices.add(peakIdx)
+    selectedIndices.add(lowIdx)
+  }
 
   // Fill remaining slots with evenly distributed points
   const remaining = beats
@@ -67,7 +74,7 @@ function selectBeats(beats: BeatInfo[]): { beat: BeatInfo; tag: 'peak' | 'lowest
   const sorted = Array.from(selectedIndices).sort((a, b) => a - b)
   return sorted.map((i) => ({
     beat: beats[i],
-    tag: i === peakIdx ? 'peak' : i === lowIdx ? 'lowest' : null,
+    tag: !taggingEnabled ? null : i === peakIdx ? 'peak' : i === lowIdx ? 'lowest' : null,
   }))
 }
 
@@ -85,7 +92,7 @@ interface ExistingReview {
   user: { id: string; name: string | null; image: string | null }
 }
 
-export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
+export default function UserReviewSection({ filmId, hasGraph, beats, beatSource }: Props) {
   const { data: session } = useSession()
   const [overallRating, setOverallRating] = useState(5.5)
   const [beatRatings, setBeatRatings] = useState<Record<string, number>>({})
@@ -109,18 +116,21 @@ export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
   const [showAll, setShowAll] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  const selectedBeats = useMemo(() => selectBeats(beats), [beats])
+  // Peak/lowest tagging only makes sense when beats have real NLP scores
+  const taggingEnabled = beatSource === 'graph'
+  const hasBeats = beats.length > 0
+  const selectedBeats = useMemo(() => selectBeats(beats, taggingEnabled), [beats, taggingEnabled])
 
-  // Initialize beat ratings
+  // Initialize beat ratings (both graph-sourced and wiki-sourced beats default to 5.5)
   useEffect(() => {
-    if (hasGraph && selectedBeats.length > 0 && !myReview && !editing) {
+    if (hasBeats && selectedBeats.length > 0 && !myReview && !editing) {
       const initial: Record<string, number> = {}
       for (const { beat } of selectedBeats) {
         initial[beat.label] = 5.5
       }
       setBeatRatings(initial)
     }
-  }, [hasGraph, selectedBeats, myReview, editing])
+  }, [hasBeats, selectedBeats, myReview, editing])
 
   const fetchReviews = useCallback(async (p: number) => {
     try {
@@ -183,7 +193,7 @@ export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
           middle: middle.trim() || undefined,
           ending: ending.trim() || undefined,
           otherThoughts: otherThoughts.trim() || undefined,
-          beatRatings: hasGraph ? beatRatings : undefined,
+          beatRatings: hasBeats ? beatRatings : undefined,
         }),
       })
 
@@ -315,6 +325,14 @@ export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
               </div>
             )}
 
+            {beatSource === 'wiki' && hasBeats && (
+              <div className="bg-cinema-gold/10 border border-cinema-gold/20 rounded-lg p-3">
+                <span className="text-sm text-cinema-gold">
+                  Story beats sourced from Wikipedia — rate them on how you felt during each moment
+                </span>
+              </div>
+            )}
+
             {/* Overall Rating */}
             <div>
               <label className="block text-sm text-cinema-muted mb-2">
@@ -336,8 +354,8 @@ export default function UserReviewSection({ filmId, hasGraph, beats }: Props) {
               </div>
             </div>
 
-            {/* Beat Sliders (only for films with graphs) */}
-            {hasGraph && selectedBeats.length > 0 && (
+            {/* Beat Sliders — shown for any film with beats (NLP graph or Wikipedia source) */}
+            {hasBeats && selectedBeats.length > 0 && (
               <div>
                 <p className="text-sm text-cinema-muted mb-4">Rate each story beat:</p>
                 <div className="space-y-3">

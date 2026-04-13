@@ -148,6 +148,7 @@ model Film {
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   sentimentGraph       SentimentGraph?
+  filmBeats            FilmBeats?
   reviews              Review[]
   userReviews          UserReview[]
   liveReactions        LiveReaction[]
@@ -178,6 +179,17 @@ model SentimentGraph {
   varianceSource  String   @default("external_only")
   version         Int      @default(1)
   film            Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
+}
+
+model FilmBeats {
+  id          String   @id @default(cuid())
+  filmId      String   @unique
+  beats       Json
+  source      String   @default("wikipedia")
+  generatedAt DateTime @default(now())
+  film        Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
+
+  @@index([filmId])
 }
 
 model Review {

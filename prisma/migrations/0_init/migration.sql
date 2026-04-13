@@ -139,6 +139,17 @@ CREATE TABLE "SentimentGraph" (
 );
 
 -- CreateTable
+CREATE TABLE "FilmBeats" (
+    "id" TEXT NOT NULL,
+    "filmId" TEXT NOT NULL,
+    "beats" JSONB NOT NULL,
+    "source" TEXT NOT NULL DEFAULT 'wikipedia',
+    "generatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "FilmBeats_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "Review" (
     "id" TEXT NOT NULL,
     "filmId" TEXT NOT NULL,
@@ -367,6 +378,12 @@ CREATE INDEX "Film_title_idx" ON "Film"("title");
 CREATE UNIQUE INDEX "SentimentGraph_filmId_key" ON "SentimentGraph"("filmId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "FilmBeats_filmId_key" ON "FilmBeats"("filmId");
+
+-- CreateIndex
+CREATE INDEX "FilmBeats_filmId_idx" ON "FilmBeats"("filmId");
+
+-- CreateIndex
 CREATE INDEX "Review_filmId_idx" ON "Review"("filmId");
 
 -- CreateIndex
@@ -458,6 +475,9 @@ ALTER TABLE "Film" ADD CONSTRAINT "Film_addedByUserId_fkey" FOREIGN KEY ("addedB
 
 -- AddForeignKey
 ALTER TABLE "SentimentGraph" ADD CONSTRAINT "SentimentGraph_filmId_fkey" FOREIGN KEY ("filmId") REFERENCES "Film"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "FilmBeats" ADD CONSTRAINT "FilmBeats_filmId_fkey" FOREIGN KEY ("filmId") REFERENCES "Film"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Review" ADD CONSTRAINT "Review_filmId_fkey" FOREIGN KEY ("filmId") REFERENCES "Film"("id") ON DELETE CASCADE ON UPDATE CASCADE;

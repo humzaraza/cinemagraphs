@@ -46,6 +46,9 @@ export default async function AdminPage() {
       sentimentGraph: {
         select: { generatedAt: true },
       },
+      filmBeats: {
+        select: { generatedAt: true, source: true },
+      },
       _count: {
         select: { reviews: true },
       },
@@ -56,6 +59,12 @@ export default async function AdminPage() {
     id: film.id,
     title: film.title,
     hasGraph: !!film.sentimentGraph,
+    hasBeats: !!film.filmBeats || !!film.sentimentGraph,
+    beatSource: (film.sentimentGraph
+      ? 'graph'
+      : film.filmBeats
+        ? (film.filmBeats.source as 'wikipedia')
+        : 'none') as 'graph' | 'wikipedia' | 'none',
     reviewCount: film._count.reviews,
     graphDate: film.sentimentGraph?.generatedAt
       ? film.sentimentGraph.generatedAt.toLocaleDateString()

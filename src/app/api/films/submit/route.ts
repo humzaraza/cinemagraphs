@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { requireUser, checkSuspension } from '@/lib/middleware'
 import { importMovie } from '@/lib/tmdb'
 import { generateSentimentGraph } from '@/lib/sentiment-pipeline'
+import { generateAndStoreWikiBeats } from '@/lib/wiki-beat-fallback'
 import { invalidateHomepageCache } from '@/lib/cache'
 import { apiLogger } from '@/lib/logger'
 
@@ -78,10 +79,21 @@ export async function POST(request: NextRequest) {
       }),
     ])
 
-    // Fire-and-forget: generate sentiment graph
+    // Fire-and-forget: try to generate sentiment graph, then fall back to Wikipedia beats
+    // if the graph didn't produce. Graph generation may succeed or fail; either way we
+    // attempt beats so the user can rate story moments on their review.
     generateSentimentGraph(film.id)
       .then(() => invalidateHomepageCache())
       .catch((err) => apiLogger.error({ err, filmId: film.id }, 'Failed to generate sentiment graph for user-submitted film'))
+      .finally(() => {
+        generateAndStoreWikiBeats(film.id)
+          .then((result) => {
+            if (result.status === 'generated') {
+              apiLogger.info({ filmId: film.id, beatCount: result.beatCount }, 'Wiki beats generated for user-submitted film')
+            }
+          })
+          .catch((err) => apiLogger.error({ err, filmId: film.id }, 'Failed to generate wiki beats for user-submitted film'))
+      })
 
     return Response.json({
       film: { id: film.id, title: film.title },

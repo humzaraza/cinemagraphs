@@ -12,10 +12,11 @@ interface Props {
   filmId: string
   hasGraph: boolean
   beats: BeatInfo[]
+  beatSource: 'graph' | 'wiki' | 'none'
   runtime: number | null
 }
 
-export default function FilmCommunityTabs({ filmId, hasGraph, beats, runtime }: Props) {
+export default function FilmCommunityTabs({ filmId, hasGraph, beats, beatSource, runtime }: Props) {
   return (
     <div>
       {/* Tab Headers */}
@@ -33,7 +34,7 @@ export default function FilmCommunityTabs({ filmId, hasGraph, beats, runtime }: 
       </div>
 
       {/* Tab Content */}
-      <UserReviewSection filmId={filmId} hasGraph={hasGraph} beats={beats} />
+      <UserReviewSection filmId={filmId} hasGraph={hasGraph} beats={beats} beatSource={beatSource} />
     </div>
   )
 }

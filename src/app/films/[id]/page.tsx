@@ -36,6 +36,7 @@ export default async function FilmPage({
       where: { id },
       include: {
         sentimentGraph: true,
+        filmBeats: true,
         filmPersons: {
           include: {
             person: {
@@ -378,13 +379,19 @@ export default async function FilmPage({
           <FilmCommunityTabs
             filmId={film.id}
             hasGraph={!!film.sentimentGraph}
-            beats={
-              film.sentimentGraph
-                ? ((film.sentimentGraph.dataPoints as unknown as SentimentDataPoint[]) || []).map(
-                    (dp) => ({ label: dp.label, score: dp.score })
-                  )
-                : []
-            }
+            beats={(() => {
+              if (film.sentimentGraph) {
+                const points = (film.sentimentGraph.dataPoints as unknown as SentimentDataPoint[]) || []
+                return points.map((dp) => ({ label: dp.label, score: dp.score }))
+              }
+              if (film.filmBeats) {
+                const wikiBeats = (film.filmBeats.beats as unknown as { label: string }[]) || []
+                // Wiki beats have no score — use neutral 5.5 so peak/lowest tagging is disabled
+                return wikiBeats.map((b) => ({ label: b.label, score: 5.5 }))
+              }
+              return []
+            })()}
+            beatSource={film.sentimentGraph ? 'graph' : film.filmBeats ? 'wiki' : 'none'}
             runtime={film.runtime}
           />
         </div>

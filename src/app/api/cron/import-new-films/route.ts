@@ -4,6 +4,7 @@ import { syncFilmCredits } from '@/lib/person-sync'
 import { cronLogger } from '@/lib/logger'
 import { invalidateHomepageCache, invalidateFilmCache } from '@/lib/cache'
 import { generateSentimentGraph } from '@/lib/sentiment-pipeline'
+import { generateAndStoreWikiBeats } from '@/lib/wiki-beat-fallback'
 import { checkCronQualityGates, type CronSkipCounts } from '@/lib/cron-quality-gates'
 
 export const maxDuration = 300
@@ -173,6 +174,22 @@ export async function GET(request: Request) {
             const sentMsg = sentErr instanceof Error ? sentErr.message : 'Unknown error'
             cronLogger.error({ tmdbId, title: movie.title, error: sentMsg }, 'Failed to generate sentiment graph for new film')
           }
+        }
+
+        // For every newly imported film (now_playing or upcoming), generate Wikipedia
+        // story beats so users can rate the film even without an NLP sentiment graph.
+        // Respects existing SentimentGraph/FilmBeats (no overwrites).
+        try {
+          const beatResult = await generateAndStoreWikiBeats(createdFilm.id)
+          if (beatResult.status === 'generated') {
+            cronLogger.info(
+              { tmdbId, title: movie.title, beatCount: beatResult.beatCount },
+              'Wikipedia beats generated for new film'
+            )
+          }
+        } catch (beatErr) {
+          const beatMsg = beatErr instanceof Error ? beatErr.message : 'Unknown error'
+          cronLogger.error({ tmdbId, title: movie.title, error: beatMsg }, 'Failed to generate wiki beats for new film')
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'
