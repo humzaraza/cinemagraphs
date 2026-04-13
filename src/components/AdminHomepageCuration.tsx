@@ -174,18 +174,36 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
     }
   }
 
+  // Search helper: filter + sort by match quality (exact > starts-with > contains)
+  function searchFilms<T extends { title: string }>(films: T[], query: string): T[] {
+    const q = query.toLowerCase()
+    return films
+      .filter((f) => f.title.toLowerCase().includes(q))
+      .sort((a, b) => {
+        const aLower = a.title.toLowerCase()
+        const bLower = b.title.toLowerCase()
+        const aExact = aLower === q
+        const bExact = bLower === q
+        if (aExact !== bExact) return aExact ? -1 : 1
+        const aStarts = aLower.startsWith(q)
+        const bStarts = bLower.startsWith(q)
+        if (aStarts !== bStarts) return aStarts ? -1 : 1
+        return 0
+      })
+  }
+
   const graphFilms = localFilms.filter((f) => f.hasGraph)
   const filteredFeatured = featuredSearch
-    ? graphFilms.filter((f) => f.title.toLowerCase().includes(featuredSearch.toLowerCase()) && !featured.some((fe) => fe.filmId === f.id))
+    ? searchFilms(graphFilms.filter((f) => !featured.some((fe) => fe.filmId === f.id)), featuredSearch)
     : []
   const filteredTicker = tickerSearch
-    ? localFilms.filter((f) => f.title.toLowerCase().includes(tickerSearch.toLowerCase()))
+    ? searchFilms(localFilms, tickerSearch)
     : localFilms.filter((f) => f.nowPlaying || f.tickerOverride === 'force_show' || f.tickerOverride === 'force_hide')
   const filteredNowPlaying = nowPlayingSearch
-    ? localFilms.filter((f) => f.title.toLowerCase().includes(nowPlayingSearch.toLowerCase()))
+    ? searchFilms(localFilms, nowPlayingSearch)
     : localFilms.filter((f) => f.nowPlaying || f.nowPlayingOverride === 'force_hide')
   const filteredPinned = pinnedSearch
-    ? localFilms.filter((f) => f.title.toLowerCase().includes(pinnedSearch.toLowerCase()))
+    ? searchFilms(localFilms, pinnedSearch)
     : localFilms.filter((f) => f.pinnedSection)
 
   const flushHomepageCache = async () => {

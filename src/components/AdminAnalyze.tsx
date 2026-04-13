@@ -23,6 +23,7 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
   const [message, setMessage] = useState('')
   const [toast, setToast] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<SortOption>('recent')
+  const [search, setSearch] = useState('')
 
   async function analyzeFilm(filmId: string) {
     setAnalyzing(filmId)
@@ -117,6 +118,24 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
     }
   })
 
+  // Apply search filter with priority: exact > starts-with > contains
+  const displayedFilms = search
+    ? sortedFilms
+        .filter((f) => f.title.toLowerCase().includes(search.toLowerCase()))
+        .sort((a, b) => {
+          const q = search.toLowerCase()
+          const aLower = a.title.toLowerCase()
+          const bLower = b.title.toLowerCase()
+          const aExact = aLower === q
+          const bExact = bLower === q
+          if (aExact !== bExact) return aExact ? -1 : 1
+          const aStarts = aLower.startsWith(q)
+          const bStarts = bLower.startsWith(q)
+          if (aStarts !== bStarts) return aStarts ? -1 : 1
+          return 0
+        })
+    : sortedFilms
+
   const filmsWithoutGraphs = films.filter((f) => !f.hasGraph).length
 
   return (
@@ -131,6 +150,22 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
           <p className="text-sm text-cinema-muted">
             {films.length - filmsWithoutGraphs} / {films.length} films have sentiment graphs
           </p>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search films..."
+            style={{
+              background: '#1a1a2e',
+              border: '0.5px solid #333',
+              color: '#e0e0e0',
+              borderRadius: 6,
+              fontSize: 13,
+              padding: '4px 10px',
+              outline: 'none',
+              width: 180,
+            }}
+          />
           <div className="flex items-center gap-2">
             <span className="text-xs" style={{ color: '#888' }}>Sort by:</span>
             <select
@@ -183,7 +218,7 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
             </tr>
           </thead>
           <tbody>
-            {sortedFilms.map((film) => (
+            {displayedFilms.map((film) => (
               <tr key={film.id} className="border-b border-cinema-border/50">
                 <td className="py-2 pr-4 text-cinema-cream">{film.title}</td>
                 <td className="py-2 pr-4">
