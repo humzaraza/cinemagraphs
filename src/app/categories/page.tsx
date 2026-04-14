@@ -53,7 +53,7 @@ export default async function CategoriesPage() {
                   className="relative flex-1 h-full"
                 >
                   <Image
-                    src={tmdbImageUrl(path, 'w300')}
+                    src={tmdbImageUrl(path, 'w185')}
                     alt=""
                     fill
                     unoptimized

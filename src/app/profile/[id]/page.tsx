@@ -428,7 +428,7 @@ function ReviewCard({
         <Link href={`/films/${film.id}`} className="shrink-0">
           {film.posterUrl ? (
             <Image
-              src={`https://image.tmdb.org/t/p/w154${film.posterUrl}`}
+              src={`https://image.tmdb.org/t/p/w185${film.posterUrl}`}
               alt={film.title}
               width={80}
               height={120}
@@ -606,7 +606,7 @@ function ReactionCard({
         {film.posterUrl && (
           <Link href={`/films/${film.id}`}>
             <Image
-              src={`https://image.tmdb.org/t/p/w92${film.posterUrl}`}
+              src={`https://image.tmdb.org/t/p/w185${film.posterUrl}`}
               alt={film.title}
               width={40}
               height={60}
