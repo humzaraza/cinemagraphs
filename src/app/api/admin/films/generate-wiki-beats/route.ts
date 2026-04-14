@@ -6,6 +6,8 @@ import { apiLogger } from '@/lib/logger'
 
 export const maxDuration = 300 // 5 minutes for Vercel
 
+const CONCURRENCY = 5
+
 interface BatchResult {
   filmId: string
   title?: string
@@ -20,7 +22,8 @@ interface BatchResult {
  * or nothing to target all active films missing beats & sentiment graphs.
  *
  * Skips films that already have a SentimentGraph (NLP beats take priority) or
- * existing FilmBeats (no overwrites).
+ * existing FilmBeats (no overwrites). Processes films in parallel chunks of
+ * CONCURRENCY to stay well under Vercel's 5-minute limit.
  */
 export async function POST(request: Request) {
   const session = await getMobileOrServerSession()
@@ -65,31 +68,59 @@ export async function POST(request: Request) {
     filmIds = candidates.map((f) => f.id)
   }
 
+  // Fetch all titles upfront so we don't do an extra DB roundtrip per film
+  const filmTitles = await prisma.film.findMany({
+    where: { id: { in: filmIds } },
+    select: { id: true, title: true },
+  })
+  const titleMap = new Map(filmTitles.map((f) => [f.id, f.title]))
+
   const results: BatchResult[] = []
   let generated = 0
   let skipped = 0
   let failed = 0
 
-  for (const filmId of filmIds) {
+  async function processOne(filmId: string): Promise<{
+    result: BatchResult
+    outcome: 'generated' | 'skipped' | 'failed'
+  }> {
     try {
       const result = await generateAndStoreWikiBeats(filmId, { force })
-      const film = await prisma.film.findUnique({ where: { id: filmId }, select: { title: true } })
-      results.push({
-        filmId,
-        title: film?.title,
-        status: result.status,
-        beatCount: result.status === 'generated' ? result.beatCount : undefined,
-      })
       if (result.status === 'generated') {
-        generated++
         await invalidateFilmCache(filmId)
-      } else {
-        skipped++
+      }
+      return {
+        result: {
+          filmId,
+          title: titleMap.get(filmId),
+          status: result.status,
+          beatCount: result.status === 'generated' ? result.beatCount : undefined,
+        },
+        outcome: result.status === 'generated' ? 'generated' : 'skipped',
       }
     } catch (err) {
-      failed++
       apiLogger.error({ err, filmId }, 'Wiki beat generation failed in batch')
-      results.push({ filmId, status: 'skipped_generation_failed' })
+      return {
+        result: {
+          filmId,
+          title: titleMap.get(filmId),
+          status: 'skipped_generation_failed',
+        },
+        outcome: 'failed',
+      }
+    }
+  }
+
+  // Process in chunks of CONCURRENCY (parallel within each chunk, sequential
+  // between chunks). Keeps each chunk fast while bounding DB + API concurrency.
+  for (let i = 0; i < filmIds.length; i += CONCURRENCY) {
+    const chunk = filmIds.slice(i, i + CONCURRENCY)
+    const chunkResults = await Promise.all(chunk.map(processOne))
+    for (const { result, outcome } of chunkResults) {
+      results.push(result)
+      if (outcome === 'generated') generated++
+      else if (outcome === 'skipped') skipped++
+      else failed++
     }
   }
 

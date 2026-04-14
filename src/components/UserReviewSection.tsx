@@ -325,14 +325,6 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
               </div>
             )}
 
-            {beatSource === 'wiki' && hasBeats && (
-              <div className="bg-cinema-gold/10 border border-cinema-gold/20 rounded-lg p-3">
-                <span className="text-sm text-cinema-gold">
-                  Story beats sourced from Wikipedia — rate them on how you felt during each moment
-                </span>
-              </div>
-            )}
-
             {/* Overall Rating */}
             <div>
               <label className="block text-sm text-cinema-muted mb-2">

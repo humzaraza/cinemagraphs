@@ -115,43 +115,87 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
   }
 
   async function generateAllWikiBeats() {
-    const candidates = films.filter((f) => !f.hasGraph && !f.hasBeats)
-    if (candidates.length === 0) {
+    // Snapshot candidates once — we'll track progress locally instead of
+    // re-filtering from `films` state (which updates async and could cause
+    // infinite loops if a film gets skipped).
+    const initialCandidates = films.filter((f) => !f.hasGraph && !f.hasBeats)
+    if (initialCandidates.length === 0) {
       setMessage('All films already have graphs or Wikipedia beats!')
       return
     }
     const confirmed = window.confirm(
-      `Generate Wikipedia beats for ${Math.min(candidates.length, 20)} films (max 20 per batch)?`
+      `Generate Wikipedia beats for ${initialCandidates.length} films? This will process them in batches and may take several minutes.`
     )
     if (!confirmed) return
 
-    setBeatsBatchRunning(true)
-    setMessage(`Generating Wikipedia beats for up to 20 films...`)
-    try {
-      const filmIds = candidates.slice(0, 20).map((f) => f.id)
-      const res = await fetch('/api/admin/films/generate-wiki-beats', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filmIds }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Batch failed')
+    const MAX_PER_BATCH = 50
+    const processedIds = new Set<string>()
+    let totalGenerated = 0
+    let totalSkipped = 0
+    let totalFailed = 0
 
-      for (const r of data.results || []) {
-        if (r.status === 'generated') {
-          setBeatResults((prev) => ({ ...prev, [r.filmId]: 'success' }))
+    setBeatsBatchRunning(true)
+
+    try {
+      let batchNum = 0
+      while (true) {
+        const remaining = initialCandidates.filter((f) => !processedIds.has(f.id))
+        if (remaining.length === 0) break
+
+        batchNum++
+        const batchIds = remaining.slice(0, MAX_PER_BATCH).map((f) => f.id)
+        setMessage(
+          `Batch ${batchNum}: processing ${batchIds.length} of ${remaining.length} remaining films...`
+        )
+
+        const res = await fetch('/api/admin/films/generate-wiki-beats', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filmIds: batchIds }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Batch failed')
+
+        const generatedInBatch: string[] = []
+        const skippedInBatch: string[] = []
+
+        for (const r of data.results || []) {
+          processedIds.add(r.filmId)
+          if (r.status === 'generated') {
+            totalGenerated++
+            generatedInBatch.push(r.filmId)
+          } else {
+            totalSkipped++
+            skippedInBatch.push(r.filmId)
+          }
+        }
+        totalFailed += data.failed || 0
+
+        // Batch the React state updates so we trigger one re-render per batch,
+        // not per film.
+        if (generatedInBatch.length > 0 || skippedInBatch.length > 0) {
+          setBeatResults((prev) => {
+            const next = { ...prev }
+            for (const id of generatedInBatch) next[id] = 'success'
+            for (const id of skippedInBatch) next[id] = 'error'
+            return next
+          })
+        }
+        if (generatedInBatch.length > 0) {
+          const genSet = new Set(generatedInBatch)
           setFilms((prev) =>
             prev.map((f) =>
-              f.id === r.filmId ? { ...f, hasBeats: true, beatSource: 'wikipedia' } : f
+              genSet.has(f.id) ? { ...f, hasBeats: true, beatSource: 'wikipedia' } : f
             )
           )
-        } else {
-          setBeatResults((prev) => ({ ...prev, [r.filmId]: 'error' }))
         }
+
+        // Safety: if no results came back, stop to avoid looping forever.
+        if ((data.results || []).length === 0) break
       }
 
       setMessage(
-        `Wiki beat batch complete: ${data.generated} generated, ${data.skipped} skipped, ${data.failed} failed`
+        `Wiki beat batch complete: ${totalGenerated} generated, ${totalSkipped} skipped, ${totalFailed} failed`
       )
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Wiki beat batch failed')
@@ -277,11 +321,11 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
               onClick={generateAllWikiBeats}
               disabled={beatsBatchRunning}
               className="px-4 py-2 bg-cinema-gold/10 text-cinema-gold border border-cinema-gold/30 rounded-lg text-sm hover:bg-cinema-gold/20 disabled:opacity-50 transition-colors"
-              title="Generate Wikipedia story beats for films that have no NLP graph and no beats yet (max 20 per click)"
+              title="Generate Wikipedia story beats for films that have no NLP graph and no beats yet"
             >
               {beatsBatchRunning
                 ? 'Generating beats...'
-                : `Generate Wiki Beats (${Math.min(filmsWithoutAnyBeats, 20)})`}
+                : `Generate Wiki Beats (${filmsWithoutAnyBeats})`}
             </button>
           )}
           {filmsWithoutGraphs > 0 && (
