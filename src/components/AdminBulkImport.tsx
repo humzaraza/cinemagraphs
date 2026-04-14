@@ -74,6 +74,11 @@ export default function AdminBulkImport() {
   const [source, setSource] = useState<BulkSource>('tmdb_company')
   const [companyId, setCompanyId] = useState<number>(COMPANY_PRESETS[0].id)
   const [maxFilms, setMaxFilms] = useState<number>(50)
+  // Default ON: bulk imports are usually followed by a separate
+  // "Generate Missing Graphs" pass from the Sentiment Analysis tab, so
+  // we skip the Claude pipeline during import to stay well inside the
+  // 300s Vercel budget. Uncheck to run the full pipeline inline.
+  const [skipGraph, setSkipGraph] = useState(true)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<BulkImportResponse | null>(
     null
@@ -129,9 +134,12 @@ export default function AdminBulkImport() {
         : source === 'tmdb_top_rated'
           ? 'TMDB Top Rated'
           : 'TMDB Popular'
+    const pipelineLabel = skipGraph
+      ? 'review fetch + wiki beats only (no sentiment graph)'
+      : 'full review + sentiment pipeline'
     if (
       !confirm(
-        `Import up to ${maxFilms} ${plural} from ${sourceLabel}? This runs the full review + sentiment pipeline for each new film. Takes several minutes.`
+        `Import up to ${maxFilms} ${plural} from ${sourceLabel}? This runs ${pipelineLabel} for each new film. Takes several minutes.`
       )
     ) {
       return
@@ -141,7 +149,7 @@ export default function AdminBulkImport() {
     setImportError(null)
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const body: Record<string, any> = { source, maxFilms }
+      const body: Record<string, any> = { source, maxFilms, skipGraph }
       if (source === 'tmdb_company') body.companyId = companyId
       const res = await fetch('/api/admin/films/bulk-import', {
         method: 'POST',
@@ -228,9 +236,9 @@ export default function AdminBulkImport() {
           Bulk Film Import
         </h2>
         <p className="text-sm text-cinema-muted mb-4">
-          Imports films from a TMDB list or the IMDb Top 250, fetches reviews
-          from every source, and runs the full sentiment pipeline (or Wikipedia
-          beats fallback) for each.
+          Imports films from a TMDB list, fetches reviews from every source,
+          and (unless &ldquo;Import only&rdquo; is checked) runs the full sentiment
+          pipeline — or falls back to Wikipedia beats — for each new film.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -288,6 +296,25 @@ export default function AdminBulkImport() {
             />
           </div>
         </div>
+
+        {/* Import only toggle */}
+        <label className="flex items-start gap-2 mb-4 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={skipGraph}
+            onChange={(e) => setSkipGraph(e.target.checked)}
+            disabled={importing}
+            className="mt-0.5 accent-cinema-teal disabled:opacity-50"
+          />
+          <span className="text-sm text-cinema-cream">
+            Import only (skip graph generation)
+            <span className="block text-xs text-cinema-muted mt-0.5">
+              Fetches reviews and generates Wikipedia beats as fallback, but
+              does not run the Claude sentiment pipeline. Use &ldquo;Generate
+              Missing Graphs&rdquo; on the Sentiment Analysis tab afterwards.
+            </span>
+          </span>
+        </label>
 
         <button
           onClick={handleImport}

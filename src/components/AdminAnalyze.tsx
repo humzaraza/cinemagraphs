@@ -16,6 +16,46 @@ interface Film {
 
 type SortOption = 'recent' | 'title-asc' | 'title-desc' | 'reviews' | 'analyzed'
 
+// Coarse eligibility for the "Generate Missing Graphs" button. The server
+// does the real quality-review check (see generate-missing-graphs/route.ts);
+// this is just the client-side count shown in the button label, based on
+// total review count which is all we have in the Film type. Films with 3+
+// total reviews but <3 quality reviews will be skipped server-side and
+// counted under `skipped` in the final summary.
+const MIN_REVIEWS_FOR_MISSING_GRAPHS = 3
+
+interface MissingGraphsProgress {
+  n: number
+  total: number
+  title: string
+}
+
+interface MissingGraphsSummary {
+  total: number
+  processed: number
+  succeeded: number
+  failed: number
+  timedOut: boolean
+  stoppedAtTitle: string | null
+}
+
+// Discriminated union of SSE events from /api/admin/films/generate-missing-graphs.
+type MissingGraphsEvent =
+  | { type: 'start'; total: number }
+  | { type: 'progress'; n: number; total: number; title: string; filmId: string }
+  | { type: 'result'; filmId: string; title: string; ok: boolean; error?: string }
+  | { type: 'timeout'; stoppedAtTitle: string; processed: number; total: number }
+  | {
+      type: 'done'
+      total: number
+      processed: number
+      succeeded: number
+      failed: number
+      timedOut: boolean
+      stoppedAtTitle: string | null
+      durationMs: number
+    }
+
 export default function AdminAnalyze({ films: initialFilms }: { films: Film[] }) {
   const [films, setFilms] = useState(initialFilms)
   const [analyzing, setAnalyzing] = useState<string | null>(null)
@@ -23,6 +63,11 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
   const [deleting, setDeleting] = useState<string | null>(null)
   const [batchRunning, setBatchRunning] = useState(false)
   const [beatsBatchRunning, setBeatsBatchRunning] = useState(false)
+  const [missingGraphsRunning, setMissingGraphsRunning] = useState(false)
+  const [missingGraphsProgress, setMissingGraphsProgress] =
+    useState<MissingGraphsProgress | null>(null)
+  const [missingGraphsSummary, setMissingGraphsSummary] =
+    useState<MissingGraphsSummary | null>(null)
   const [results, setResults] = useState<Record<string, 'success' | 'error' | 'pending'>>({})
   const [beatResults, setBeatResults] = useState<Record<string, 'success' | 'error'>>({})
   const [message, setMessage] = useState('')
@@ -204,6 +249,136 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
     }
   }
 
+  function handleMissingGraphsEvent(event: MissingGraphsEvent) {
+    switch (event.type) {
+      case 'start':
+        setMissingGraphsProgress({ n: 0, total: event.total, title: '' })
+        break
+      case 'progress':
+        setMissingGraphsProgress({
+          n: event.n,
+          total: event.total,
+          title: event.title,
+        })
+        break
+      case 'result':
+        if (event.ok) {
+          setResults((prev) => ({ ...prev, [event.filmId]: 'success' }))
+          // Mark the film as having a graph in local state so the table
+          // updates live (row flips to "Ready", button count decrements).
+          setFilms((prev) =>
+            prev.map((f) =>
+              f.id === event.filmId
+                ? { ...f, hasGraph: true, beatSource: 'graph' }
+                : f
+            )
+          )
+        } else {
+          setResults((prev) => ({ ...prev, [event.filmId]: 'error' }))
+        }
+        break
+      case 'timeout':
+        // Recorded here for logging; the final summary lands in the 'done' event.
+        break
+      case 'done':
+        setMissingGraphsSummary({
+          total: event.total,
+          processed: event.processed,
+          succeeded: event.succeeded,
+          failed: event.failed,
+          timedOut: event.timedOut,
+          stoppedAtTitle: event.stoppedAtTitle,
+        })
+        setMissingGraphsProgress(null)
+        break
+    }
+  }
+
+  async function generateMissingGraphs() {
+    // Coarse client-side candidate count. The server re-checks with the
+    // quality-review filter so the real count may be lower.
+    const approxCount = films.filter(
+      (f) => !f.hasGraph && f.reviewCount >= MIN_REVIEWS_FOR_MISSING_GRAPHS
+    ).length
+    if (approxCount === 0) {
+      setMessage('No films are missing graphs (with 3+ reviews).')
+      return
+    }
+    const confirmed = window.confirm(
+      `Run sentiment pipeline on up to ${approxCount} films missing graphs? The server will stop at the 5-minute Vercel budget — just click again to resume on any films it didn't reach.`
+    )
+    if (!confirmed) return
+
+    setMissingGraphsRunning(true)
+    setMissingGraphsProgress(null)
+    setMissingGraphsSummary(null)
+    setMessage('')
+
+    try {
+      const res = await fetch('/api/admin/films/generate-missing-graphs', {
+        method: 'POST',
+      })
+
+      if (!res.ok) {
+        // Non-streaming error — read body as text first so a non-JSON
+        // response (e.g. Vercel HTML error page) still surfaces useful
+        // context, same pattern as AdminBulkImport.
+        const responseText = await res.text()
+        let errorMessage = `Request failed (HTTP ${res.status})`
+        try {
+          const data = JSON.parse(responseText)
+          if (data?.error) errorMessage = data.error
+        } catch {
+          const snippet = responseText.slice(0, 200).trim()
+          if (snippet) errorMessage += `: ${snippet}`
+        }
+        throw new Error(errorMessage)
+      }
+
+      if (!res.body) {
+        throw new Error('No response body from server')
+      }
+
+      // ── SSE parser ──
+      // Events arrive as `data: {...}\n\n`. We buffer across chunk
+      // boundaries because a single TCP read can split an event.
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+
+        const events = buffer.split('\n\n')
+        // Last element is either empty (buffer ended on \n\n) or an
+        // incomplete event — keep it in the buffer for the next read.
+        buffer = events.pop() ?? ''
+
+        for (const rawEvent of events) {
+          const dataLine = rawEvent
+            .split('\n')
+            .find((l) => l.startsWith('data: '))
+          if (!dataLine) continue
+          try {
+            const parsed = JSON.parse(dataLine.slice(6)) as MissingGraphsEvent
+            handleMissingGraphsEvent(parsed)
+          } catch {
+            // malformed event — skip it, the next one will probably work
+          }
+        }
+      }
+    } catch (err) {
+      setMessage(
+        err instanceof Error ? err.message : 'Generate missing graphs failed'
+      )
+      setMissingGraphsProgress(null)
+    } finally {
+      setMissingGraphsRunning(false)
+    }
+  }
+
   async function deleteFilm(film: Film) {
     const confirmed = window.confirm(
       `Are you sure you want to delete "${film.title}"? This will also delete its sentiment graph and all associated reviews.`
@@ -263,6 +438,9 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
 
   const filmsWithoutGraphs = films.filter((f) => !f.hasGraph).length
   const filmsWithoutAnyBeats = films.filter((f) => !f.hasGraph && !f.hasBeats).length
+  const filmsMissingGraphsWithReviews = films.filter(
+    (f) => !f.hasGraph && f.reviewCount >= MIN_REVIEWS_FOR_MISSING_GRAPHS
+  ).length
 
   return (
     <div>
@@ -319,7 +497,7 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
           {filmsWithoutAnyBeats > 0 && (
             <button
               onClick={generateAllWikiBeats}
-              disabled={beatsBatchRunning}
+              disabled={beatsBatchRunning || missingGraphsRunning}
               className="px-4 py-2 bg-cinema-gold/10 text-cinema-gold border border-cinema-gold/30 rounded-lg text-sm hover:bg-cinema-gold/20 disabled:opacity-50 transition-colors"
               title="Generate Wikipedia story beats for films that have no NLP graph and no beats yet"
             >
@@ -328,10 +506,24 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
                 : `Generate Wiki Beats (${filmsWithoutAnyBeats})`}
             </button>
           )}
+          {filmsMissingGraphsWithReviews > 0 && (
+            <button
+              onClick={generateMissingGraphs}
+              disabled={
+                missingGraphsRunning || batchRunning || beatsBatchRunning
+              }
+              className="px-4 py-2 bg-cinema-teal/10 text-cinema-teal border border-cinema-teal/30 rounded-lg text-sm hover:bg-cinema-teal/20 disabled:opacity-50 transition-colors"
+              title="Run the Claude sentiment pipeline on films that have no graph yet AND at least 3 reviews. Server-side quality filter may drop a few more. Resume by clicking again after the 5-minute timeout."
+            >
+              {missingGraphsRunning
+                ? 'Generating...'
+                : `Generate Missing Graphs (${filmsMissingGraphsWithReviews})`}
+            </button>
+          )}
           {filmsWithoutGraphs > 0 && (
             <button
               onClick={analyzeAll}
-              disabled={batchRunning}
+              disabled={batchRunning || missingGraphsRunning}
               className="px-4 py-2 bg-cinema-teal/20 text-cinema-teal border border-cinema-teal/30 rounded-lg text-sm hover:bg-cinema-teal/30 disabled:opacity-50 transition-colors"
             >
               {batchRunning ? 'Analyzing...' : `Generate All (${filmsWithoutGraphs})`}
@@ -343,6 +535,37 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
       {message && (
         <div className="mb-4 p-3 rounded-lg bg-cinema-card border border-cinema-border text-sm text-cinema-cream">
           {message}
+        </div>
+      )}
+
+      {missingGraphsProgress && (
+        <div className="mb-4 p-3 rounded-lg bg-cinema-teal/10 border border-cinema-teal/30 text-sm text-cinema-teal">
+          {missingGraphsProgress.total === 0
+            ? 'No eligible films found.'
+            : missingGraphsProgress.n === 0
+              ? `Starting... ${missingGraphsProgress.total} films to process.`
+              : `Generating graph for ${missingGraphsProgress.title} (${missingGraphsProgress.n}/${missingGraphsProgress.total})`}
+        </div>
+      )}
+
+      {missingGraphsSummary && (
+        <div className="mb-4 p-3 rounded-lg bg-cinema-card border border-cinema-border text-sm text-cinema-cream">
+          <div>
+            Generated <strong>{missingGraphsSummary.succeeded}</strong> graph
+            {missingGraphsSummary.succeeded === 1 ? '' : 's'}
+            {missingGraphsSummary.failed > 0 &&
+              `, ${missingGraphsSummary.failed} failed`}
+            {' '}
+            <span className="text-cinema-muted">
+              ({missingGraphsSummary.processed}/{missingGraphsSummary.total} processed)
+            </span>
+          </div>
+          {missingGraphsSummary.timedOut && missingGraphsSummary.stoppedAtTitle && (
+            <div className="text-xs text-cinema-gold mt-1">
+              Stopped at &ldquo;{missingGraphsSummary.stoppedAtTitle}&rdquo; — click
+              &ldquo;Generate Missing Graphs&rdquo; again to resume.
+            </div>
+          )}
         </div>
       )}
 
@@ -411,7 +634,11 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
                     <div className="flex gap-2">
                       <button
                         onClick={() => analyzeFilm(film.id)}
-                        disabled={analyzing === film.id || batchRunning}
+                        disabled={
+                          analyzing === film.id ||
+                          batchRunning ||
+                          missingGraphsRunning
+                        }
                         className="text-xs px-3 py-1 bg-cinema-gold/10 text-cinema-gold border border-cinema-gold/20 rounded hover:bg-cinema-gold/20 disabled:opacity-50 transition-colors"
                       >
                         {analyzing === film.id ? 'Analyzing...' : film.hasGraph ? 'Regenerate' : 'Generate'}

@@ -162,6 +162,11 @@ export async function POST(request: Request) {
   const rawMax = Number(body?.maxFilms)
   const maxFilms =
     Number.isFinite(rawMax) && rawMax > 0 ? Math.min(Math.floor(rawMax), 500) : 50
+  // Default false so callers without the flag keep the old pipeline behavior
+  // (graph first, wiki beats as fallback). The admin UI sends `true` by
+  // default because bulk imports are usually followed by a separate
+  // "Generate Missing Graphs" pass from the Sentiment Analysis tab.
+  const skipGraph = body?.skipGraph === true
 
   const validSources = [
     'tmdb_company',
@@ -223,8 +228,8 @@ export async function POST(request: Request) {
       .join(', ')
 
     apiLogger.info(
-      { source, total, maxFilms, langBreakdown },
-      `Bulk import starting: ${source} (${total} films, langs: ${langSummary || 'none'})`
+      { source, total, maxFilms, skipGraph, langBreakdown },
+      `Bulk import starting: ${source} (${total} films${skipGraph ? ', skipGraph=true' : ''}, langs: ${langSummary || 'none'})`
     )
 
     // ── Step 2: process each film sequentially ──
@@ -314,11 +319,15 @@ export async function POST(request: Request) {
         ).length
 
         // 2e. Sentiment graph if we have enough quality reviews; otherwise
-        //     Wikipedia beats as fallback.
+        //     Wikipedia beats as fallback. When `skipGraph` is set we
+        //     never attempt the Claude pipeline — the admin wants a fast
+        //     import pass and will run "Generate Missing Graphs" from the
+        //     Sentiment Analysis tab afterwards. Wiki beats still run so
+        //     the film has *something* to render on its detail page.
         let graphGenerated = false
         let wikiGenerated = false
 
-        if (qualityCount >= MIN_QUALITY_REVIEWS_FOR_GRAPH) {
+        if (!skipGraph && qualityCount >= MIN_QUALITY_REVIEWS_FOR_GRAPH) {
           try {
             await generateSentimentGraph(film.id, { force: true })
             graphGenerated = true
@@ -426,6 +435,7 @@ export async function POST(request: Request) {
       alreadyExisted: alreadyExistedCount,
       graphsGenerated,
       wikiBeatsGenerated,
+      skipGraph,
       timedOut,
       stoppedAtIndex: timedOut ? stoppedAtIndex : null,
       stoppedAtTitle: timedOut ? stoppedAtTitle : null,
