@@ -88,107 +88,6 @@ async function fetchTmdbList(
   return ids
 }
 
-// ── IMDb Top 250 ────────────────────────────────────────────────────────────
-
-interface ImdbNode {
-  id?: string
-  tconst?: string
-  imdbId?: string
-}
-
-/**
- * Fetch the IMDb Top 250 list via the imdb232 RapidAPI service, then map
- * each IMDb ID → TMDB ID via TMDB's /find endpoint.
- *
- * The exact imdb232 endpoint for the Top 250 list isn't documented in the
- * parts of the API we already use (we only use get-user-reviews and
- * get-critic-reviews). Based on the existing naming pattern the default
- * guess is `/api/title/get-top-rated-movies` — override with the
- * `RAPIDAPI_IMDB_TOP250_PATH` env var if the real endpoint is different.
- *
- * Response shape also varies between providers, so we walk a couple of
- * common JSON structures and pull out anything that looks like an IMDb
- * `tt…` id before giving up.
- */
-async function fetchImdbTop250Ids(maxFilms: number): Promise<number[]> {
-  const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY
-  const RAPIDAPI_IMDB_HOST =
-    process.env.RAPIDAPI_IMDB_HOST || 'imdb232.p.rapidapi.com'
-  if (!RAPIDAPI_KEY) {
-    throw new Error('RAPIDAPI_KEY not configured — cannot fetch IMDb Top 250')
-  }
-
-  const path =
-    process.env.RAPIDAPI_IMDB_TOP250_PATH || '/api/title/get-top-rated-movies'
-
-  const res = await fetch(`https://${RAPIDAPI_IMDB_HOST}${path}`, {
-    headers: {
-      'x-rapidapi-key': RAPIDAPI_KEY,
-      'x-rapidapi-host': RAPIDAPI_IMDB_HOST,
-    },
-    signal: AbortSignal.timeout(15000),
-  })
-  if (!res.ok) {
-    throw new Error(`IMDb Top 250 fetch failed: HTTP ${res.status} (${path})`)
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data: any = await res.json()
-
-  // Try several common response shapes. The walk below deliberately stops
-  // at the first one that yields tt… ids so we don't merge lists.
-  let rawList: unknown[] = []
-  if (Array.isArray(data?.data?.topRatedTitles?.edges)) {
-    rawList = data.data.topRatedTitles.edges.map(
-      (e: { node?: ImdbNode }) => e.node ?? {}
-    )
-  } else if (Array.isArray(data?.data?.list)) {
-    rawList = data.data.list
-  } else if (Array.isArray(data?.results)) {
-    rawList = data.results
-  } else if (Array.isArray(data)) {
-    rawList = data
-  } else if (Array.isArray(data?.top)) {
-    rawList = data.top
-  }
-
-  const imdbIds: string[] = []
-  for (const item of rawList) {
-    if (imdbIds.length >= maxFilms) break
-    const node = item as ImdbNode
-    const id = node.id || node.tconst || node.imdbId
-    if (typeof id === 'string' && id.startsWith('tt')) imdbIds.push(id)
-  }
-
-  if (imdbIds.length === 0) {
-    throw new Error(
-      `IMDb Top 250 response missing IMDb IDs. Tried shapes data.topRatedTitles.edges, data.list, results, top. Raw keys: ${Object.keys(data ?? {}).join(',')}`
-    )
-  }
-
-  // Map IMDb IDs → TMDB IDs via TMDB /find. Small delay between calls so
-  // we don't burst the TMDB rate limit.
-  const tmdbIds: number[] = []
-  for (const imdbId of imdbIds) {
-    try {
-      const find = await tmdbFetch<{ movie_results: Array<{ id: number }> }>(
-        `/find/${imdbId}`,
-        { external_source: 'imdb_id' }
-      )
-      const first = find.movie_results[0]
-      if (first?.id) tmdbIds.push(first.id)
-    } catch (err) {
-      apiLogger.warn(
-        { imdbId, err: err instanceof Error ? err.message : String(err) },
-        'IMDb Top 250: TMDB /find lookup failed'
-      )
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200))
-  }
-
-  return tmdbIds
-}
-
 // ── Main handler ────────────────────────────────────────────────────────────
 
 interface PerFilmResult {
@@ -210,7 +109,6 @@ interface PerFilmResult {
  *   { source: 'tmdb_company', companyId: number, maxFilms: number }
  *   { source: 'tmdb_top_rated', maxFilms: number }
  *   { source: 'tmdb_popular',   maxFilms: number }
- *   { source: 'imdb_top_250',   maxFilms: number }
  *
  * Sequential with a 1-second delay between films (no parallel RapidAPI
  * calls — the quota is too fragile). If we approach the Vercel timeout
@@ -236,7 +134,6 @@ export async function POST(request: Request) {
     'tmdb_company',
     'tmdb_top_rated',
     'tmdb_popular',
-    'imdb_top_250',
   ] as const
   type ValidSource = (typeof validSources)[number]
   if (!validSources.includes(source as ValidSource)) {
@@ -274,8 +171,6 @@ export async function POST(request: Request) {
       tmdbIds = await fetchTmdbList('/movie/top_rated', maxFilms)
     } else if (source === 'tmdb_popular') {
       tmdbIds = await fetchTmdbList('/movie/popular', maxFilms)
-    } else if (source === 'imdb_top_250') {
-      tmdbIds = await fetchImdbTop250Ids(maxFilms)
     }
 
     const total = tmdbIds.length

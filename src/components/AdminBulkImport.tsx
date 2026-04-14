@@ -23,7 +23,7 @@ const COMPANY_PRESETS: Array<{ label: string; id: number }> = [
   { label: 'Neon', id: 90733 },
 ]
 
-type BulkSource = 'tmdb_company' | 'tmdb_top_rated' | 'tmdb_popular' | 'imdb_top_250'
+type BulkSource = 'tmdb_company' | 'tmdb_top_rated' | 'tmdb_popular'
 
 interface PerFilmResult {
   tmdbId: number
@@ -113,17 +113,10 @@ export default function AdminBulkImport() {
     }
   }
 
-  // When the source changes, reset max films to a reasonable default.
-  // IMDb Top 250 defaults to the full 250, everything else to 50.
   function handleSourceChange(next: BulkSource) {
     setSource(next)
     setImportResult(null)
     setImportError(null)
-    if (next === 'imdb_top_250') {
-      setMaxFilms(250)
-    } else if (maxFilms === 250) {
-      setMaxFilms(50)
-    }
   }
 
   async function handleImport() {
@@ -131,11 +124,9 @@ export default function AdminBulkImport() {
     const sourceLabel =
       source === 'tmdb_company'
         ? `company ${companyId}`
-        : source === 'imdb_top_250'
-          ? 'IMDb Top 250'
-          : source === 'tmdb_top_rated'
-            ? 'TMDB Top Rated'
-            : 'TMDB Popular'
+        : source === 'tmdb_top_rated'
+          ? 'TMDB Top Rated'
+          : 'TMDB Popular'
     if (
       !confirm(
         `Import up to ${maxFilms} ${plural} from ${sourceLabel}? This runs the full review + sentiment pipeline for each new film. Takes several minutes.`
@@ -223,7 +214,6 @@ export default function AdminBulkImport() {
               <option value="tmdb_company">TMDB — Production Company</option>
               <option value="tmdb_top_rated">TMDB — Top Rated</option>
               <option value="tmdb_popular">TMDB — Popular</option>
-              <option value="imdb_top_250">IMDb — Top 250</option>
             </select>
           </div>
 
