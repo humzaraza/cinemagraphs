@@ -33,6 +33,22 @@ export interface FetchedReview {
   sourceRating: number | null
 }
 
+/**
+ * Return shape for a single review-source fetcher. Lets the coordinator
+ * distinguish "source is reachable but found nothing" from "source is
+ * unreachable / misconfigured / quota-exhausted" so the pipeline summary
+ * can report specific reasons for each failed source.
+ */
+export interface FetchResult {
+  reviews: FetchedReview[]
+  /** Whether the source was fully reachable and configured. A source that
+   *  successfully returned 0 reviews is still `ok: true`. */
+  ok: boolean
+  /** Short human-readable failure reason for the summary line. Present when
+   *  `ok` is false (e.g. "429 quota exceeded", "no API key"). */
+  reason?: string
+}
+
 // Claude analysis output
 export interface SentimentGraphData {
   film: string

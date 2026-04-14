@@ -1,5 +1,5 @@
 import type { Film } from '@/generated/prisma/client'
-import type { FetchedReview } from '@/lib/types'
+import type { FetchResult, FetchedReview } from '@/lib/types'
 import { reviewLogger } from '@/lib/logger'
 
 const REDDIT_CLIENT_ID = process.env.REDDIT_CLIENT_ID
@@ -8,16 +8,16 @@ const APIFY_API_TOKEN = process.env.APIFY_API_TOKEN
 
 const SUBREDDITS = ['movies', 'TrueFilm', 'flicks']
 
-export async function fetchRedditReviews(film: Film): Promise<FetchedReview[]> {
+export async function fetchRedditReviews(film: Film): Promise<FetchResult> {
   // Try official Reddit API first
   if (REDDIT_CLIENT_ID && REDDIT_CLIENT_SECRET) {
     try {
       const reviews = await fetchRedditReviewsOfficial(film)
-      if (reviews.length > 0) return reviews
+      if (reviews.length > 0) return { reviews, ok: true }
     } catch (err) {
       reviewLogger.warn(
         { source: 'REDDIT', filmTitle: film.title, error: err instanceof Error ? err.message : String(err) },
-        'Official Reddit API failed, trying Apify fallback'
+        'Reddit: official API failed, trying Apify fallback'
       )
     }
   }
@@ -25,21 +25,27 @@ export async function fetchRedditReviews(film: Film): Promise<FetchedReview[]> {
   // Fall back to Apify
   if (APIFY_API_TOKEN) {
     try {
-      return await fetchRedditReviewsApify(film)
+      const reviews = await fetchRedditReviewsApify(film)
+      return { reviews, ok: true }
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
       reviewLogger.error(
-        { source: 'REDDIT_APIFY', filmTitle: film.title, error: err instanceof Error ? err.message : String(err) },
-        'Apify Reddit fetch failed'
+        { source: 'REDDIT_APIFY', filmTitle: film.title, error: message },
+        'Reddit: Apify fetch failed'
       )
+      return { reviews: [], ok: false, reason: `Apify error: ${message}` }
     }
   }
 
   // Neither configured
   if (!REDDIT_CLIENT_ID && !APIFY_API_TOKEN) {
-    reviewLogger.info({ source: 'REDDIT', filmTitle: film.title }, 'No Reddit credentials configured, skipping')
+    reviewLogger.warn({ source: 'REDDIT', filmTitle: film.title }, 'Reddit: no credentials configured')
+    return { reviews: [], ok: false, reason: 'no credentials' }
   }
 
-  return []
+  // Official API configured but returned 0 rows, and no Apify fallback.
+  // That's a valid "tried and found nothing" outcome.
+  return { reviews: [], ok: true }
 }
 
 async function fetchRedditReviewsOfficial(film: Film): Promise<FetchedReview[]> {

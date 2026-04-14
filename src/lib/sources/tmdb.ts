@@ -1,20 +1,26 @@
 import type { Film } from '@/generated/prisma/client'
-import type { FetchedReview } from '@/lib/types'
+import type { FetchResult, FetchedReview } from '@/lib/types'
 import { reviewLogger } from '@/lib/logger'
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY!
 const TMDB_BASE_URL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3'
 
-export async function fetchTMDBReviews(film: Film): Promise<FetchedReview[]> {
+export async function fetchTMDBReviews(film: Film): Promise<FetchResult> {
   try {
     const reviews: FetchedReview[] = []
+    let firstPageStatus = 0
 
     // Fetch up to 3 pages
     for (let page = 1; page <= 3; page++) {
       const res = await fetch(`${TMDB_BASE_URL}/movie/${film.tmdbId}/reviews?page=${page}`, {
         headers: { Authorization: `Bearer ${TMDB_API_KEY}` },
       })
-      if (!res.ok) break
+      if (!res.ok) {
+        // Only the first-page failure is catastrophic — later pages failing
+        // after we already gathered reviews is treated as "we have what we have".
+        if (page === 1) firstPageStatus = res.status
+        break
+      }
       const data = await res.json()
       const results = data.results || []
       if (results.length === 0) break
@@ -34,10 +40,19 @@ export async function fetchTMDBReviews(film: Film): Promise<FetchedReview[]> {
       if (data.total_pages <= page) break
     }
 
+    if (firstPageStatus !== 0) {
+      reviewLogger.warn(
+        { source: 'TMDB', filmTitle: film.title, tmdbId: film.tmdbId, status: firstPageStatus },
+        `TMDB: request failed (HTTP ${firstPageStatus})`
+      )
+      return { reviews: [], ok: false, reason: `HTTP ${firstPageStatus}` }
+    }
+
     reviewLogger.info({ source: 'TMDB', filmTitle: film.title, count: reviews.length }, 'TMDB reviews fetched')
-    return reviews
+    return { reviews, ok: true }
   } catch (err) {
-    reviewLogger.error({ source: 'TMDB', filmTitle: film.title, error: err instanceof Error ? err.message : String(err) }, 'TMDB fetch failed')
-    return []
+    const message = err instanceof Error ? err.message : String(err)
+    reviewLogger.error({ source: 'TMDB', filmTitle: film.title, error: message }, 'TMDB fetch failed')
+    return { reviews: [], ok: false, reason: `error: ${message}` }
   }
 }

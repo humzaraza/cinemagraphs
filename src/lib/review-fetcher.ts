@@ -49,22 +49,46 @@ export async function fetchAllReviews(film: Film): Promise<number> {
     fetchGuardianReviews(film),
   ])
 
-  const sourceNames = ['TMDB', 'IMDb', 'Critic', 'Letterboxd', 'Reddit', 'Guardian']
-  const perSource: Record<string, number> = {}
+  // Display names for the end-of-run summary line. The order here must
+  // match the fetcher order above.
+  const sourceNames = ['TMDB', 'IMDb', 'Roger Ebert', 'Letterboxd', 'Reddit', 'Guardian']
+  interface PerSource {
+    count: number
+    ok: boolean
+    reason?: string
+  }
+  const perSource: Record<string, PerSource> = {}
   const allReviews: FetchedReview[] = []
 
   results.forEach((r, i) => {
     const name = sourceNames[i]
     if (r.status === 'fulfilled') {
-      perSource[name] = r.value.length
-      allReviews.push(...r.value)
+      perSource[name] = { count: r.value.reviews.length, ok: r.value.ok, reason: r.value.reason }
+      allReviews.push(...r.value.reviews)
     } else {
-      perSource[name] = 0
-      reviewLogger.warn({ filmId: film.id, source: name, error: r.reason?.message ?? String(r.reason) }, 'Source fetch failed')
+      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason)
+      perSource[name] = { count: 0, ok: false, reason }
+      reviewLogger.warn({ filmId: film.id, source: name, error: reason }, 'Source fetch rejected')
     }
   })
 
-  reviewLogger.info({ filmId: film.id, filmTitle: film.title, perSource, total: allReviews.length }, 'Review source breakdown')
+  // Build the human-readable summary line, e.g.
+  //   "Sources checked: TMDB ✓ (2 reviews), IMDb ✗ (429 quota exceeded),
+  //    Roger Ebert ✗ (403 blocked), Letterboxd ✗ (Cloudflare blocked),
+  //    Reddit ✗ (no credentials), Guardian ✗ (no API key)"
+  const summaryParts = sourceNames.map((name) => {
+    const s = perSource[name]
+    if (s.ok) {
+      return `${name} ✓ (${s.count} review${s.count === 1 ? '' : 's'})`
+    }
+    return `${name} ✗ (${s.reason || 'unknown'})`
+  })
+  const summaryLine = `Sources checked: ${summaryParts.join(', ')}`
+
+  reviewLogger.info(
+    { filmId: film.id, filmTitle: film.title, perSource, total: allReviews.length },
+    summaryLine
+  )
 
   // Deduplicate by content hash and store
   let stored = 0

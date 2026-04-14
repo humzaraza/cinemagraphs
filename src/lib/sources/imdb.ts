@@ -1,12 +1,17 @@
 import type { Film } from '@/generated/prisma/client'
-import type { FetchedReview } from '@/lib/types'
+import type { FetchResult, FetchedReview } from '@/lib/types'
 import { reviewLogger } from '@/lib/logger'
 
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY
 const RAPIDAPI_IMDB_HOST = process.env.RAPIDAPI_IMDB_HOST || 'imdb232.p.rapidapi.com'
 
-export async function fetchIMDbReviews(film: Film): Promise<FetchedReview[]> {
-  if (!RAPIDAPI_KEY || !film.imdbId) return []
+export async function fetchIMDbReviews(film: Film): Promise<FetchResult> {
+  if (!RAPIDAPI_KEY) {
+    return { reviews: [], ok: false, reason: 'no RAPIDAPI_KEY' }
+  }
+  if (!film.imdbId) {
+    return { reviews: [], ok: false, reason: 'film missing imdbId' }
+  }
 
   try {
     const reviews: FetchedReview[] = []
@@ -24,31 +29,52 @@ export async function fetchIMDbReviews(film: Film): Promise<FetchedReview[]> {
       }
     )
 
+    // Explicit handling for the two common failure modes we've observed in
+    // prod: 403 = plan not subscribed, 429 = monthly quota exhausted. Both
+    // used to silently return an empty array; now they return a structured
+    // failure with a warn-level log.
     if (userRes.status === 403) {
-      reviewLogger.warn({ source: 'IMDB', host: RAPIDAPI_IMDB_HOST }, 'IMDb RapidAPI 403 — not subscribed. Subscribe at https://rapidapi.com/hub to enable IMDb reviews.')
-      return []
+      reviewLogger.warn(
+        { source: 'IMDB', host: RAPIDAPI_IMDB_HOST, imdbId: film.imdbId, filmTitle: film.title },
+        'IMDb RapidAPI: subscription required (HTTP 403)'
+      )
+      return { reviews: [], ok: false, reason: '403 not subscribed' }
+    }
+    if (userRes.status === 429) {
+      reviewLogger.warn(
+        { source: 'IMDB', host: RAPIDAPI_IMDB_HOST, imdbId: film.imdbId, filmTitle: film.title },
+        'IMDb RapidAPI: quota exceeded (HTTP 429)'
+      )
+      return { reviews: [], ok: false, reason: '429 quota exceeded' }
+    }
+    if (!userRes.ok) {
+      reviewLogger.warn(
+        { source: 'IMDB', host: RAPIDAPI_IMDB_HOST, imdbId: film.imdbId, filmTitle: film.title, status: userRes.status },
+        `IMDb RapidAPI: user reviews request failed (HTTP ${userRes.status})`
+      )
+      return { reviews: [], ok: false, reason: `HTTP ${userRes.status}` }
     }
 
-    if (userRes.ok) {
-      const data = await userRes.json()
-      const edges = data?.data?.title?.reviews?.edges || []
-      for (const edge of edges.slice(0, 15)) {
-        const node = edge.node
-        if (!node) continue
-        const text = node.text?.originalText?.plainText || ''
-        if (text.length > 50) {
-          reviews.push({
-            sourcePlatform: 'IMDB',
-            sourceUrl: `https://www.imdb.com/review/${node.id}/`,
-            author: node.author?.nickName || null,
-            reviewText: text,
-            sourceRating: node.authorRating ? node.authorRating : null,
-          })
-        }
+    const data = await userRes.json()
+    const edges = data?.data?.title?.reviews?.edges || []
+    for (const edge of edges.slice(0, 15)) {
+      const node = edge.node
+      if (!node) continue
+      const text = node.text?.originalText?.plainText || ''
+      if (text.length > 50) {
+        reviews.push({
+          sourcePlatform: 'IMDB',
+          sourceUrl: `https://www.imdb.com/review/${node.id}/`,
+          author: node.author?.nickName || null,
+          reviewText: text,
+          sourceRating: node.authorRating ? node.authorRating : null,
+        })
       }
     }
 
-    // Also fetch critic reviews
+    // Critic reviews are a bonus — if this fails we still report the IMDb
+    // source as ok (because user reviews already succeeded), but we do log
+    // the failure so quota/block issues don't silently slip by.
     try {
       const criticRes = await fetch(
         `https://${RAPIDAPI_IMDB_HOST}/api/title/get-critic-reviews?tt=${film.imdbId}`,
@@ -61,7 +87,23 @@ export async function fetchIMDbReviews(film: Film): Promise<FetchedReview[]> {
           signal: AbortSignal.timeout(10000),
         }
       )
-      if (criticRes.ok) {
+
+      if (criticRes.status === 429) {
+        reviewLogger.warn(
+          { source: 'IMDB', endpoint: 'critic', imdbId: film.imdbId, filmTitle: film.title },
+          'IMDb RapidAPI critic reviews: quota exceeded (HTTP 429)'
+        )
+      } else if (criticRes.status === 403) {
+        reviewLogger.warn(
+          { source: 'IMDB', endpoint: 'critic', imdbId: film.imdbId, filmTitle: film.title },
+          'IMDb RapidAPI critic reviews: subscription required (HTTP 403)'
+        )
+      } else if (!criticRes.ok) {
+        reviewLogger.warn(
+          { source: 'IMDB', endpoint: 'critic', imdbId: film.imdbId, filmTitle: film.title, status: criticRes.status },
+          `IMDb RapidAPI critic reviews: request failed (HTTP ${criticRes.status})`
+        )
+      } else {
         const criticData = await criticRes.json()
         const criticEdges = criticData?.data?.title?.metacritic?.reviews?.edges || []
         for (const edge of criticEdges.slice(0, 10)) {
@@ -74,19 +116,32 @@ export async function fetchIMDbReviews(film: Film): Promise<FetchedReview[]> {
               sourceUrl: node.url || null,
               author: node.reviewer ? `${node.reviewer} (${node.site || 'Critic'})` : node.site || null,
               reviewText: text,
-              sourceRating: node.score ? node.score / 10 : null,  // Metacritic 0-100 → 0-10
+              sourceRating: node.score ? node.score / 10 : null, // Metacritic 0-100 → 0-10
             })
           }
         }
       }
-    } catch {
-      // Critic reviews are a bonus — failure is fine
+    } catch (criticErr) {
+      reviewLogger.warn(
+        {
+          source: 'IMDB',
+          endpoint: 'critic',
+          imdbId: film.imdbId,
+          filmTitle: film.title,
+          error: criticErr instanceof Error ? criticErr.message : String(criticErr),
+        },
+        'IMDb RapidAPI critic reviews: fetch error'
+      )
     }
 
     reviewLogger.info({ source: 'IMDB', filmTitle: film.title, count: reviews.length }, 'IMDb reviews fetched')
-    return reviews
+    return { reviews, ok: true }
   } catch (err) {
-    reviewLogger.error({ source: 'IMDB', filmTitle: film.title, error: err instanceof Error ? err.message : String(err) }, 'IMDb fetch failed')
-    return []
+    const message = err instanceof Error ? err.message : String(err)
+    reviewLogger.error(
+      { source: 'IMDB', filmTitle: film.title, error: message },
+      'IMDb fetch failed'
+    )
+    return { reviews: [], ok: false, reason: `error: ${message}` }
   }
 }

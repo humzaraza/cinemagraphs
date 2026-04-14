@@ -1,5 +1,5 @@
 import type { Film } from '@/generated/prisma/client'
-import type { FetchedReview } from '@/lib/types'
+import type { FetchResult, FetchedReview } from '@/lib/types'
 import { slugify } from './helpers'
 import { reviewLogger } from '@/lib/logger'
 
@@ -7,7 +7,7 @@ import { reviewLogger } from '@/lib/logger'
 // Server-side fetching will be blocked with a JS challenge page.
 // This source is kept for future headless browser support.
 
-export async function fetchLetterboxdReviews(film: Film): Promise<FetchedReview[]> {
+export async function fetchLetterboxdReviews(film: Film): Promise<FetchResult> {
   try {
     const slug = slugify(film.title)
     const year = film.releaseDate ? new Date(film.releaseDate).getFullYear() : ''
@@ -25,31 +25,52 @@ export async function fetchLetterboxdReviews(film: Film): Promise<FetchedReview[
           signal: AbortSignal.timeout(8000),
         })
 
-        if (!res.ok) continue
+        if (!res.ok) {
+          reviewLogger.warn(
+            { source: 'LETTERBOXD', filmTitle: film.title, url, status: res.status },
+            `Letterboxd: request failed (HTTP ${res.status})`
+          )
+          continue
+        }
 
         const html = await res.text()
 
         // Detect Cloudflare challenge
         if (html.includes('Just a moment...') || html.includes('cf_chl_opt') || html.includes('challenge-platform')) {
-          reviewLogger.warn({ source: 'LETTERBOXD', filmTitle: film.title }, 'Letterboxd blocked by Cloudflare — skipping')
-          return []
+          reviewLogger.warn(
+            { source: 'LETTERBOXD', filmTitle: film.title, url },
+            'Letterboxd: blocked by Cloudflare'
+          )
+          return { reviews: [], ok: false, reason: 'Cloudflare blocked' }
         }
 
         const reviews = parseLetterboxdHTML(html, url)
         if (reviews.length > 0) {
           reviewLogger.info({ source: 'LETTERBOXD', filmTitle: film.title, count: reviews.length }, 'Letterboxd reviews fetched')
-          return reviews
+          return { reviews, ok: true }
         }
-      } catch {
-        continue
+      } catch (err) {
+        reviewLogger.warn(
+          {
+            source: 'LETTERBOXD',
+            filmTitle: film.title,
+            url,
+            error: err instanceof Error ? err.message : String(err),
+          },
+          'Letterboxd: fetch error'
+        )
       }
     }
 
-    reviewLogger.info({ source: 'LETTERBOXD', filmTitle: film.title, count: 0 }, 'Letterboxd: 0 reviews (Cloudflare blocked)')
-    return []
+    reviewLogger.info({ source: 'LETTERBOXD', filmTitle: film.title, count: 0 }, 'Letterboxd: 0 reviews')
+    return { reviews: [], ok: true }
   } catch (err) {
-    reviewLogger.error({ source: 'LETTERBOXD', filmTitle: film.title, error: err instanceof Error ? err.message : String(err) }, 'Letterboxd fetch failed')
-    return []
+    const message = err instanceof Error ? err.message : String(err)
+    reviewLogger.error(
+      { source: 'LETTERBOXD', filmTitle: film.title, error: message },
+      'Letterboxd fetch failed'
+    )
+    return { reviews: [], ok: false, reason: `error: ${message}` }
   }
 }
 
