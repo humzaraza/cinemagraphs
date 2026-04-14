@@ -12,7 +12,7 @@ export async function GET(
     const film = await cachedQuery(KEYS.film(id), TTL.FILM, () =>
       prisma.film.findUnique({
         where: { id },
-        include: { sentimentGraph: true },
+        include: { sentimentGraph: true, filmBeats: true },
       })
     )
 
