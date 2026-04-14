@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import AdminFilmImport from '@/components/AdminFilmImport'
+import AdminBulkImport from '@/components/AdminBulkImport'
 import AdminAnalyze from '@/components/AdminAnalyze'
 import AdminHomepageCuration from '@/components/AdminHomepageCuration'
 import AdminReviews from '@/components/AdminReviews'
@@ -141,6 +142,10 @@ export default async function AdminPage() {
                     Import from TMDB
                   </h2>
                   <AdminFilmImport />
+                </section>
+
+                <section className="mb-10">
+                  <AdminBulkImport />
                 </section>
               </div>
             ),
