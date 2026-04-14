@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useSession } from 'next-auth/react'
 import Image from 'next/image'
 
 interface Props {
@@ -20,6 +21,7 @@ export default function EditProfileModal({
   onClose,
   onSaved,
 }: Props) {
+  const { update } = useSession()
   const [name, setName] = useState(currentName)
   const [username, setUsername] = useState(currentUsername)
   const [bio, setBio] = useState(currentBio)
@@ -90,6 +92,20 @@ export default function EditProfileModal({
       if (!res.ok) {
         const data = await res.json()
         throw new Error(data.error || 'Failed to update profile')
+      }
+
+      // Refresh the NextAuth client session cache so the new image (and
+      // name) appear immediately anywhere useSession() is read, without
+      // requiring a page reload. Calling update() with no args triggers
+      // the jwt callback's refresh branch in src/lib/auth.ts, which
+      // re-reads name/image/role from the DB and writes them back onto
+      // the token. Swallow failures — the DB row is already correct, so
+      // a failed refresh just means the session catches up on its own
+      // on the next auth request.
+      try {
+        await update()
+      } catch {
+        // ignore — DB is source of truth
       }
 
       onSaved()
