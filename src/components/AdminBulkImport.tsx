@@ -148,8 +148,40 @@ export default function AdminBulkImport() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Bulk import failed')
+
+      // Read body as text first so we can surface a helpful error even when
+      // the response isn't valid JSON — e.g. a Vercel 504 HTML error page
+      // after a function timeout. Calling res.json() directly on HTML
+      // throws an obscure WebKit error ("The string did not match the
+      // expected pattern") that gives the admin no idea what happened.
+      const responseText = await res.text()
+      let data: BulkImportResponse | { error?: string } | null = null
+      let parseError: unknown = null
+      try {
+        data = JSON.parse(responseText)
+      } catch (e) {
+        parseError = e
+      }
+
+      if (!res.ok) {
+        const backendError =
+          data && typeof data === 'object' && 'error' in data
+            ? data.error
+            : null
+        const snippet = responseText.slice(0, 200).trim()
+        throw new Error(
+          backendError ||
+            `Bulk import failed (HTTP ${res.status})${snippet ? `: ${snippet}` : ''}`
+        )
+      }
+
+      if (parseError || !data) {
+        const snippet = responseText.slice(0, 200).trim()
+        throw new Error(
+          `Bulk import returned an invalid JSON response${snippet ? `: ${snippet}` : ''}`
+        )
+      }
+
       setImportResult(data as BulkImportResponse)
     } catch (err) {
       setImportError(err instanceof Error ? err.message : 'Bulk import failed')

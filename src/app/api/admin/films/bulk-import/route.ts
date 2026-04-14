@@ -72,8 +72,16 @@ interface TmdbCandidate {
 }
 
 /**
- * Walk a paginated TMDB list endpoint until we have `maxFilms` candidates
- * or we run out of pages. Caps at 50 pages (1000 results) as a safety stop.
+ * Walk a paginated TMDB list endpoint until we have `maxFilms` unique
+ * candidates or we run out of pages. Caps at 50 pages (1000 results) as
+ * a safety stop.
+ *
+ * Dedupes by TMDB id because popularity-sorted `/discover/movie` is not
+ * a stable order — the same id can appear on consecutive pages if its
+ * popularity score shifts between requests. Observed in practice for
+ * Marvel (company 420): id=640146 appeared at both p2r20 and p3r1,
+ * wasting a candidate slot. Without dedup, a request for 50 films could
+ * return fewer than 50 unique titles.
  *
  * Returns both the TMDB id and the original language so we can surface a
  * language breakdown in logs/responses — useful for confirming that
@@ -86,6 +94,7 @@ async function fetchTmdbList(
   extraParams: Record<string, string> = {}
 ): Promise<TmdbCandidate[]> {
   const candidates: TmdbCandidate[] = []
+  const seen = new Set<number>()
   let page = 1
   const maxPages = 50
 
@@ -96,13 +105,14 @@ async function fetchTmdbList(
     })
     for (const result of data.results) {
       if (candidates.length >= maxFilms) break
-      if (typeof result.id === 'number') {
-        candidates.push({
-          id: result.id,
-          title: result.title,
-          lang: result.original_language,
-        })
-      }
+      if (typeof result.id !== 'number') continue
+      if (seen.has(result.id)) continue
+      seen.add(result.id)
+      candidates.push({
+        id: result.id,
+        title: result.title,
+        lang: result.original_language,
+      })
     }
     if (data.page >= data.total_pages) break
     page++
