@@ -7,6 +7,14 @@ import { apiLogger } from '@/lib/logger'
 import { checkSuspension } from '@/lib/middleware'
 import { invalidateFilmCache } from '@/lib/cache'
 
+// TEMPORARY: auto-moderation bypass per admin request. When false, every
+// new review and every edit goes live as `approved` — autoModerate() is
+// not called, and edits no longer force re-flagging. Flip back to `true`
+// to restore the original moderation flow; all the logic below (the
+// autoModerate function, the edit re-flag path) is kept intact so no
+// re-implementation is needed.
+const AUTO_MODERATION_ENABLED = false
+
 const GIBBERISH_REGEX = /(.)\1{5,}|^[a-z]{1,3}(\s[a-z]{1,3}){10,}$/i
 
 function autoModerate(
@@ -93,17 +101,25 @@ export async function POST(
     // Extract sentiment from combined text
     const sentiment = combinedText ? await extractSentiment(combinedText) : null
 
-    // Get user creation date for moderation
+    // Get user creation date for moderation (still fetched when bypass is
+    // active — autoModerate needs it and we want flipping the flag back on
+    // to be a single-line change).
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: { createdAt: true },
     })
 
-    const { status, flagReason } = autoModerate(
-      beatRatings || null,
-      [beginning, middle, ending, otherThoughts],
-      user?.createdAt ?? new Date()
-    )
+    let status: string = 'approved'
+    let flagReason: string | null = null
+    if (AUTO_MODERATION_ENABLED) {
+      const moderation = autoModerate(
+        beatRatings || null,
+        [beginning, middle, ending, otherThoughts],
+        user?.createdAt ?? new Date()
+      )
+      status = moderation.status
+      flagReason = moderation.flagReason
+    }
 
     // Check for existing review — if exists, update (edit mode)
     const existing = await prisma.userReview.findUnique({
@@ -111,12 +127,25 @@ export async function POST(
     })
 
     if (existing) {
-      // Editing — always re-flag for moderation
-      const editModeration = autoModerate(
-        beatRatings || null,
-        [beginning, middle, ending, otherThoughts],
-        user?.createdAt ?? new Date()
-      )
+      // Editing — when moderation is on, autoModerate runs AND any
+      // otherwise-clean edit is force-flagged with "Edited review —
+      // re-moderation". With the bypass active, edits stay approved.
+      let editStatus: string = 'approved'
+      let editFlagReason: string | null = null
+      if (AUTO_MODERATION_ENABLED) {
+        const editModeration = autoModerate(
+          beatRatings || null,
+          [beginning, middle, ending, otherThoughts],
+          user?.createdAt ?? new Date()
+        )
+        if (editModeration.status === 'approved') {
+          editStatus = 'flagged'
+          editFlagReason = 'Edited review — re-moderation'
+        } else {
+          editStatus = editModeration.status
+          editFlagReason = editModeration.flagReason
+        }
+      }
 
       const review = await prisma.userReview.update({
         where: { id: existing.id },
@@ -129,8 +158,8 @@ export async function POST(
           combinedText,
           beatRatings: beatRatings || null,
           sentiment,
-          status: editModeration.status === 'approved' ? 'flagged' : editModeration.status,
-          flagReason: editModeration.status === 'approved' ? 'Edited review — re-moderation' : editModeration.flagReason,
+          status: editStatus,
+          flagReason: editFlagReason,
         },
         include: {
           user: { select: { id: true, name: true, image: true } },
