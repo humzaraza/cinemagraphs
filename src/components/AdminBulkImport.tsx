@@ -32,12 +32,14 @@ interface PerFilmResult {
   imdbReviewCount: number
   graph: boolean
   wikiBeats: boolean
+  pending?: boolean
   error?: string
 }
 
 interface BulkImportResponse {
   source: string
   total: number
+  langBreakdown: Record<string, number>
   imported: number
   alreadyExisted: number
   graphsGenerated: number
@@ -284,6 +286,16 @@ export default function AdminBulkImport() {
                   importResult.stoppedAtTitle &&
                   ` · stopped at ${importResult.stoppedAtTitle} — re-run to resume`}
               </div>
+              {importResult.langBreakdown &&
+                Object.keys(importResult.langBreakdown).length > 0 && (
+                  <div className="text-xs text-cinema-teal/70 mt-1">
+                    languages:{' '}
+                    {Object.entries(importResult.langBreakdown)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([lang, count]) => `${lang}:${count}`)
+                      .join(', ')}
+                  </div>
+                )}
             </div>
 
             {importResult.results.length > 0 && (
@@ -329,6 +341,10 @@ export default function AdminBulkImport() {
                             {r.error ? (
                               <span className="text-red-400">
                                 error: {r.error}
+                              </span>
+                            ) : r.pending ? (
+                              <span className="text-cinema-gold">
+                                pending (re-run to process)
                               </span>
                             ) : r.alreadyExisted ? (
                               <span className="text-cinema-muted">

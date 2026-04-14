@@ -57,35 +57,57 @@ async function tmdbFetch<T>(
 interface TmdbListResponse {
   page: number
   total_pages: number
-  results: Array<{ id: number; title?: string; release_date?: string }>
+  results: Array<{
+    id: number
+    title?: string
+    release_date?: string
+    original_language?: string
+  }>
+}
+
+interface TmdbCandidate {
+  id: number
+  title?: string
+  lang?: string
 }
 
 /**
- * Walk a paginated TMDB list endpoint until we have `maxFilms` TMDB IDs
+ * Walk a paginated TMDB list endpoint until we have `maxFilms` candidates
  * or we run out of pages. Caps at 50 pages (1000 results) as a safety stop.
+ *
+ * Returns both the TMDB id and the original language so we can surface a
+ * language breakdown in logs/responses — useful for confirming that
+ * non-English films (e.g. Studio Ghibli's Japanese catalog) are actually
+ * coming through. No language/region filter is applied to the TMDB call.
  */
 async function fetchTmdbList(
   endpoint: string,
   maxFilms: number,
   extraParams: Record<string, string> = {}
-): Promise<number[]> {
-  const ids: number[] = []
+): Promise<TmdbCandidate[]> {
+  const candidates: TmdbCandidate[] = []
   let page = 1
   const maxPages = 50
 
-  while (ids.length < maxFilms && page <= maxPages) {
+  while (candidates.length < maxFilms && page <= maxPages) {
     const data = await tmdbFetch<TmdbListResponse>(endpoint, {
       ...extraParams,
       page: String(page),
     })
     for (const result of data.results) {
-      if (ids.length >= maxFilms) break
-      if (typeof result.id === 'number') ids.push(result.id)
+      if (candidates.length >= maxFilms) break
+      if (typeof result.id === 'number') {
+        candidates.push({
+          id: result.id,
+          title: result.title,
+          lang: result.original_language,
+        })
+      }
     }
     if (data.page >= data.total_pages) break
     page++
   }
-  return ids
+  return candidates
 }
 
 // ── Main handler ────────────────────────────────────────────────────────────
@@ -97,6 +119,7 @@ interface PerFilmResult {
   imdbReviewCount: number
   graph: boolean
   wikiBeats: boolean
+  pending?: boolean
   error?: string
 }
 
@@ -150,8 +173,8 @@ export async function POST(request: Request) {
   const deadline = startTime + TIME_BUDGET_MS
 
   try {
-    // ── Step 1: resolve list of TMDB IDs to import ──
-    let tmdbIds: number[] = []
+    // ── Step 1: resolve list of TMDB candidates to import ──
+    let candidates: TmdbCandidate[] = []
     if (source === 'tmdb_company') {
       const companyId = Number(body?.companyId)
       if (!Number.isInteger(companyId) || companyId <= 0) {
@@ -163,20 +186,35 @@ export async function POST(request: Request) {
           { status: 400 }
         )
       }
-      tmdbIds = await fetchTmdbList('/discover/movie', maxFilms, {
+      candidates = await fetchTmdbList('/discover/movie', maxFilms, {
         with_companies: String(companyId),
         sort_by: 'popularity.desc',
       })
     } else if (source === 'tmdb_top_rated') {
-      tmdbIds = await fetchTmdbList('/movie/top_rated', maxFilms)
+      candidates = await fetchTmdbList('/movie/top_rated', maxFilms)
     } else if (source === 'tmdb_popular') {
-      tmdbIds = await fetchTmdbList('/movie/popular', maxFilms)
+      candidates = await fetchTmdbList('/movie/popular', maxFilms)
     }
 
-    const total = tmdbIds.length
+    const total = candidates.length
+
+    // Language breakdown — so we can confirm in logs and the API response
+    // that non-English films (e.g. the entire Japanese Ghibli catalog) are
+    // actually coming through the TMDB discover call, which has historically
+    // been misdiagnosed as "the endpoint is filtering Japanese films".
+    const langBreakdown: Record<string, number> = {}
+    for (const c of candidates) {
+      const lang = c.lang ?? '?'
+      langBreakdown[lang] = (langBreakdown[lang] ?? 0) + 1
+    }
+    const langSummary = Object.entries(langBreakdown)
+      .sort((a, b) => b[1] - a[1])
+      .map(([lang, count]) => `${lang}:${count}`)
+      .join(', ')
+
     apiLogger.info(
-      { source, total, maxFilms },
-      `Bulk import starting: ${source} (${total} films)`
+      { source, total, maxFilms, langBreakdown },
+      `Bulk import starting: ${source} (${total} films, langs: ${langSummary || 'none'})`
     )
 
     // ── Step 2: process each film sequentially ──
@@ -189,17 +227,33 @@ export async function POST(request: Request) {
     let stoppedAtIndex = -1
     let stoppedAtTitle: string | null = null
 
-    for (let i = 0; i < tmdbIds.length; i++) {
-      const tmdbId = tmdbIds[i]
+    for (let i = 0; i < candidates.length; i++) {
+      const candidate = candidates[i]
+      const tmdbId = candidate.id
 
       if (Date.now() > deadline) {
         timedOut = true
         stoppedAtIndex = i
-        stoppedAtTitle = `tmdbId=${tmdbId}`
+        stoppedAtTitle = candidate.title ?? `tmdbId=${tmdbId}`
         apiLogger.warn(
           { i, total, tmdbId },
           `Bulk import approaching timeout — stopping at ${i + 1}/${total}`
         )
+        // Push the remaining candidates as `pending` so the UI shows the
+        // full slate instead of just the 2-3 rows we managed to process
+        // before the timeout. Re-running the endpoint will pick them up.
+        for (let j = i; j < candidates.length; j++) {
+          const skipped = candidates[j]
+          results.push({
+            tmdbId: skipped.id,
+            title: skipped.title ?? `tmdb:${skipped.id}`,
+            alreadyExisted: false,
+            imdbReviewCount: 0,
+            graph: false,
+            wikiBeats: false,
+            pending: true,
+          })
+        }
         break
       }
 
@@ -222,7 +276,7 @@ export async function POST(request: Request) {
             { filmId: existing.id, filmTitle: existing.title, n: i + 1, total },
             `Importing ${existing.title} (${i + 1}/${total})... already exists, skipping`
           )
-          if (i < tmdbIds.length - 1) {
+          if (i < candidates.length - 1) {
             await new Promise((resolve) =>
               setTimeout(resolve, DELAY_BETWEEN_FILMS_MS)
             )
@@ -329,7 +383,7 @@ export async function POST(request: Request) {
         })
       }
 
-      if (i < tmdbIds.length - 1) {
+      if (i < candidates.length - 1) {
         await new Promise((resolve) =>
           setTimeout(resolve, DELAY_BETWEEN_FILMS_MS)
         )
@@ -348,6 +402,7 @@ export async function POST(request: Request) {
         wikiBeatsGenerated,
         timedOut,
         stoppedAtIndex,
+        langBreakdown,
         durationMs,
       },
       `Bulk import complete: ${imported} imported, ${alreadyExistedCount} already existed, ${graphsGenerated} graphs, ${wikiBeatsGenerated} wiki beats`
@@ -356,6 +411,7 @@ export async function POST(request: Request) {
     return Response.json({
       source,
       total,
+      langBreakdown,
       imported,
       alreadyExisted: alreadyExistedCount,
       graphsGenerated,
