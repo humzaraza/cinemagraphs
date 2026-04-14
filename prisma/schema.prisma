@@ -178,6 +178,7 @@ model SentimentGraph {
   generatedAt     DateTime @default(now())
   varianceSource  String   @default("external_only")
   version         Int      @default(1)
+  reviewHash      String?
   film            Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
 }
 

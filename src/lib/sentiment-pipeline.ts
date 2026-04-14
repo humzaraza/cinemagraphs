@@ -1,8 +1,15 @@
 import { prisma } from './prisma'
 import { fetchAnchorScores } from './omdb'
-import { fetchAllReviews } from './review-fetcher'
-import { analyzeSentiment, type PlotContext } from './claude'
+import { fetchAllReviews, computeReviewHash } from './review-fetcher'
+import {
+  analyzeSentiment,
+  buildAnalysisPromptParts,
+  type PlotContext,
+  type AnalysisPromptParts,
+} from './claude'
 import type { AnchorScores } from './omdb'
+import type { SentimentGraphData } from '@/lib/types'
+import type { Film, Review } from '@/generated/prisma/client'
 import { pipelineLogger } from './logger'
 import { fetchWikipediaPlot } from './sources/wikipedia'
 
@@ -27,6 +34,10 @@ function isQualityReview(text: string): boolean {
  * Returns true if:
  * - No existing graph (never analyzed)
  * - Filtered review count grew by ≥10% over lastReviewCount
+ *
+ * This is the cheap pre-filter used by the cron — it does not fetch reviews
+ * from external sources and does not compute any hashes. The deeper "did
+ * anything actually change" check happens inside `prepareSentimentGraphInput`.
  */
 export async function filmNeedsReanalysis(filmId: string): Promise<{ needsAnalysis: boolean; filteredCount: number; reason: string }> {
   const film = await prisma.film.findUnique({
@@ -191,60 +202,104 @@ export async function fetchReviewsAndCheckThreshold(filmId: string): Promise<{
   return { qualityCount, minRequired, meetsThreshold: qualityCount >= minRequired }
 }
 
-export async function generateSentimentGraph(filmId: string): Promise<void> {
-  // 1. Get film from database
-  const film = await prisma.film.findUnique({ where: { id: filmId } })
-  if (!film) throw new Error(`Film not found: ${filmId}`)
+// ── Stage 1: prepare (no Claude call) ──────────────────────────────────────
 
-  pipelineLogger.info({ filmId: film.id, filmTitle: film.title }, 'Starting analysis')
+export interface SentimentGraphInput {
+  film: Film
+  reviews: Review[]
+  filteredReviewCount: number
+  anchorScores: AnchorScores
+  plotContext: PlotContext
+  reviewHash: string
+  promptParts: AnalysisPromptParts
+}
 
-  // 2. Ensure we have the IMDb ID
-  if (!film.imdbId) {
+export type PrepareSentimentInputResult =
+  | { status: 'ready'; input: SentimentGraphInput }
+  | { status: 'skipped_unchanged'; reviewHash: string; filteredCount: number }
+  | { status: 'skipped_insufficient_reviews'; qualityCount: number; minRequired: number }
+  | { status: 'skipped_film_not_found' }
+
+/**
+ * Prepare everything needed to send a single film to Claude — fetches reviews,
+ * resolves anchor scores, pulls plot context, computes the review hash, and
+ * builds the prompt parts. The expensive Claude call has NOT happened yet.
+ *
+ * Skips early — saving the cost of a Claude call — when:
+ *  - the film doesn't exist
+ *  - quality reviews are below threshold
+ *  - the review set hasn't changed since the last graph (hash match), unless
+ *    `force` is set
+ */
+export async function prepareSentimentGraphInput(
+  filmId: string,
+  options: { force?: boolean } = {}
+): Promise<PrepareSentimentInputResult> {
+  const filmRecord = await prisma.film.findUnique({
+    where: { id: filmId },
+    include: { sentimentGraph: { select: { id: true, reviewHash: true } } },
+  })
+  if (!filmRecord) {
+    pipelineLogger.warn({ filmId }, 'Film not found during prep')
+    return { status: 'skipped_film_not_found' }
+  }
+
+  // Strip the included relation off so we can pass a clean Film to claude.ts
+  const { sentimentGraph: existingGraph, ...film } = filmRecord
+  const filmForAnalysis = film as Film
+
+  pipelineLogger.info({ filmId: film.id, filmTitle: film.title }, 'Preparing sentiment input')
+
+  // Ensure IMDb ID for review sources that need it
+  if (!filmForAnalysis.imdbId) {
     const imdbId = await lookupImdbId(film.tmdbId)
     if (imdbId) {
-      await prisma.film.update({
-        where: { id: filmId },
-        data: { imdbId },
-      })
-      film.imdbId = imdbId
+      await prisma.film.update({ where: { id: filmId }, data: { imdbId } })
+      filmForAnalysis.imdbId = imdbId
     }
   }
 
-  // 3. Fetch anchor scores from OMDB
+  // Fetch anchor scores from OMDB (and update the film row with new values)
   let anchorScores: AnchorScores = {
-    imdbRating: film.imdbRating,
-    rtCriticsScore: film.rtCriticsScore,
-    rtAudienceScore: film.rtAudienceScore,
-    metacriticScore: film.metacriticScore,
+    imdbRating: filmForAnalysis.imdbRating,
+    rtCriticsScore: filmForAnalysis.rtCriticsScore,
+    rtAudienceScore: filmForAnalysis.rtAudienceScore,
+    metacriticScore: filmForAnalysis.metacriticScore,
   }
-
-  if (film.imdbId) {
-    const omdbScores = await fetchAnchorScores(film.imdbId)
-    // Update film with any new scores
+  if (filmForAnalysis.imdbId) {
+    const omdbScores = await fetchAnchorScores(filmForAnalysis.imdbId)
     const updates: Record<string, number | null> = {}
-    if (omdbScores.imdbRating && !film.imdbRating) updates.imdbRating = omdbScores.imdbRating
+    if (omdbScores.imdbRating && !filmForAnalysis.imdbRating) updates.imdbRating = omdbScores.imdbRating
     if (omdbScores.rtCriticsScore) updates.rtCriticsScore = omdbScores.rtCriticsScore
     if (omdbScores.rtAudienceScore) updates.rtAudienceScore = omdbScores.rtAudienceScore
     if (omdbScores.metacriticScore) updates.metacriticScore = omdbScores.metacriticScore
-
     if (Object.keys(updates).length > 0) {
       await prisma.film.update({ where: { id: filmId }, data: updates })
     }
-
     anchorScores = {
-      imdbRating: omdbScores.imdbRating || film.imdbRating,
-      rtCriticsScore: omdbScores.rtCriticsScore || film.rtCriticsScore,
-      rtAudienceScore: omdbScores.rtAudienceScore || film.rtAudienceScore,
-      metacriticScore: omdbScores.metacriticScore || film.metacriticScore,
+      imdbRating: omdbScores.imdbRating || filmForAnalysis.imdbRating,
+      rtCriticsScore: omdbScores.rtCriticsScore || filmForAnalysis.rtCriticsScore,
+      rtAudienceScore: omdbScores.rtAudienceScore || filmForAnalysis.rtAudienceScore,
+      metacriticScore: omdbScores.metacriticScore || filmForAnalysis.metacriticScore,
     }
   }
 
-  pipelineLogger.info({ filmId: film.id, filmTitle: film.title, imdbRating: anchorScores.imdbRating, rtCriticsScore: anchorScores.rtCriticsScore, metacriticScore: anchorScores.metacriticScore }, 'Anchor scores fetched')
+  pipelineLogger.info(
+    {
+      filmId: film.id,
+      filmTitle: film.title,
+      imdbRating: anchorScores.imdbRating,
+      rtCriticsScore: anchorScores.rtCriticsScore,
+      metacriticScore: anchorScores.metacriticScore,
+    },
+    'Anchor scores fetched'
+  )
 
-  // 4. Fetch reviews from all sources
-  const totalFetched = await fetchAllReviews(film)
+  // Fetch reviews from all sources (stores new ones, dedupes existing)
+  await fetchAllReviews(filmForAnalysis)
 
-  // Get all stored reviews for this film, filter for quality
+  // Pull all stored reviews — order by fetchedAt so the slice(0, 40) inside
+  // the prompt builder sends the freshest reviews first.
   const allReviews = await prisma.review.findMany({
     where: { filmId: film.id },
     orderBy: { fetchedAt: 'desc' },
@@ -252,25 +307,68 @@ export async function generateSentimentGraph(filmId: string): Promise<void> {
   const reviews = allReviews.filter((r) => isQualityReview(r.reviewText))
   const filteredReviewCount = reviews.length
 
-  // Lower threshold for newer films (released within last 6 months)
+  // Quality threshold (lower for newer films)
   const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
   const isRecentRelease = film.releaseDate && film.releaseDate > sixMonthsAgo
   const minReviews = isRecentRelease ? 1 : 2
 
   if (reviews.length < minReviews) {
-    throw new Error(`Insufficient quality reviews for "${film.title}": only ${reviews.length} found (minimum ${minReviews} required)`)
+    pipelineLogger.info(
+      { filmId: film.id, filmTitle: film.title, qualityCount: reviews.length, minRequired: minReviews },
+      'Skipping — insufficient quality reviews'
+    )
+    return {
+      status: 'skipped_insufficient_reviews',
+      qualityCount: reviews.length,
+      minRequired: minReviews,
+    }
   }
 
-  pipelineLogger.info({ filmId: film.id, filmTitle: film.title, totalReviews: allReviews.length, qualityReviews: filteredReviewCount }, 'Reviews available for analysis')
+  // Hash check — bail out if the review set is identical to the last analysis
+  const reviewHash = computeReviewHash(reviews)
+  const existingHash = existingGraph?.reviewHash
+  if (!options.force && existingHash && existingHash === reviewHash) {
+    pipelineLogger.info(
+      { filmId: film.id, filmTitle: film.title, reviewHash },
+      'Skipping — review set unchanged (hash match)'
+    )
+    return { status: 'skipped_unchanged', reviewHash, filteredCount: filteredReviewCount }
+  }
 
-  // 5. Fetch plot context (Wikipedia → TMDB → OMDB → reviews only)
-  const plotContext = await fetchPlotContext(film)
-  pipelineLogger.info({ filmId: film.id, filmTitle: film.title, plotSource: plotContext.source }, 'Plot context resolved')
+  // Fetch plot context (Wikipedia → TMDB → OMDB → reviews_only)
+  const plotContext = await fetchPlotContext(filmForAnalysis)
+  pipelineLogger.info(
+    { filmId: film.id, filmTitle: film.title, plotSource: plotContext.source },
+    'Plot context resolved'
+  )
 
-  // 6. Send to Claude API for analysis
-  const graphData = await analyzeSentiment(film, reviews, anchorScores, plotContext)
+  const promptParts = buildAnalysisPromptParts(filmForAnalysis, reviews, anchorScores, plotContext)
 
-  // 7. Store result in SentimentGraph table
+  return {
+    status: 'ready',
+    input: {
+      film: filmForAnalysis,
+      reviews,
+      filteredReviewCount,
+      anchorScores,
+      plotContext,
+      reviewHash,
+      promptParts,
+    },
+  }
+}
+
+// ── Stage 3: store result ──────────────────────────────────────────────────
+
+/**
+ * Persist a Claude analysis result as a SentimentGraph row, and update the
+ * film's lastReviewCount so the cheap pre-filter still works.
+ */
+export async function storeSentimentGraphResult(
+  input: SentimentGraphInput,
+  graphData: SentimentGraphData
+): Promise<void> {
+  const { film, filteredReviewCount, reviewHash } = input
   const existing = await prisma.sentimentGraph.findUnique({ where: { filmId: film.id } })
 
   if (existing) {
@@ -280,8 +378,11 @@ export async function generateSentimentGraph(filmId: string): Promise<void> {
         previousScore: existing.overallScore,
         overallScore: graphData.overallSentiment,
         anchoredFrom: graphData.anchoredFrom,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         dataPoints: graphData.dataPoints as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         peakMoment: graphData.peakMoment as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         lowestMoment: graphData.lowestMoment as any,
         biggestSwing: graphData.biggestSentimentSwing,
         summary: graphData.summary,
@@ -289,36 +390,90 @@ export async function generateSentimentGraph(filmId: string): Promise<void> {
         sourcesUsed: graphData.sources,
         generatedAt: new Date(),
         version: existing.version + 1,
+        reviewHash,
       },
     })
-    pipelineLogger.info({ filmId: film.id, filmTitle: film.title, version: existing.version + 1 }, 'Updated sentiment graph')
+    pipelineLogger.info(
+      { filmId: film.id, filmTitle: film.title, version: existing.version + 1 },
+      'Updated sentiment graph'
+    )
   } else {
     await prisma.sentimentGraph.create({
       data: {
         filmId: film.id,
         overallScore: graphData.overallSentiment,
         anchoredFrom: graphData.anchoredFrom,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         dataPoints: graphData.dataPoints as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         peakMoment: graphData.peakMoment as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         lowestMoment: graphData.lowestMoment as any,
         biggestSwing: graphData.biggestSentimentSwing,
         summary: graphData.summary,
         reviewCount: graphData.reviewCount,
         sourcesUsed: graphData.sources,
         generatedAt: new Date(),
+        reviewHash,
       },
     })
     pipelineLogger.info({ filmId: film.id, filmTitle: film.title }, 'Created sentiment graph')
   }
 
-  // Update lastReviewCount so future re-analysis checks the delta
+  // Update lastReviewCount so the cheap pre-filter still works
   await prisma.film.update({
     where: { id: film.id },
     data: { lastReviewCount: filteredReviewCount },
   })
 }
 
-export async function generateBatchSentimentGraphs(filmIds: string[]): Promise<{
+// ── Convenience: per-film analysis (used by admin endpoints + scripts) ─────
+
+/**
+ * One-shot analysis of a single film. Used by admin "Analyze" buttons and
+ * scripts that want a sequential, synchronous-feeling API. The cron uses the
+ * Batch API path (prepareSentimentGraphInput → analyzeSentimentBatch →
+ * storeSentimentGraphResult) instead.
+ *
+ * `force` defaults to `false` — meaning hash-match skip is honored. Admin
+ * "regenerate" buttons should pass `force: true` to bypass the hash skip.
+ */
+export async function generateSentimentGraph(
+  filmId: string,
+  options: { force?: boolean } = {}
+): Promise<void> {
+  const prep = await prepareSentimentGraphInput(filmId, options)
+
+  if (prep.status === 'skipped_film_not_found') {
+    throw new Error(`Film not found: ${filmId}`)
+  }
+  if (prep.status === 'skipped_insufficient_reviews') {
+    throw new Error(
+      `Insufficient quality reviews: only ${prep.qualityCount} found (minimum ${prep.minRequired} required)`
+    )
+  }
+  if (prep.status === 'skipped_unchanged') {
+    pipelineLogger.info(
+      { filmId, reviewHash: prep.reviewHash },
+      'generateSentimentGraph: skipped (review set unchanged)'
+    )
+    return
+  }
+
+  const { input } = prep
+  const graphData = await analyzeSentiment(
+    input.film,
+    input.reviews,
+    input.anchorScores,
+    input.plotContext
+  )
+  await storeSentimentGraphResult(input, graphData)
+}
+
+export async function generateBatchSentimentGraphs(
+  filmIds: string[],
+  options: { force?: boolean } = {}
+): Promise<{
   succeeded: string[]
   failed: { id: string; error: string }[]
 }> {
@@ -327,7 +482,7 @@ export async function generateBatchSentimentGraphs(filmIds: string[]): Promise<{
 
   for (const filmId of filmIds) {
     try {
-      await generateSentimentGraph(filmId)
+      await generateSentimentGraph(filmId, options)
       succeeded.push(filmId)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -337,7 +492,7 @@ export async function generateBatchSentimentGraphs(filmIds: string[]): Promise<{
 
     // Brief pause between films to avoid rate limits
     if (filmIds.indexOf(filmId) < filmIds.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      await new Promise((resolve) => setTimeout(resolve, 2000))
     }
   }
 

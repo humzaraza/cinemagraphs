@@ -16,6 +16,27 @@ function contentHash(text: string): string {
   return createHash('sha256').update(text.trim().toLowerCase()).digest('hex')
 }
 
+/**
+ * Compute a stable hash of a film's review set by sorting per-review
+ * contentHashes and sha256-ing the joined result.
+ *
+ * - Reviews missing a contentHash (legacy rows) are excluded from the hash.
+ *   Once those reviews are re-stored with a hash they'll be picked up; until
+ *   then they don't influence the result, which is the safest behavior.
+ * - Sort order makes the hash insensitive to fetch / insertion order.
+ * - Returns a 64-char hex string. Returns the sha256 of empty string when no
+ *   hashes are available — distinct from a real review hash, but stable.
+ */
+export function computeReviewHash(
+  reviews: Array<{ contentHash: string | null }>
+): string {
+  const hashes = reviews
+    .map((r) => r.contentHash)
+    .filter((h): h is string => h !== null && h.length > 0)
+    .sort()
+  return createHash('sha256').update(hashes.join('|')).digest('hex')
+}
+
 export async function fetchAllReviews(film: Film): Promise<number> {
   reviewLogger.info({ filmId: film.id, filmTitle: film.title }, 'Fetching reviews')
 
