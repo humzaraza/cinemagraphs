@@ -9,6 +9,7 @@ import { getMovieTrailerKey } from '@/lib/tmdb'
 import SentimentGraph from '@/components/SentimentGraph'
 import TrailerButton from '@/components/TrailerButton'
 import WatchlistButton from '@/components/WatchlistButton'
+import AddToListDropdown from '@/components/AddToListDropdown'
 import FilmCommunityTabs from '@/components/FilmCommunityTabs'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { FilmFullCast } from '@/components/FilmFullCast'
@@ -276,6 +277,7 @@ export default async function FilmPage({
                 size="md"
                 className="inline-flex items-center justify-center border border-cinema-gold/30 text-cinema-gold px-3.5 py-2.5 rounded-lg hover:bg-cinema-gold/10 hover:border-cinema-gold transition-colors"
               />
+              <AddToListDropdown filmId={film.id} />
             </div>
           </div>
         </div>
