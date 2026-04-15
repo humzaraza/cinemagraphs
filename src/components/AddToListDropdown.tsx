@@ -6,6 +6,7 @@ import {
   type ListStatus,
   toggleListStatus,
   prependCreatedList,
+  shouldCloseOnOutsideEvent,
 } from '@/lib/addToListHelpers'
 
 interface Props {
@@ -62,7 +63,7 @@ export default function AddToListDropdown({ filmId }: Props) {
   useEffect(() => {
     if (!open) return
     const onClick = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (shouldCloseOnOutsideEvent(containerRef.current, e.target as Node | null)) {
         close()
       }
     }

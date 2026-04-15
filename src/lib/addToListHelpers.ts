@@ -49,3 +49,21 @@ export function prependCreatedList(
     ...lists,
   ]
 }
+
+/**
+ * True when a document-level event (mousedown, click) should collapse
+ * the dropdown because it originated outside the container. Extracted
+ * so the "closes on outside click" behavior is testable without a DOM
+ * — tests pass plain objects with a `contains` method as stand-ins.
+ */
+export interface ContainsLike<T> {
+  contains(node: T): boolean
+}
+
+export function shouldCloseOnOutsideEvent<T>(
+  container: ContainsLike<T> | null,
+  target: T
+): boolean {
+  if (!container) return false
+  return !container.contains(target)
+}
