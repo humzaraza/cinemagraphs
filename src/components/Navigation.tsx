@@ -27,6 +27,7 @@ export default function Navigation() {
 
   const navLinks = [
     { href: '/films/browse', label: 'Browse' },
+    { href: '/members', label: 'Members' },
     { href: '/categories', label: 'Categories' },
     { href: '/about', label: 'About' },
     ...(session?.user?.role === 'ADMIN' ? [{ href: '/admin', label: 'Admin' }] : []),

@@ -15,7 +15,6 @@ export async function GET(
         id: true,
         name: true,
         username: true,
-        email: true,
         image: true,
         bio: true,
         createdAt: true,
@@ -104,8 +103,29 @@ export async function GET(
       },
     })
 
-    // Derive a display name: name > username > email prefix
-    const displayName = user.name || user.username || user.email.split('@')[0]
+    // Derive a display name: name > username > 'User'
+    const displayName = user.name || user.username || 'User'
+
+    // Fetch public lists with preview posters
+    const userLists = await prisma.list.findMany({
+      where: { userId: user.id, isPublic: true },
+      select: {
+        id: true,
+        name: true,
+        genreTag: true,
+        _count: { select: { films: true } },
+        films: {
+          take: 4,
+          orderBy: { addedAt: 'asc' },
+          select: {
+            film: {
+              select: { posterUrl: true },
+            },
+          },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    })
 
     return NextResponse.json({
       user: {
@@ -113,7 +133,6 @@ export async function GET(
         name: displayName,
         rawName: user.name,
         username: user.username,
-        email: user.email,
         image: user.image,
         bio: user.bio,
         createdAt: user.createdAt,
@@ -129,6 +148,13 @@ export async function GET(
       reviews: user.userReviews,
       reactions: user.liveReactions,
       watchlist: watchlistItems.map((w) => w.film),
+      lists: userLists.map((l) => ({
+        id: l.id,
+        name: l.name,
+        genreTag: l.genreTag,
+        filmCount: l._count.films,
+        previewPosters: l.films.map((lf) => lf.film.posterUrl),
+      })),
     })
   } catch (err) {
     apiLogger.error({ err }, 'Failed to fetch user profile')

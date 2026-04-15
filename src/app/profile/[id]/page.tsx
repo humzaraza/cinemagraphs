@@ -58,7 +58,6 @@ interface ProfileData {
     name: string | null
     rawName: string | null
     username: string | null
-    email: string
     image: string | null
     bio: string | null
     createdAt: string
@@ -102,6 +101,7 @@ export default function ProfilePage() {
   const [followLoading, setFollowLoading] = useState(false)
   const [lists, setLists] = useState<ListCardData[] | null>(null)
   const [newListOpen, setNewListOpen] = useState(false)
+  const [followModal, setFollowModal] = useState<'followers' | 'following' | null>(null)
 
   const userId = params.id as string
   const isOwnProfile = session?.user?.id === userId
@@ -279,14 +279,20 @@ export default function ProfilePage() {
 
       {/* Follower/Following counts */}
       <div className="flex gap-4 mb-6 ml-20">
-        <span className="text-sm">
+        <button
+          onClick={() => setFollowModal('followers')}
+          className="text-sm cursor-pointer hover:opacity-80 transition-opacity"
+        >
           <span className="font-semibold text-cinema-cream">{user.followerCount}</span>{' '}
           <span className="text-cinema-muted">followers</span>
-        </span>
-        <span className="text-sm">
+        </button>
+        <button
+          onClick={() => setFollowModal('following')}
+          className="text-sm cursor-pointer hover:opacity-80 transition-opacity"
+        >
           <span className="font-semibold text-cinema-cream">{user.followingCount}</span>{' '}
           <span className="text-cinema-muted">following</span>
-        </span>
+        </button>
       </div>
 
       {/* Stats Row */}
@@ -396,6 +402,16 @@ export default function ProfilePage() {
             setLists(null)
             fetchLists()
           }}
+        />
+      )}
+
+      {/* Followers/Following Modal */}
+      {followModal && (
+        <FollowModal
+          userId={userId}
+          initialTab={followModal}
+          currentUserId={session?.user?.id ?? null}
+          onClose={() => setFollowModal(null)}
         />
       )}
     </div>
@@ -928,6 +944,212 @@ function ReactionCard({
       >
         Reacted
       </span>
+    </div>
+  )
+}
+
+interface FollowUser {
+  id: string
+  name: string
+  username: string | null
+  image: string | null
+  isFollowing: boolean
+}
+
+function FollowModal({
+  userId,
+  initialTab,
+  currentUserId,
+  onClose,
+}: {
+  userId: string
+  initialTab: 'followers' | 'following'
+  currentUserId: string | null
+  onClose: () => void
+}) {
+  const [tab, setTab] = useState<'followers' | 'following'>(initialTab)
+  const [users, setUsers] = useState<FollowUser[]>([])
+  const [loading, setLoading] = useState(true)
+  const [followingState, setFollowingState] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    setLoading(true)
+    setUsers([])
+    const endpoint = tab === 'followers'
+      ? `/api/users/${userId}/followers`
+      : `/api/users/${userId}/following`
+    fetch(endpoint)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error())))
+      .then((data) => {
+        setUsers(data.users)
+        const state: Record<string, boolean> = {}
+        for (const u of data.users) {
+          state[u.id] = u.isFollowing
+        }
+        setFollowingState(state)
+      })
+      .catch(() => setUsers([]))
+      .finally(() => setLoading(false))
+  }, [tab, userId])
+
+  const handleToggleFollow = async (targetId: string) => {
+    if (!currentUserId) return
+    const wasFollowing = followingState[targetId]
+    setFollowingState((prev) => ({ ...prev, [targetId]: !wasFollowing }))
+    try {
+      const res = await fetch(`/api/users/${targetId}/follow`, {
+        method: wasFollowing ? 'DELETE' : 'POST',
+      })
+      if (!res.ok) {
+        setFollowingState((prev) => ({ ...prev, [targetId]: wasFollowing }))
+      }
+    } catch {
+      setFollowingState((prev) => ({ ...prev, [targetId]: wasFollowing }))
+    }
+  }
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  // Prevent body scroll
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = '' }
+  }, [])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0"
+        style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}
+        onClick={onClose}
+      />
+
+      {/* Modal */}
+      <div
+        className="relative w-full max-w-md mx-4 rounded-xl overflow-hidden flex flex-col"
+        style={{
+          backgroundColor: '#12121e',
+          border: '1px solid rgba(200,169,81,0.15)',
+          maxHeight: '70vh',
+        }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-4 pb-0">
+          <div className="flex gap-0">
+            {(['followers', 'following'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 ${
+                  tab === t
+                    ? 'border-cinema-gold text-cinema-gold'
+                    : 'border-transparent text-cinema-muted hover:text-cinema-cream'
+                }`}
+              >
+                {t === 'followers' ? 'Followers' : 'Following'}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={onClose}
+            className="flex items-center justify-center w-8 h-8 text-cinema-muted hover:text-cinema-cream transition-colors"
+            aria-label="Close"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Divider */}
+        <div className="border-b border-cinema-border" />
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-5 py-3">
+          {loading ? (
+            <div className="flex justify-center py-10">
+              <div className="w-6 h-6 border-2 border-cinema-gold/30 border-t-cinema-gold rounded-full animate-spin" />
+            </div>
+          ) : users.length === 0 ? (
+            <p className="text-center text-cinema-muted text-sm py-10">
+              {tab === 'followers' ? 'No followers yet' : 'Not following anyone yet'}
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {users.map((u) => {
+                const initial = (u.name || '?')[0].toUpperCase()
+                const isCurrentUser = u.id === currentUserId
+                const isFollowed = followingState[u.id]
+
+                return (
+                  <div key={u.id} className="flex items-center gap-3 py-2">
+                    <Link href={`/profile/${u.id}`} onClick={onClose} className="shrink-0">
+                      {u.image ? (
+                        <Image
+                          src={u.image}
+                          alt={u.name}
+                          width={32}
+                          height={32}
+                          className="rounded-full"
+                        />
+                      ) : (
+                        <div
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                          style={{
+                            background: 'linear-gradient(135deg, #C8A951, #a08530)',
+                            color: '#0D0D1A',
+                          }}
+                        >
+                          {initial}
+                        </div>
+                      )}
+                    </Link>
+                    <Link
+                      href={`/profile/${u.id}`}
+                      onClick={onClose}
+                      className="flex-1 min-w-0 hover:opacity-80 transition-opacity"
+                    >
+                      <p className="text-sm font-semibold text-cinema-cream truncate">
+                        {u.name}
+                      </p>
+                      {u.username && (
+                        <p className="text-xs text-cinema-muted truncate">@{u.username}</p>
+                      )}
+                    </Link>
+                    {!isCurrentUser && currentUserId && (
+                      <button
+                        onClick={() => handleToggleFollow(u.id)}
+                        className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors ${
+                          isFollowed
+                            ? 'bg-cinema-gold text-cinema-dark hover:bg-red-500/80 hover:text-white'
+                            : 'border border-cinema-border text-cinema-cream hover:border-cinema-gold/50'
+                        }`}
+                        onMouseEnter={(e) => {
+                          if (isFollowed) e.currentTarget.textContent = 'Unfollow'
+                        }}
+                        onMouseLeave={(e) => {
+                          if (isFollowed) e.currentTarget.textContent = 'Following'
+                        }}
+                      >
+                        {isFollowed ? 'Following' : 'Follow'}
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
