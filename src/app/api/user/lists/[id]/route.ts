@@ -21,6 +21,8 @@ export async function GET(
         id: true,
         name: true,
         genreTag: true,
+        description: true,
+        isPublic: true,
         createdAt: true,
         updatedAt: true,
         films: {
@@ -34,6 +36,7 @@ export async function GET(
                 posterUrl: true,
                 releaseDate: true,
                 runtime: true,
+                genres: true,
                 sentimentGraph: {
                   select: { overallScore: true, dataPoints: true },
                 },
@@ -59,7 +62,8 @@ export async function GET(
           year: f.film.releaseDate ? new Date(f.film.releaseDate).getFullYear() : null,
           score: f.film.sentimentGraph?.overallScore ?? null,
           runtime: f.film.runtime ?? null,
-          sparklineData: dp?.map((d) => d.score) ?? null,
+          genres: f.film.genres ?? [],
+          sparklineData: Array.isArray(dp) ? dp.map((d) => d.score) : null,
           dominantColor: null,
           addedAt: f.addedAt,
         }
@@ -71,39 +75,76 @@ export async function GET(
   }
 }
 
+async function updateList(
+  request: NextRequest,
+  params: Promise<{ id: string }>
+) {
+  const session = await getMobileOrServerSession()
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+  }
+
+  const { id } = await params
+  const body = await request.json()
+  const { name, genreTag, isPublic, description } = body
+
+  // Verify ownership
+  const existing = await prisma.list.findFirst({
+    where: { id, userId: session.user.id },
+    select: { id: true },
+  })
+  if (!existing) {
+    return NextResponse.json({ error: 'List not found' }, { status: 404 })
+  }
+
+  if (name !== undefined && (typeof name !== 'string' || name.trim().length === 0)) {
+    return NextResponse.json({ error: 'List name cannot be empty' }, { status: 400 })
+  }
+
+  const updated = await prisma.list.update({
+    where: { id },
+    data: {
+      ...(name !== undefined && { name: name.trim() }),
+      ...(genreTag !== undefined && { genreTag: genreTag || null }),
+      ...(isPublic !== undefined && { isPublic: Boolean(isPublic) }),
+      ...(description !== undefined && {
+        description: typeof description === 'string' && description.trim().length > 0
+          ? description.trim()
+          : null,
+      }),
+    },
+    select: {
+      id: true,
+      name: true,
+      genreTag: true,
+      description: true,
+      isPublic: true,
+      updatedAt: true,
+    },
+  })
+
+  return NextResponse.json(updated)
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    return await updateList(request, params)
+  } catch (err) {
+    apiLogger.error({ err }, 'Failed to patch list')
+    return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
+  }
+}
+
+// Keep PUT as an alias for backwards compatibility with mobile clients.
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getMobileOrServerSession()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
-    }
-
-    const { id } = await params
-    const body = await request.json()
-    const { name, genreTag } = body
-
-    // Verify ownership
-    const existing = await prisma.list.findFirst({
-      where: { id, userId: session.user.id },
-      select: { id: true },
-    })
-    if (!existing) {
-      return NextResponse.json({ error: 'List not found' }, { status: 404 })
-    }
-
-    const updated = await prisma.list.update({
-      where: { id },
-      data: {
-        ...(name !== undefined && { name: name.trim() }),
-        ...(genreTag !== undefined && { genreTag: genreTag || null }),
-      },
-      select: { id: true, name: true, genreTag: true, updatedAt: true },
-    })
-
-    return NextResponse.json(updated)
+    return await updateList(request, params)
   } catch (err) {
     apiLogger.error({ err }, 'Failed to update list')
     return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
