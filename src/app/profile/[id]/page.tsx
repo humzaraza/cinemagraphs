@@ -7,6 +7,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import ShareModal from '@/components/ShareModal'
 import EditProfileModal from '@/components/EditProfileModal'
+import NewListModal from '@/components/NewListModal'
 
 interface FilmData {
   id: string
@@ -70,7 +71,23 @@ interface ProfileData {
   watchlist: FilmData[]
 }
 
-type Tab = 'reviews' | 'graphs' | 'reactions' | 'watchlist'
+interface ListPreviewPoster {
+  id: string
+  posterUrl: string | null
+}
+
+interface ListCardData {
+  id: string
+  name: string
+  genreTag: string | null
+  isPublic: boolean
+  filmCount: number
+  previewPosters: ListPreviewPoster[]
+  createdAt: string
+  updatedAt: string
+}
+
+type Tab = 'reviews' | 'graphs' | 'reactions' | 'lists' | 'watchlist'
 
 export default function ProfilePage() {
   const params = useParams()
@@ -83,6 +100,8 @@ export default function ProfilePage() {
   const [editOpen, setEditOpen] = useState(false)
   const [isFollowing, setIsFollowing] = useState(false)
   const [followLoading, setFollowLoading] = useState(false)
+  const [lists, setLists] = useState<ListCardData[] | null>(null)
+  const [newListOpen, setNewListOpen] = useState(false)
 
   const userId = params.id as string
   const isOwnProfile = session?.user?.id === userId
@@ -101,6 +120,19 @@ export default function ProfilePage() {
   useEffect(() => {
     fetchProfile()
   }, [fetchProfile])
+
+  const fetchLists = useCallback(() => {
+    fetch(`/api/users/${userId}/lists`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Failed to load lists'))))
+      .then((data) => setLists(data.lists as ListCardData[]))
+      .catch(() => setLists([]))
+  }, [userId])
+
+  useEffect(() => {
+    if (tab === 'lists' && lists === null) {
+      fetchLists()
+    }
+  }, [tab, lists, fetchLists])
 
   // Check follow status
   useEffect(() => {
@@ -277,6 +309,7 @@ export default function ProfilePage() {
           ['reviews', `All Reviews (${reviews.length})`],
           ['graphs', `My Graphs (${graphReviews.length})`],
           // ['reactions', `Live Reactions (${reactionsByFilm.size})`], // hidden — re-enable when ready
+          ['lists', 'Lists'],
           ['watchlist', `Watchlist (${watchlist.length})`],
         ] as [Tab, string][]).map(([key, label]) => (
           <button
@@ -295,7 +328,13 @@ export default function ProfilePage() {
 
       {/* Tab Content */}
       {/* Live Reactions tab content hidden — re-enable when ready */}
-      {tab === 'watchlist' ? (
+      {tab === 'lists' ? (
+        <ListsTabContent
+          lists={lists}
+          isOwnProfile={isOwnProfile}
+          onNewList={() => setNewListOpen(true)}
+        />
+      ) : tab === 'watchlist' ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {watchlist.map((film) => (
             <WatchlistCard key={film.id} film={film} />
@@ -347,7 +386,255 @@ export default function ProfilePage() {
           }}
         />
       )}
+
+      {/* New List Modal */}
+      {newListOpen && (
+        <NewListModal
+          onClose={() => setNewListOpen(false)}
+          onCreated={() => {
+            setNewListOpen(false)
+            setLists(null)
+            fetchLists()
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+function ListsTabContent({
+  lists,
+  isOwnProfile,
+  onNewList,
+}: {
+  lists: ListCardData[] | null
+  isOwnProfile: boolean
+  onNewList: () => void
+}) {
+  if (lists === null) {
+    return (
+      <div className="text-center py-8 text-cinema-muted text-sm">Loading lists…</div>
+    )
+  }
+
+  if (lists.length === 0) {
+    return (
+      <div>
+        {isOwnProfile && (
+          <div className="flex items-center justify-end mb-4">
+            <button
+              onClick={onNewList}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-md transition-colors border hover:bg-cinema-gold/10"
+              style={{
+                color: '#C8A951',
+                borderColor: 'rgba(200,169,81,0.4)',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              New list
+            </button>
+          </div>
+        )}
+        <div className="flex flex-col items-center justify-center text-center py-16">
+          <div
+            className="w-14 h-14 rounded-xl flex items-center justify-center mb-4"
+            style={{
+              border: '1px dashed rgba(200,169,81,0.25)',
+              background: 'rgba(245,240,225,0.02)',
+            }}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C8A951" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+            </svg>
+          </div>
+          <h3 className="font-[family-name:var(--font-playfair)] text-base text-cinema-cream mb-1">
+            No lists yet
+          </h3>
+          <p className="text-xs text-cinema-muted mb-5 max-w-xs leading-relaxed">
+            {isOwnProfile
+              ? 'Create a list to curate your favorite films and compare their sentiment arcs.'
+              : 'This user has not created any public lists.'}
+          </p>
+          {isOwnProfile && (
+            <button
+              onClick={onNewList}
+              className="flex items-center gap-1.5 text-xs font-semibold px-4 py-2.5 rounded-md transition-colors"
+              style={{
+                color: '#C8A951',
+                border: '1px solid rgba(200,169,81,0.4)',
+                background: 'rgba(200,169,81,0.08)',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              Create your first list
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-sm text-cinema-muted">
+          {lists.length} {lists.length === 1 ? 'list' : 'lists'}
+        </span>
+        {isOwnProfile && (
+          <button
+            onClick={onNewList}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-md transition-colors hover:bg-cinema-gold/10"
+            style={{
+              color: '#C8A951',
+              border: '1px solid rgba(200,169,81,0.4)',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            New list
+          </button>
+        )}
+      </div>
+
+      <div
+        className="grid gap-4"
+        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}
+      >
+        {lists.map((list) => (
+          <ListCard key={list.id} list={list} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function formatRelativeUpdated(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime()
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+  const week = 7 * day
+  if (diffMs < minute) return 'just now'
+  if (diffMs < hour) return `${Math.floor(diffMs / minute)}m ago`
+  if (diffMs < day) return `${Math.floor(diffMs / hour)}h ago`
+  if (diffMs < week) {
+    const d = Math.floor(diffMs / day)
+    return d === 1 ? '1 day ago' : `${d} days ago`
+  }
+  if (diffMs < 30 * day) {
+    const w = Math.floor(diffMs / week)
+    return w === 1 ? '1 week ago' : `${w} weeks ago`
+  }
+  const months = Math.floor(diffMs / (30 * day))
+  return months === 1 ? '1 month ago' : `${months} months ago`
+}
+
+function ListCard({ list }: { list: ListCardData }) {
+  const posters = list.previewPosters.slice(0, 5)
+  const placeholders = Math.max(0, 5 - posters.length)
+  const filmLabel = `${list.filmCount} ${list.filmCount === 1 ? 'film' : 'films'}`
+
+  return (
+    <Link
+      href={`/lists/${list.id}`}
+      className="group block rounded-xl p-4 transition-all duration-200 hover:-translate-y-0.5"
+      style={{
+        background: 'rgba(245,240,225,0.02)',
+        border: '1px solid rgba(200,169,81,0.06)',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = 'rgba(200,169,81,0.2)'
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = 'rgba(200,169,81,0.06)'
+      }}
+    >
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <h3
+          className="font-[family-name:var(--font-playfair)] text-cinema-cream leading-tight"
+          style={{ fontSize: '15px', fontWeight: 500 }}
+        >
+          {list.name}
+        </h3>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[11px] text-cinema-muted">{filmLabel}</span>
+          <span
+            className="uppercase px-1.5 py-0.5 rounded font-semibold tracking-wide"
+            style={{
+              fontSize: '9px',
+              color: list.isPublic ? '#2DD4A8' : 'rgba(245,240,225,0.45)',
+              border: list.isPublic ? '1px solid rgba(45,212,168,0.35)' : '1px solid rgba(245,240,225,0.12)',
+            }}
+          >
+            {list.isPublic ? 'Public' : 'Private'}
+          </span>
+        </div>
+      </div>
+
+      {list.genreTag && (
+        <div className="mb-3">
+          <span
+            className="inline-block px-2 py-0.5 rounded-full font-semibold"
+            style={{
+              fontSize: '10px',
+              color: '#C8A951',
+              background: 'rgba(200,169,81,0.12)',
+              border: '1px solid rgba(200,169,81,0.25)',
+            }}
+          >
+            {list.genreTag}
+          </span>
+        </div>
+      )}
+
+      <div className="flex gap-1.5 mt-1">
+        {posters.map((p) => (
+          <div
+            key={p.id}
+            className="overflow-hidden bg-cinema-darker"
+            style={{ width: 38, height: 56, borderRadius: 4 }}
+          >
+            {p.posterUrl ? (
+              <Image
+                src={`https://image.tmdb.org/t/p/w92${p.posterUrl}`}
+                alt=""
+                width={38}
+                height={56}
+                unoptimized
+                className="w-full h-full object-cover"
+              />
+            ) : null}
+          </div>
+        ))}
+        {Array.from({ length: placeholders }).map((_, i) => (
+          <div
+            key={`placeholder-${i}`}
+            style={{
+              width: 38,
+              height: 56,
+              borderRadius: 4,
+              background: 'rgba(245,240,225,0.03)',
+              border: '1px dashed rgba(245,240,225,0.06)',
+            }}
+          />
+        ))}
+      </div>
+
+      <p className="text-[10px] text-cinema-muted/60 mt-3">
+        Updated {formatRelativeUpdated(list.updatedAt)}
+      </p>
+    </Link>
   )
 }
 
