@@ -343,6 +343,27 @@ export default function SentimentGraph({
     }
   })
 
+  // Computed overall scores for header display
+  const audienceOverall = hasAudienceData
+    ? (() => {
+        const scores = realData.filter(dp => dp.userScore != null).map(dp => dp.userScore!)
+        return scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : null
+      })()
+    : null
+
+  const mergedOverall = hasAudienceData
+    ? (() => {
+        const scores = realData.filter(dp => dp.mergedScore != null).map(dp => dp.mergedScore!)
+        return scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : null
+      })()
+    : null
+
+  const sectionTitle =
+    graphView === 'audience' && hasAudienceData ? 'Audience Sentiment'
+    : graphView === 'both' && hasAudienceData ? 'Critics & Audience Sentiment'
+    : graphView === 'merged' && hasAudienceData ? 'Merged Sentiment'
+    : 'Critics Sentiment'
+
   // Prepend synthetic neutral starting point
   const chartData = [
     {
@@ -387,17 +408,54 @@ export default function SentimentGraph({
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-[family-name:var(--font-playfair)] text-lg text-cinema-cream">
-            Audience Sentiment
+            {sectionTitle}
           </h3>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-cinema-muted">Overall</span>
-            <span
-              className="font-[family-name:var(--font-bebas)] text-3xl"
-              style={{ color: scoreColor(overallScore) }}
-            >
-              {overallScore.toFixed(1)}
-            </span>
-          </div>
+          {graphView === 'both' && hasAudienceData ? (
+            <div className="flex flex-col items-end gap-0.5">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-cinema-muted">Critics</span>
+                <span
+                  className="font-[family-name:var(--font-bebas)] text-xl"
+                  style={{ color: '#C8A951' }}
+                >
+                  {overallScore.toFixed(1)}
+                </span>
+              </div>
+              {audienceOverall != null && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-cinema-muted">Audience</span>
+                  <span
+                    className="font-[family-name:var(--font-bebas)] text-xl"
+                    style={{ color: '#2DD4A8' }}
+                  >
+                    {audienceOverall.toFixed(1)}
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-cinema-muted">
+                {graphView === 'audience' && hasAudienceData ? 'Audience'
+                  : graphView === 'merged' && hasAudienceData ? 'Merged'
+                  : 'Critics'}
+              </span>
+              <span
+                className="font-[family-name:var(--font-bebas)] text-3xl"
+                style={{
+                  color: graphView === 'audience' && hasAudienceData ? '#2DD4A8'
+                    : graphView === 'merged' && hasAudienceData ? '#F5F0E1'
+                    : '#C8A951',
+                }}
+              >
+                {graphView === 'audience' && hasAudienceData && audienceOverall != null
+                  ? audienceOverall.toFixed(1)
+                  : graphView === 'merged' && hasAudienceData && mergedOverall != null
+                    ? mergedOverall.toFixed(1)
+                    : overallScore.toFixed(1)}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Toggle Controls */}
