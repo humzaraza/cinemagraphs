@@ -2,6 +2,7 @@ import 'dotenv/config'
 import { PrismaClient } from '../src/generated/prisma/client.js'
 import { PrismaNeon } from '@prisma/adapter-neon'
 import Anthropic from '@anthropic-ai/sdk'
+import { isQualityReview } from '../src/lib/sentiment-pipeline'
 
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! })
 const prisma = new PrismaClient({ adapter })
@@ -107,17 +108,6 @@ async function fetchPlotContext(film: any): Promise<PlotContext> {
   }
 
   return { text: '', source: 'reviews_only' }
-}
-
-// ── Quality filter ──
-const ENGLISH_REGEX = /^[\x00-\x7F\u00C0-\u024F\u2018-\u201D\u2014\u2013\u2026\s.,;:!?'"()\-[\]{}@#$%^&*+=/<>~`|\\]+$/
-const MIN_WORD_COUNT = 50
-
-function isQualityReview(text: string): boolean {
-  const words = text.trim().split(/\s+/)
-  if (words.length < MIN_WORD_COUNT) return false
-  if (!ENGLISH_REGEX.test(text.slice(0, 500))) return false
-  return true
 }
 
 // ── Check if beats already contain proper nouns (specific enough) ──
@@ -300,7 +290,19 @@ async function processFilm(film: any): Promise<boolean> {
     },
   })
 
-  console.log(`  ✓ Updated ${film.title} — used ${plotContext.source} (score: ${existingGraph.overallScore} → ${graphData.overallSentiment})`)
+  // Refresh lastReviewCount to the current quality-review count so the
+  // weekly cron's cheap pre-filter doesn't treat this film as "legacy"
+  // (lastReviewCount=0) and keep re-queueing it every cycle. `reviews`
+  // is already filtered via isQualityReview above; early-return on
+  // line ~262 guarantees reviews.length ≥ 1 by the time we get here,
+  // so the explicit-zero case is impossible, but the write is still
+  // the authoritative value.
+  await prisma.film.update({
+    where: { id: film.id },
+    data: { lastReviewCount: reviews.length },
+  })
+
+  console.log(`  ✓ Updated ${film.title} — used ${plotContext.source} (score: ${existingGraph.overallScore} → ${graphData.overallSentiment}, lastReviewCount=${reviews.length})`)
   return true
 }
 

@@ -3,6 +3,7 @@ import { PrismaClient } from '../src/generated/prisma/client.js'
 import { PrismaNeon } from '@prisma/adapter-neon'
 import Anthropic from '@anthropic-ai/sdk'
 import { createHash } from 'crypto'
+import { isQualityReview } from '../src/lib/sentiment-pipeline'
 
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! })
 const prisma = new PrismaClient({ adapter })
@@ -24,16 +25,6 @@ async function fetchOMDB(imdbId: string) {
     rtCriticsScore: rt ? parseInt(rt.Value.replace('%', ''), 10) : null,
     metacriticScore: data.Metascore !== 'N/A' ? parseInt(data.Metascore, 10) : null,
   }
-}
-
-const ENGLISH_REGEX = /^[\x00-\x7F\u00C0-\u024F\u2018-\u201D\u2014\u2013\u2026\s.,;:!?'"()\-[\]{}@#$%^&*+=/<>~`|\\]+$/
-const MIN_WORD_COUNT = 50
-
-function isQualityReview(text: string): boolean {
-  const words = text.trim().split(/\s+/)
-  if (words.length < MIN_WORD_COUNT) return false
-  if (!ENGLISH_REGEX.test(text.slice(0, 500))) return false
-  return true
 }
 
 function needsReanalysis(film: any, filteredReviewCount: number): { needs: boolean; reason: string } {
