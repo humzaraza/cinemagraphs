@@ -360,7 +360,7 @@ export default function SentimentGraph({
 
   const sectionTitle =
     graphView === 'audience' && hasAudienceData ? 'Audience Sentiment'
-    : graphView === 'both' && hasAudienceData ? 'Critics & Audience Sentiment'
+    : graphView === 'both' && hasAudienceData ? 'Critics + Audience Sentiment'
     : graphView === 'merged' && hasAudienceData ? 'Merged Sentiment'
     : 'Critics Sentiment'
 
@@ -415,7 +415,7 @@ export default function SentimentGraph({
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-cinema-muted">Critics</span>
                 <span
-                  className="font-[family-name:var(--font-bebas)] text-xl"
+                  className="font-[family-name:var(--font-bebas)] text-3xl"
                   style={{ color: '#C8A951' }}
                 >
                   {overallScore.toFixed(1)}
@@ -425,7 +425,7 @@ export default function SentimentGraph({
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs text-cinema-muted">Audience</span>
                   <span
-                    className="font-[family-name:var(--font-bebas)] text-xl"
+                    className="font-[family-name:var(--font-bebas)] text-3xl"
                     style={{ color: '#2DD4A8' }}
                   >
                     {audienceOverall.toFixed(1)}
