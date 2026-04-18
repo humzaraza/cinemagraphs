@@ -157,6 +157,7 @@ model Film {
   watchlistItems       Watchlist[]
   filmPersons          FilmPerson[]
   listFilms            ListFilm[]
+  driftLogs            SentimentGraphDriftLog[]
 
   @@index([tmdbId])
   @@index([title])
@@ -400,4 +401,20 @@ model ListFilm {
   addedAt DateTime @default(now())
 
   @@unique([listId, filmId])
+}
+
+model SentimentGraphDriftLog {
+  id                String   @id @default(cuid())
+  filmId            String
+  film              Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
+  occurredAt        DateTime @default(now())
+  callerPath        String
+  existingBeatCount Int
+  incomingBeatCount Int
+  mismatchedLabels  Json
+  action            String
+  envLockEnabled    Boolean
+
+  @@index([filmId])
+  @@index([occurredAt])
 }
