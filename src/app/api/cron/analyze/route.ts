@@ -282,7 +282,13 @@ export async function GET(request: Request) {
 
     // ── Stage B: find candidates for a new batch ──
     const candidates = await prisma.film.findMany({
-      where: { status: 'ACTIVE' },
+      where: {
+        status: 'ACTIVE',
+        OR: [
+          { releaseDate: null },
+          { releaseDate: { lte: new Date() } },
+        ],
+      },
       include: { sentimentGraph: { select: { id: true, generatedAt: true } } },
       orderBy: [
         { sentimentGraph: { generatedAt: 'asc' } },

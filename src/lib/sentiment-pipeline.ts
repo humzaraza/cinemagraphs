@@ -219,6 +219,7 @@ export type PrepareSentimentInputResult =
   | { status: 'skipped_unchanged'; reviewHash: string; filteredCount: number }
   | { status: 'skipped_insufficient_reviews'; qualityCount: number; minRequired: number }
   | { status: 'skipped_film_not_found' }
+  | { status: 'skipped_pre_release'; releaseDate: Date }
 
 /**
  * Prepare everything needed to send a single film to Claude — fetches reviews,
@@ -242,6 +243,14 @@ export async function prepareSentimentGraphInput(
   if (!filmRecord) {
     pipelineLogger.warn({ filmId }, 'Film not found during prep')
     return { status: 'skipped_film_not_found' }
+  }
+
+  if (filmRecord.releaseDate && filmRecord.releaseDate > new Date()) {
+    pipelineLogger.info(
+      { filmId, releaseDate: filmRecord.releaseDate, reason: 'skipped_pre_release' },
+      'Skipping — film has not been released yet'
+    )
+    return { status: 'skipped_pre_release', releaseDate: filmRecord.releaseDate }
   }
 
   // Strip the included relation off so we can pass a clean Film to claude.ts
@@ -446,6 +455,13 @@ export async function generateSentimentGraph(
 
   if (prep.status === 'skipped_film_not_found') {
     throw new Error(`Film not found: ${filmId}`)
+  }
+  if (prep.status === 'skipped_pre_release') {
+    pipelineLogger.info(
+      { filmId, releaseDate: prep.releaseDate, reason: 'skipped_pre_release' },
+      'generateSentimentGraph: skipped (pre-release)'
+    )
+    return
   }
   if (prep.status === 'skipped_insufficient_reviews') {
     throw new Error(
