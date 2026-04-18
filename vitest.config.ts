@@ -6,6 +6,9 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/__tests__/**/*.test.ts'],
+    // Integration tests hit a real Neon branch — they need credentials and
+    // take many seconds, so they're only run via `npm run test:integration`.
+    exclude: ['**/node_modules/**', 'src/__tests__/integration/**'],
   },
   resolve: {
     alias: {
