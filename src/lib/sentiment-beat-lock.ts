@@ -27,6 +27,7 @@ export function isBeatLockEnabled(): boolean {
 export type BeatLockCallerPath =
   | 'review-blender'
   | 'cron-analyze'
+  | 'cron-refresh-scores'
   | 'admin-analyze'
   | 'script-batch-analyze'
   | 'script-test-pipeline'

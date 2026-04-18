@@ -50,9 +50,13 @@ vi.mock('@/lib/sources/wikipedia', () => ({
   fetchWikipediaPlot: (...args: unknown[]) => mockFetchWikipediaPlot(...args),
 }))
 
-vi.mock('@/lib/logger', () => ({
-  pipelineLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-}))
+vi.mock('@/lib/logger', () => {
+  const childLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+  return {
+    pipelineLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    logger: { child: vi.fn(() => childLogger), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  }
+})
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 

@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import { PrismaClient } from '../src/generated/prisma/client.js'
 import { PrismaNeon } from '@prisma/adapter-neon'
+import { forceOverwriteSentimentGraph } from '../src/lib/sentiment-beat-lock'
 
 async function main() {
   const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! })
@@ -225,42 +226,26 @@ ${reviewBlock}
     }
   }
 
-  // Store graph
+  // Store graph via force-overwrite — pipeline smoke test intentionally
+  // rewrites labels + timestamps without merging against existing beats.
   const existingGraph = await prisma.sentimentGraph.findUnique({ where: { filmId: film.id } })
-  if (existingGraph) {
-    await prisma.sentimentGraph.update({
-      where: { filmId: film.id },
-      data: {
-        overallScore: graphData.overallSentiment,
-        anchoredFrom: graphData.anchoredFrom,
-        dataPoints: graphData.dataPoints,
-        peakMoment: graphData.peakMoment,
-        lowestMoment: graphData.lowestMoment,
-        biggestSwing: graphData.biggestSentimentSwing,
-        summary: graphData.summary,
-        reviewCount: graphData.reviewCount,
-        sourcesUsed: graphData.sources,
-        generatedAt: new Date(),
-        version: existingGraph.version + 1,
-      },
-    })
-  } else {
-    await prisma.sentimentGraph.create({
-      data: {
-        filmId: film.id,
-        overallScore: graphData.overallSentiment,
-        anchoredFrom: graphData.anchoredFrom,
-        dataPoints: graphData.dataPoints,
-        peakMoment: graphData.peakMoment,
-        lowestMoment: graphData.lowestMoment,
-        biggestSwing: graphData.biggestSentimentSwing,
-        summary: graphData.summary,
-        reviewCount: graphData.reviewCount,
-        sourcesUsed: graphData.sources,
-        generatedAt: new Date(),
-      },
-    })
-  }
+  await forceOverwriteSentimentGraph({
+    filmId: film.id,
+    dataPoints: graphData.dataPoints,
+    otherFields: {
+      overallScore: graphData.overallSentiment,
+      anchoredFrom: graphData.anchoredFrom,
+      peakMoment: graphData.peakMoment,
+      lowestMoment: graphData.lowestMoment,
+      biggestSwing: graphData.biggestSentimentSwing,
+      summary: graphData.summary,
+      reviewCount: graphData.reviewCount,
+      sourcesUsed: graphData.sources,
+      generatedAt: new Date(),
+      ...(existingGraph ? { version: existingGraph.version + 1 } : {}),
+    },
+    callerPath: 'script-test-pipeline',
+  })
 
   console.log('\n✓ Pipeline test complete! Sentiment graph stored for Oppenheimer.')
   process.exit(0)

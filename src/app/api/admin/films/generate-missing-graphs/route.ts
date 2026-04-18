@@ -173,7 +173,7 @@ export async function POST() {
         })
 
         try {
-          await generateSentimentGraph(c.id, { force: true })
+          await generateSentimentGraph(c.id, { force: true, callerPath: 'admin-analyze' })
           await invalidateFilmCache(c.id).catch(() => {})
           results.push({ filmId: c.id, title: c.title, ok: true })
           succeeded++

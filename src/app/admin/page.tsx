@@ -10,6 +10,7 @@ import AdminReviews from '@/components/AdminReviews'
 import AdminFeedback from '@/components/AdminFeedback'
 import AdminUsers from '@/components/AdminUsers'
 import AdminAnnouncements from '@/components/AdminAnnouncements'
+import AdminDriftEvents from '@/components/AdminDriftEvents'
 import AdminTabs from '@/components/AdminTabs'
 
 export const dynamic = 'force-dynamic'
@@ -190,6 +191,13 @@ export default async function AdminPage() {
             label: 'Announcements',
             content: (
               <AdminAnnouncements />
+            ),
+          },
+          {
+            id: 'drift',
+            label: 'Drift Events',
+            content: (
+              <AdminDriftEvents />
             ),
           },
           {

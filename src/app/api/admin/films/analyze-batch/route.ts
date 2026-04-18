@@ -28,7 +28,7 @@ export async function POST(request: Request) {
 
   try {
     // Admin batch "Analyze" is an explicit force-regenerate request.
-    const result = await generateBatchSentimentGraphs(filmIds, { force: true })
+    const result = await generateBatchSentimentGraphs(filmIds, { force: true, callerPath: 'admin-analyze' })
     return Response.json(result)
   } catch (err) {
     apiLogger.error({ err, filmIds }, 'Batch analysis failed')
