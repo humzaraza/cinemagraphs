@@ -129,6 +129,28 @@ describe('prepareSentimentGraphInput', () => {
     expect(mockReviewFindMany).not.toHaveBeenCalled()
   })
 
+  it('returns skipped_pre_release and skips all fetches when releaseDate is in the future', async () => {
+    const futureReleaseDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+    mockFilmFindUnique.mockResolvedValueOnce({
+      ...baseFilm,
+      releaseDate: futureReleaseDate,
+      sentimentGraph: null,
+    })
+
+    const { prepareSentimentGraphInput } = await import('@/lib/sentiment-pipeline')
+    const result = await prepareSentimentGraphInput('film-1')
+
+    expect(result.status).toBe('skipped_pre_release')
+    if (result.status === 'skipped_pre_release') {
+      expect(result.releaseDate).toEqual(futureReleaseDate)
+    }
+    // The guard runs before any downstream work — no OMDB, no reviews, no plot.
+    expect(mockFetchAnchorScores).not.toHaveBeenCalled()
+    expect(mockFetchAllReviews).not.toHaveBeenCalled()
+    expect(mockFetchWikipediaPlot).not.toHaveBeenCalled()
+    expect(mockReviewFindMany).not.toHaveBeenCalled()
+  })
+
   it('returns skipped_insufficient_reviews when below the quality threshold', async () => {
     mockFilmFindUnique.mockResolvedValueOnce({
       ...baseFilm,
