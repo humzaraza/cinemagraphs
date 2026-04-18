@@ -7,12 +7,15 @@ import Link from 'next/link'
 import { tmdbImageUrl, formatRuntime, formatDate } from '@/lib/utils'
 import { getMovieTrailerKey } from '@/lib/tmdb'
 import SentimentGraph from '@/components/SentimentGraph'
+import NotEnoughReviewsState from '@/components/NotEnoughReviewsState'
+import ComingSoonState from '@/components/ComingSoonState'
 import TrailerButton from '@/components/TrailerButton'
 import WatchlistButton from '@/components/WatchlistButton'
 import AddToListDropdown from '@/components/AddToListDropdown'
 import FilmCommunityTabs from '@/components/FilmCommunityTabs'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { FilmFullCast } from '@/components/FilmFullCast'
+import { getFilmDisplayState } from '@/lib/film-display-state'
 import type { CastMember, PeakLowMoment, SentimentDataPoint } from '@/lib/types'
 
 const CREW_ROLE_LABELS: Record<string, string> = {
@@ -282,33 +285,42 @@ export default async function FilmPage({
           </div>
         </div>
 
-        {/* Sentiment Graph */}
-        <div className="mt-10">
-          <ErrorBoundary>
-            {film.sentimentGraph ? (
-              <SentimentGraph
-                dataPoints={(film.sentimentGraph.dataPoints ?? []) as unknown as SentimentDataPoint[]}
-                overallScore={film.sentimentGraph.overallScore}
-                anchoredFrom={film.sentimentGraph.anchoredFrom}
-                peakMoment={film.sentimentGraph.peakMoment as unknown as PeakLowMoment | null}
-                lowestMoment={film.sentimentGraph.lowestMoment as unknown as PeakLowMoment | null}
-                biggestSwing={film.sentimentGraph.biggestSwing}
-                summary={film.sentimentGraph.summary}
-                sourcesUsed={film.sentimentGraph.sourcesUsed}
-                reviewCount={film.sentimentGraph.reviewCount}
-                runtime={film.runtime}
-                filmId={film.id}
-                generatedAt={film.sentimentGraph.generatedAt.toISOString()}
-              />
-            ) : (
-              <SentimentGraph
-                dataPoints={[]}
-                overallScore={0}
-                runtime={film.runtime}
-              />
-            )}
-          </ErrorBoundary>
-        </div>
+        {/* Sentiment Graph / Display State */}
+        {(() => {
+          const displayState = getFilmDisplayState(
+            film,
+            film.sentimentGraph,
+            film.sentimentGraph?.reviewCount ?? 0
+          )
+          return (
+            <div className="mt-10">
+              <ErrorBoundary>
+                {displayState.kind === 'graph' && (
+                  <SentimentGraph
+                    dataPoints={(displayState.sentimentGraph.dataPoints ?? []) as unknown as SentimentDataPoint[]}
+                    overallScore={displayState.sentimentGraph.overallScore}
+                    anchoredFrom={displayState.sentimentGraph.anchoredFrom}
+                    peakMoment={displayState.sentimentGraph.peakMoment as unknown as PeakLowMoment | null}
+                    lowestMoment={displayState.sentimentGraph.lowestMoment as unknown as PeakLowMoment | null}
+                    biggestSwing={displayState.sentimentGraph.biggestSwing}
+                    summary={displayState.sentimentGraph.summary}
+                    sourcesUsed={displayState.sentimentGraph.sourcesUsed}
+                    reviewCount={displayState.sentimentGraph.reviewCount}
+                    runtime={film.runtime}
+                    filmId={film.id}
+                    generatedAt={displayState.sentimentGraph.generatedAt.toISOString()}
+                  />
+                )}
+                {displayState.kind === 'not_enough_reviews' && (
+                  <NotEnoughReviewsState reviewCount={displayState.reviewCount} />
+                )}
+                {displayState.kind === 'coming_soon' && (
+                  <ComingSoonState releaseDate={displayState.releaseDate} />
+                )}
+              </ErrorBoundary>
+            </div>
+          )
+        })()}
 
         {/* Full Cast Grid */}
         {hasFilmPersons && allCast.length > 0 ? (
@@ -377,7 +389,7 @@ export default async function FilmPage({
         )}
 
         {/* Community Reviews & Live Reactions */}
-        <div className="mt-10">
+        <div id="reviews" className="mt-10">
           <FilmCommunityTabs
             filmId={film.id}
             hasGraph={!!film.sentimentGraph}
