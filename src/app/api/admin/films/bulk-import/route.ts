@@ -329,7 +329,7 @@ export async function POST(request: Request) {
 
         if (!skipGraph && qualityCount >= MIN_QUALITY_REVIEWS_FOR_GRAPH) {
           try {
-            await generateSentimentGraph(film.id, { force: true })
+            await generateSentimentGraph(film.id, { force: true, callerPath: 'admin-analyze' })
             graphGenerated = true
             graphsGenerated++
           } catch (err) {

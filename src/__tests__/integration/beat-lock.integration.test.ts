@@ -55,6 +55,7 @@ import {
   forceOverwriteSentimentGraph,
   safeWriteSentimentGraph,
 } from '@/lib/sentiment-beat-lock'
+import { maybeBlendAndUpdate } from '@/lib/review-blender'
 import type { SentimentDataPoint } from '@/lib/types'
 import {
   createTestBranch,
@@ -250,6 +251,67 @@ describe.sequential('beat-lock integration tests (real Neon branch)', () => {
     const finalPoints = finalRow.dataPoints as unknown as SentimentDataPoint[]
     expect(finalPoints).toHaveLength(2)
     expect(finalPoints.map((p) => p.label)).toEqual(['NewLabelA', 'NewLabelB'])
+
+    const driftLogs = await testPrisma.sentimentGraphDriftLog.findMany({ where: { filmId } })
+    expect(driftLogs).toEqual([])
+  }, 60_000)
+
+  it('INT-D: review-blender end-to-end raises beat scores without writing a drift log', async () => {
+    if (!testPrisma) throw new Error('testPrisma not initialised')
+    // Seed a film with no graph, then create the graph manually so we can pin
+    // overallScore=5.0 — seedTestFilm hardcodes 7 otherwise.
+    const { filmId } = await seedTestFilm(testPrisma)
+    const initialBeats: SentimentDataPoint[] = [
+      beat('Opening', 0, 5),
+      beat('Rising', 10, 6),
+      beat('Climax', 20, 7),
+    ]
+    await testPrisma.sentimentGraph.create({
+      data: {
+        filmId,
+        overallScore: 5.0,
+        anchoredFrom: 'integration-test-int-d',
+        dataPoints: initialBeats as unknown as object,
+        reviewCount: 0,
+        sourcesUsed: [],
+      },
+    })
+
+    // The blender requires >=5 approved user reviews to trigger.
+    const userIdSuffix = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    for (let i = 0; i < 5; i++) {
+      await testPrisma.user.create({
+        data: {
+          id: `int-d-user-${userIdSuffix}-${i}`,
+          email: `int-d-user-${userIdSuffix}-${i}@example.com`,
+        },
+      })
+      await testPrisma.userReview.create({
+        data: {
+          userId: `int-d-user-${userIdSuffix}-${i}`,
+          filmId,
+          overallRating: 9,
+          beatRatings: { Opening: 9, Rising: 9, Climax: 9 } as unknown as object,
+          sentiment: 9.0,
+          status: 'approved',
+        },
+      })
+    }
+
+    await maybeBlendAndUpdate(filmId)
+
+    const finalRow = await testPrisma.sentimentGraph.findUniqueOrThrow({ where: { filmId } })
+    const finalPoints = finalRow.dataPoints as unknown as SentimentDataPoint[]
+    expect(finalPoints).toHaveLength(3)
+    expect(finalPoints.map((p) => p.label)).toEqual(['Opening', 'Rising', 'Climax'])
+
+    // Each beat score should rise toward the user-review average of 9.
+    for (let i = 0; i < initialBeats.length; i++) {
+      expect(finalPoints[i].score).toBeGreaterThan(initialBeats[i].score)
+    }
+
+    expect(finalRow.overallScore).toBeGreaterThan(5.0)
+    expect(finalRow.varianceSource).toBe('blended')
 
     const driftLogs = await testPrisma.sentimentGraphDriftLog.findMany({ where: { filmId } })
     expect(driftLogs).toEqual([])

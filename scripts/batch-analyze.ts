@@ -4,6 +4,7 @@ import { PrismaNeon } from '@prisma/adapter-neon'
 import Anthropic from '@anthropic-ai/sdk'
 import { createHash } from 'crypto'
 import { isQualityReview } from '../src/lib/sentiment-pipeline'
+import { forceOverwriteSentimentGraph } from '../src/lib/sentiment-beat-lock'
 
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! })
 const prisma = new PrismaClient({ adapter })
@@ -160,26 +161,26 @@ Return this JSON structure:
   const cleaned = text.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '').trim()
   const graphData = JSON.parse(cleaned)
 
-  // Store graph
+  // Store graph via force-overwrite — bulk regeneration intentionally rewrites
+  // labels + timestamps without merging against existing beats.
   const existing = await prisma.sentimentGraph.findUnique({ where: { filmId: film.id } })
-  const graphPayload = {
-    overallScore: graphData.overallSentiment,
-    anchoredFrom: graphData.anchoredFrom,
+  await forceOverwriteSentimentGraph({
+    filmId: film.id,
     dataPoints: graphData.dataPoints,
-    peakMoment: graphData.peakMoment,
-    lowestMoment: graphData.lowestMoment,
-    biggestSwing: graphData.biggestSentimentSwing,
-    summary: graphData.summary,
-    reviewCount: graphData.reviewCount,
-    sourcesUsed: graphData.sources,
-    generatedAt: new Date(),
-  }
-
-  if (existing) {
-    await prisma.sentimentGraph.update({ where: { filmId: film.id }, data: { ...graphPayload, version: existing.version + 1 } })
-  } else {
-    await prisma.sentimentGraph.create({ data: { filmId: film.id, ...graphPayload } })
-  }
+    otherFields: {
+      overallScore: graphData.overallSentiment,
+      anchoredFrom: graphData.anchoredFrom,
+      peakMoment: graphData.peakMoment,
+      lowestMoment: graphData.lowestMoment,
+      biggestSwing: graphData.biggestSentimentSwing,
+      summary: graphData.summary,
+      reviewCount: graphData.reviewCount,
+      sourcesUsed: graphData.sources,
+      generatedAt: new Date(),
+      ...(existing ? { version: existing.version + 1 } : {}),
+    },
+    callerPath: 'script-batch-analyze',
+  })
 
   // Update lastReviewCount so future re-analysis checks the delta
   await prisma.film.update({

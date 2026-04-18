@@ -17,7 +17,7 @@ export async function POST(
   try {
     // Admin "Analyze" button is an explicit force-regenerate; bypass the
     // review-hash skip that the cron uses to avoid duplicate work.
-    await generateSentimentGraph(id, { force: true })
+    await generateSentimentGraph(id, { force: true, callerPath: 'admin-analyze' })
     await Promise.all([invalidateFilmCache(id), invalidateHomepageCache()])
     return Response.json({ success: true, filmId: id })
   } catch (err) {

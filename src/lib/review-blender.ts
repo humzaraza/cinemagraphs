@@ -1,5 +1,5 @@
 import { prisma } from './prisma'
-import { generateSentimentGraph } from './sentiment-pipeline'
+import { safeWriteSentimentGraph } from './sentiment-beat-lock'
 import type { SentimentDataPoint } from './types'
 
 const MIN_USER_REVIEWS_FOR_BLEND = 5
@@ -118,14 +118,15 @@ export async function maybeBlendAndUpdate(filmId: string): Promise<void> {
           weights.liveReactions
       : blendedOverall / (weights.external + weights.userReviews)
 
-    await prisma.sentimentGraph.update({
-      where: { filmId },
-      data: {
+    await safeWriteSentimentGraph({
+      filmId,
+      incomingDataPoints: blendedPoints,
+      otherFields: {
         previousScore: graph.overallScore,
         overallScore: Math.round(Math.max(1, Math.min(10, finalOverall)) * 10) / 10,
-        dataPoints: blendedPoints as any,
         varianceSource: 'blended',
       },
+      callerPath: 'review-blender',
     })
   }
 }

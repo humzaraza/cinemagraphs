@@ -134,7 +134,7 @@ async function processBatchResults(
       }
 
       try {
-        await storeSentimentGraphResult(input, result.data)
+        await storeSentimentGraphResult(input, result.data, 'cron-analyze')
         await invalidateFilmCache(film.id)
         summary.generated++
         summary.perFilm.push({ title: film.title, status: 'generated' })

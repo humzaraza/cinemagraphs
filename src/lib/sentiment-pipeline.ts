@@ -8,10 +8,11 @@ import {
   type AnalysisPromptParts,
 } from './claude'
 import type { AnchorScores } from './omdb'
-import type { SentimentGraphData } from '@/lib/types'
+import type { SentimentDataPoint, SentimentGraphData } from '@/lib/types'
 import type { Film, Review } from '@/generated/prisma/client'
 import { pipelineLogger } from './logger'
 import { fetchWikipediaPlot } from './sources/wikipedia'
+import { safeWriteSentimentGraph, type BeatLockCallerPath } from './sentiment-beat-lock'
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY!
 const TMDB_BASE_URL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3'
@@ -375,57 +376,38 @@ export async function prepareSentimentGraphInput(
  */
 export async function storeSentimentGraphResult(
   input: SentimentGraphInput,
-  graphData: SentimentGraphData
+  graphData: SentimentGraphData,
+  callerPath: BeatLockCallerPath
 ): Promise<void> {
   const { film, filteredReviewCount, reviewHash } = input
   const existing = await prisma.sentimentGraph.findUnique({ where: { filmId: film.id } })
 
+  await safeWriteSentimentGraph({
+    filmId: film.id,
+    incomingDataPoints: graphData.dataPoints as unknown as SentimentDataPoint[],
+    otherFields: {
+      previousScore: existing ? existing.overallScore : undefined,
+      overallScore: graphData.overallSentiment,
+      anchoredFrom: graphData.anchoredFrom,
+      peakMoment: graphData.peakMoment,
+      lowestMoment: graphData.lowestMoment,
+      biggestSwing: graphData.biggestSentimentSwing,
+      summary: graphData.summary,
+      reviewCount: graphData.reviewCount,
+      sourcesUsed: graphData.sources,
+      generatedAt: new Date(),
+      version: existing ? existing.version + 1 : undefined,
+      reviewHash,
+    },
+    callerPath,
+  })
+
   if (existing) {
-    await prisma.sentimentGraph.update({
-      where: { filmId: film.id },
-      data: {
-        previousScore: existing.overallScore,
-        overallScore: graphData.overallSentiment,
-        anchoredFrom: graphData.anchoredFrom,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        dataPoints: graphData.dataPoints as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        peakMoment: graphData.peakMoment as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        lowestMoment: graphData.lowestMoment as any,
-        biggestSwing: graphData.biggestSentimentSwing,
-        summary: graphData.summary,
-        reviewCount: graphData.reviewCount,
-        sourcesUsed: graphData.sources,
-        generatedAt: new Date(),
-        version: existing.version + 1,
-        reviewHash,
-      },
-    })
     pipelineLogger.info(
       { filmId: film.id, filmTitle: film.title, version: existing.version + 1 },
       'Updated sentiment graph'
     )
   } else {
-    await prisma.sentimentGraph.create({
-      data: {
-        filmId: film.id,
-        overallScore: graphData.overallSentiment,
-        anchoredFrom: graphData.anchoredFrom,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        dataPoints: graphData.dataPoints as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        peakMoment: graphData.peakMoment as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        lowestMoment: graphData.lowestMoment as any,
-        biggestSwing: graphData.biggestSentimentSwing,
-        summary: graphData.summary,
-        reviewCount: graphData.reviewCount,
-        sourcesUsed: graphData.sources,
-        generatedAt: new Date(),
-        reviewHash,
-      },
-    })
     pipelineLogger.info({ filmId: film.id, filmTitle: film.title }, 'Created sentiment graph')
   }
 
@@ -449,9 +431,9 @@ export async function storeSentimentGraphResult(
  */
 export async function generateSentimentGraph(
   filmId: string,
-  options: { force?: boolean } = {}
+  options: { force?: boolean; callerPath: BeatLockCallerPath }
 ): Promise<void> {
-  const prep = await prepareSentimentGraphInput(filmId, options)
+  const prep = await prepareSentimentGraphInput(filmId, { force: options.force })
 
   if (prep.status === 'skipped_film_not_found') {
     throw new Error(`Film not found: ${filmId}`)
@@ -483,12 +465,12 @@ export async function generateSentimentGraph(
     input.anchorScores,
     input.plotContext
   )
-  await storeSentimentGraphResult(input, graphData)
+  await storeSentimentGraphResult(input, graphData, options.callerPath)
 }
 
 export async function generateBatchSentimentGraphs(
   filmIds: string[],
-  options: { force?: boolean } = {}
+  options: { force?: boolean; callerPath: BeatLockCallerPath }
 ): Promise<{
   succeeded: string[]
   failed: { id: string; error: string }[]

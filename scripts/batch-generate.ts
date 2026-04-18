@@ -54,7 +54,7 @@ async function main() {
       } else {
         // Step 2: Generate graph (calls Claude API)
         console.log(`${tag} GEN   ${film.title} — ${check.qualityCount} quality reviews, generating...`)
-        await generateSentimentGraph(film.id)
+        await generateSentimentGraph(film.id, { callerPath: 'script-batch-analyze' })
         console.log(`${tag} OK    ${film.title}`)
         generated++
       }

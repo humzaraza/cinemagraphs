@@ -167,7 +167,7 @@ export async function GET(request: Request) {
         // Auto-generate sentiment graph for now_playing films
         if (nowPlayingIds.has(movie.id)) {
           try {
-            await generateSentimentGraph(createdFilm.id)
+            await generateSentimentGraph(createdFilm.id, { callerPath: 'cron-analyze' })
             await invalidateFilmCache(createdFilm.id)
             cronLogger.info({ tmdbId, title: movie.title }, 'Sentiment graph generated for new now_playing film')
           } catch (sentErr) {

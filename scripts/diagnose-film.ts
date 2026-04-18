@@ -143,7 +143,7 @@ async function main() {
     console.log('--- FULL PIPELINE RUN ---')
     console.log('Attempting generateSentimentGraph()...\n')
     try {
-      await generateSentimentGraph(FILM_ID)
+      await generateSentimentGraph(FILM_ID, { callerPath: 'admin-analyze' })
       console.log('\nSentiment graph generated successfully!')
     } catch (err) {
       console.error(`\nPipeline failed:`, err instanceof Error ? err.message : err)
