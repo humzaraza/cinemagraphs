@@ -15,6 +15,7 @@ export async function extractSentiment(text: string): Promise<number | null> {
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 50,
+      temperature: 0,
       messages: [
         {
           role: 'user',

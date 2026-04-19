@@ -299,6 +299,7 @@ export async function analyzeSentiment(
       const message = await anthropic.messages.create({
         model: SENTIMENT_MODEL,
         max_tokens: SENTIMENT_MAX_TOKENS,
+        temperature: 0,
         system: [
           {
             type: 'text',
