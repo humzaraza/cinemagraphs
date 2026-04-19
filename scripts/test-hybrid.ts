@@ -214,9 +214,11 @@ async function runOne(filmId: string, deps: Deps): Promise<void> {
 }
 
 async function main() {
-  const filmIds = process.argv.slice(2)
+  const rawArgs = process.argv.slice(2)
+  const allowPrerelease = rawArgs.includes('--allow-prerelease')
+  const filmIds = rawArgs.filter((a) => !a.startsWith('--'))
   if (filmIds.length === 0) {
-    console.error('Usage: npx tsx scripts/test-hybrid.ts <filmId1> <filmId2> ...')
+    console.error('Usage: npx tsx scripts/test-hybrid.ts <filmId1> <filmId2> ... [--allow-prerelease]')
     process.exit(1)
   }
 
@@ -229,6 +231,31 @@ async function main() {
   const { generateBeatsFromPlot } = await import('../src/lib/beat-generator')
   const { generateHybridSentimentGraph } = await import('../src/lib/hybrid-sentiment')
 
+  // Test-only bypass for the pre-release releaseDate guard inside
+  // generateHybridSentimentGraph. We do NOT modify hybrid-sentiment.ts;
+  // instead we monkey-patch prisma.film.findUnique for this script only so
+  // that a future releaseDate is transparently rewritten to just before now.
+  // This is scoped to the test harness — no other code path sees the patch.
+  if (allowPrerelease) {
+    type FindUnique = typeof prisma.film.findUnique
+    const originalFindUnique = prisma.film.findUnique.bind(prisma.film) as unknown as (
+      args: Parameters<FindUnique>[0]
+    ) => Promise<unknown>
+    prisma.film.findUnique = (async (args: Parameters<FindUnique>[0]) => {
+      const film = await originalFindUnique(args)
+      if (
+        film &&
+        typeof film === 'object' &&
+        'releaseDate' in film &&
+        film.releaseDate instanceof Date &&
+        film.releaseDate > new Date()
+      ) {
+        return { ...film, releaseDate: new Date(Date.now() - 1000) }
+      }
+      return film
+    }) as unknown as FindUnique
+  }
+
   const deps: Deps = {
     prisma,
     isQualityReview,
@@ -239,6 +266,7 @@ async function main() {
 
   write(`test-hybrid run at ${new Date().toISOString()}`)
   write(`filmIds: ${filmIds.join(', ')}`)
+  if (allowPrerelease) write(`NOTE: --allow-prerelease active (pre-release guard bypassed via in-memory releaseDate rewrite)`)
   write('')
 
   for (const filmId of filmIds) {
