@@ -278,6 +278,7 @@ export default async function HomePage() {
         timeEnd: dp.timeEnd ?? 0,
         score: dp.score,
         label: dp.label ?? '',
+        ...(typeof dp.labelFull === 'string' && dp.labelFull.length > 0 ? { labelFull: dp.labelFull } : {}),
         confidence: dp.confidence ?? 'medium',
       })),
     }))

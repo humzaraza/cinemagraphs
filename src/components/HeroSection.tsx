@@ -34,6 +34,7 @@ interface HeroFilm {
     timeEnd: number
     score: number
     label: string
+    labelFull?: string
     confidence: string
   }[]
 }
