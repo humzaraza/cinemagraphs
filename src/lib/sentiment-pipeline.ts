@@ -492,7 +492,7 @@ export async function generateSentimentGraph(
 
 export async function generateBatchSentimentGraphs(
   filmIds: string[],
-  options: { force?: boolean; callerPath: BeatLockCallerPath }
+  options: { force?: boolean; forceOverwrite?: boolean; callerPath: BeatLockCallerPath }
 ): Promise<{
   succeeded: string[]
   failed: { id: string; error: string }[]
