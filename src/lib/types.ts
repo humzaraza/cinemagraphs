@@ -5,6 +5,7 @@ export interface SentimentDataPoint {
   timeMidpoint: number
   score: number
   label: string
+  labelFull?: string
   confidence: 'low' | 'medium' | 'high'
   reviewEvidence: string
 }
@@ -12,6 +13,7 @@ export interface SentimentDataPoint {
 // Peak/lowest moment metadata
 export interface PeakLowMoment {
   label: string
+  labelFull?: string
   score: number
   time: number
 }

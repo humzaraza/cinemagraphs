@@ -177,7 +177,9 @@ async function runOne(filmId: string, deps: Deps): Promise<void> {
     const h = hybrid?.beats[i]
     const cStr = c ? formatBeatRow({ label: c.label, timeStart: c.timeStart, timeEnd: c.timeEnd, score: c.score }) : ''
     const wStr = w ? formatBeatRow({ label: w.label, timeStart: w.timeStart, timeEnd: w.timeEnd }) : ''
-    const hStr = h ? formatBeatRow({ label: h.label, timeStart: h.timeStart, timeEnd: h.timeEnd, score: h.score }) : ''
+    const hDisplayLabel =
+      h && typeof h.labelFull === 'string' && h.labelFull.trim() !== '' ? h.labelFull : h?.label ?? ''
+    const hStr = h ? formatBeatRow({ label: hDisplayLabel, timeStart: h.timeStart, timeEnd: h.timeEnd, score: h.score }) : ''
     write(`${padRight(cStr, COL_WIDTH)}│ ${padRight(wStr, COL_WIDTH)}│ ${padRight(hStr, COL_WIDTH)}`)
   }
 
@@ -194,10 +196,24 @@ async function runOne(filmId: string, deps: Deps): Promise<void> {
     write(`Token usage (output)   : ${hybrid.tokenUsage.output}`)
     write(`Duration               : ${hybrid.durationMs} ms`)
     write(`Overall sentiment      : ${hybrid.overallScore.toFixed(2)}`)
-    write(`Peak                   : ${hybrid.peakMoment.label} (${hybrid.peakMoment.score}) @ ${hybrid.peakMoment.time} min`)
-    write(`Lowest                 : ${hybrid.lowestMoment.label} (${hybrid.lowestMoment.score}) @ ${hybrid.lowestMoment.time} min`)
+    write(`Peak                   : (${hybrid.peakMoment.score}) @ ${hybrid.peakMoment.time} min`)
+    write(`  label     : ${hybrid.peakMoment.label}`)
+    write(`  labelFull : ${hybrid.peakMoment.labelFull ?? '<missing>'}`)
+    write(`Lowest                 : (${hybrid.lowestMoment.score}) @ ${hybrid.lowestMoment.time} min`)
+    write(`  label     : ${hybrid.lowestMoment.label}`)
+    write(`  labelFull : ${hybrid.lowestMoment.labelFull ?? '<missing>'}`)
     write(`Biggest swing          : ${hybrid.biggestSentimentSwing}`)
     write(`Summary                : ${hybrid.summary}`)
+
+    write('')
+    write(`─── HYBRID LABEL PAIRS (${hybrid.beats.length} beats, untruncated) ───`)
+    for (const beat of hybrid.beats) {
+      const time = formatTime(beat.timeStart, beat.timeEnd)
+      const scoreStr = typeof beat.score === 'number' ? beat.score.toFixed(1) : '—'
+      write(`${time} (${scoreStr})`)
+      write(`  label     : ${beat.label}`)
+      write(`  labelFull : ${beat.labelFull ?? '<missing>'}`)
+    }
 
     write('')
     write('─── PROMPT SENT TO CLAUDE ───')

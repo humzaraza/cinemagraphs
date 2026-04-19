@@ -111,7 +111,50 @@ Produce EXACTLY ${beatCount} beats covering 0 to ${runtime} minutes. Each beat i
 For each beat:
 - Use the PLOT to decide what happens and which characters are involved.
 - Use the REVIEWS to decide how to score that part of the film (1.0–10.0) and to write reviewEvidence.
-- Write a CONVERSATIONAL label that names specific characters and specific events from the plot. Labels should read like how a moviegoer would describe the scene to a friend.
+
+### How to write labels (TWO labels per beat)
+
+Every beat carries TWO labels describing the same event:
+
+- \`label\`: a SHORT 2-5 word memory anchor. The iconic name of the scene as viewers remember it. Examples: "The Chokey", "Trinity test", "Bogtrotter's cake", "Einstein at the pond", "Grace meets Rocky".
+- \`labelFull\`: a FULLER 4-10 word description that names the characters, event, and object or place specifically. Reads like someone describing what happened, accurately. Examples: "The Chokey is introduced as Trunchbull's punishment", "Trinity test detonates in the New Mexico desert", "Bruce Bogtrotter forced to eat the chocolate cake", "Oppenheimer meets Einstein at the pond", "Grace meets Rocky for the first time in the Eridian spacecraft".
+
+Both labels must describe the SAME event. They are two angles on one beat, not two different beats. Write the \`labelFull\` first — specific, accurate, descriptive — then compress it into the short \`label\` without drifting to a different scene or a more generic phrasing.
+
+Core principles for both:
+
+1. Real names, real events. Characters by name (Bruce Bogtrotter, Rocky, Kitty, Grace), places by name (Los Alamos, Crunchem Hall), objects by name (the chocolate cake, the Trinity test, the astrophage). Never abstract nouns like "confrontation", "turning point", "resolution".
+
+2. \`labelFull\` prioritizes descriptive accuracy. It should work for a viewer who remembers the film vaguely as well as one who remembers it clearly. Do not write \`labelFull\` as a longer restatement of the short \`label\` — write it as the actual description of what happens.
+
+3. \`label\` is the minimum viable phrase that identifies the scene. Readers who know the film recognize it instantly; readers who don't can still use \`labelFull\` to understand.
+
+4. Do not let \`label\` drift from \`labelFull\`. If \`labelFull\` says "Kitty testifies at the security clearance hearing", \`label\` should be "Kitty's testimony" — not "The hearing" (ambiguous) or "A courtroom moment" (vague).
+
+Examples of good (label, labelFull) pairs:
+
+- "The Bogtrotter cake" | "Bruce Bogtrotter forced to eat the chocolate cake"
+- "The Chokey" | "The Chokey is introduced as Trunchbull's punishment"
+- "Miss Honey's backstory" | "Miss Honey reveals her tragic backstory about Trunchbull"
+- "Trinity test" | "Trinity test detonates in the New Mexico desert"
+- "Einstein at the pond" | "Oppenheimer meets Einstein at the pond for their final conversation"
+- "Grace meets Rocky" | "Grace meets Rocky for the first time in the Eridian spacecraft"
+- "Grace drugged" | "Grace is drugged and loaded onto the Hail Mary"
+- "Kitty's testimony" | "Kitty testifies at the security clearance hearing"
+- "Trunchbull's defeat" | "Matilda uses telekinetic powers to drive Trunchbull away"
+- "Strauss loses confirmation" | "Strauss loses his Senate confirmation vote"
+
+Hard requirements:
+
+- Both \`label\` AND \`labelFull\` required on every beat. No empty strings. No nulls. No omissions.
+- \`label\` is 2-5 words. \`labelFull\` is 4-10 words (longer only if the scene genuinely requires it).
+- Both must name specific characters, events, and places from the plot. Accuracy is non-negotiable.
+- No generic genre-template labels ("Meeting the protagonist", "The climax", "How it ends", "Setting the scene", etc.) in EITHER field.
+- No screenwriting jargon ("Inciting Incident", "Act One", "Midpoint", etc.) in EITHER field.
+- No invented events not in the plot.
+- No em dashes in either label. Use commas, periods, or parentheses.
+- Full runtime coverage, no gaps larger than one beat.
+- \`peakMoment\` and \`lowestMoment\` also require BOTH \`label\` and \`labelFull\`, matching the corresponding beat.
 
 ## Anti-patterns — DO NOT do any of these
 
@@ -149,14 +192,15 @@ Return EXACTLY ONE JSON object. No prose, no preamble, no markdown fences. Schem
       "timeEnd": <number, minutes>,
       "timeMidpoint": <number, minutes>,
       "score": <number, 1.0–10.0>,
-      "label": "<specific to this film's plot and characters, no em dashes>",
+      "label": "<2-5 word short memory anchor, no em dashes>",
+      "labelFull": "<4-10 word descriptive label for the same event, no em dashes>",
       "confidence": "low" | "medium" | "high",
       "reviewEvidence": "<1–2 sentence paraphrased synthesis>"
     }
   ],
   "overallSentiment": <number, within ±0.2 of ${target}>,
-  "peakMoment": { "label": "<beat label>", "score": <number>, "time": <minutes> },
-  "lowestMoment": { "label": "<beat label>", "score": <number>, "time": <minutes> },
+  "peakMoment": { "label": "<short anchor>", "labelFull": "<descriptive>", "score": <number>, "time": <minutes> },
+  "lowestMoment": { "label": "<short anchor>", "labelFull": "<descriptive>", "score": <number>, "time": <minutes> },
   "biggestSentimentSwing": "<one sentence describing the biggest shift>",
   "summary": "<2–3 sentence summary of the overall sentiment arc>",
   "sources": ${JSON.stringify(sourcesArray)},
@@ -175,14 +219,30 @@ interface ParsedGraph {
   summary: string
 }
 
+function assertLabelPair(obj: unknown, where: string): void {
+  if (!obj || typeof obj !== 'object') throw new Error(`${where} is not an object`)
+  const o = obj as Record<string, unknown>
+  if (typeof o.label !== 'string' || o.label.trim() === '') {
+    throw new Error(`${where} missing or empty label`)
+  }
+  if (typeof o.labelFull !== 'string' || o.labelFull.trim() === '') {
+    throw new Error(`${where} missing or empty labelFull`)
+  }
+}
+
 function validateGraph(raw: unknown): ParsedGraph {
   if (!raw || typeof raw !== 'object') throw new Error('Response is not an object')
   const obj = raw as Record<string, unknown>
   if (!Array.isArray(obj.dataPoints) || obj.dataPoints.length < 10) {
     throw new Error(`Invalid data: expected 10+ data points, got ${Array.isArray(obj.dataPoints) ? obj.dataPoints.length : 0}`)
   }
+  for (let i = 0; i < obj.dataPoints.length; i++) {
+    assertLabelPair(obj.dataPoints[i], `dataPoints[${i}]`)
+  }
   if (typeof obj.overallSentiment !== 'number') throw new Error('Missing overallSentiment')
   if (!obj.peakMoment || !obj.lowestMoment) throw new Error('Missing peak/lowest moment')
+  assertLabelPair(obj.peakMoment, 'peakMoment')
+  assertLabelPair(obj.lowestMoment, 'lowestMoment')
   if (typeof obj.biggestSentimentSwing !== 'string') throw new Error('Missing biggestSentimentSwing')
   if (typeof obj.summary !== 'string') throw new Error('Missing summary')
   return {
