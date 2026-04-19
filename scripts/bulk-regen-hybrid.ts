@@ -122,12 +122,13 @@ interface Args {
   commit: boolean
   limit: number | null
   resume: boolean
+  filmIds: Set<string> | null
 }
 
 // ── Arg parsing ──────────────────────────────────────────────────────────────
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { dryRun: false, commit: false, limit: null, resume: false }
+  const args: Args = { dryRun: false, commit: false, limit: null, resume: false, filmIds: null }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--dry-run') args.dryRun = true
@@ -137,6 +138,12 @@ function parseArgs(argv: string[]): Args {
       const n = Number(argv[++i])
       if (!Number.isFinite(n) || n < 1) throw new Error(`--limit requires a positive integer, got: ${argv[i]}`)
       args.limit = n
+    } else if (a === '--filmIds') {
+      const raw = argv[++i]
+      if (!raw) throw new Error('--filmIds requires a comma-separated list of film ids')
+      const ids = raw.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+      if (ids.length === 0) throw new Error('--filmIds parsed to an empty list')
+      args.filmIds = new Set(ids)
     }
   }
   if (!args.dryRun && !args.commit) throw new Error('Must pass --dry-run or --commit')
@@ -440,7 +447,17 @@ async function main() {
 
   // ── Build phase ─────────────────────────────────────────────────────────────
   const pending = films.filter((f) => !shouldSkipFromCheckpoint(checkpoint.films[f.id]))
-  const toProcess = args.limit ? pending.slice(0, args.limit) : pending
+  let scoped = pending
+  if (args.filmIds) {
+    scoped = pending.filter((f) => args.filmIds!.has(f.id))
+    const requested = args.filmIds.size
+    const missing = Array.from(args.filmIds).filter((id) => !films.some((f) => f.id === id))
+    console.log(
+      `--filmIds active: requested=${requested} matched-and-pending=${scoped.length}` +
+        (missing.length > 0 ? ` not-in-db=${missing.length} (${missing.join(',')})` : '')
+    )
+  }
+  const toProcess = args.limit ? scoped.slice(0, args.limit) : scoped
   console.log(`Pending: ${pending.length} | Will build requests for: ${toProcess.length}`)
 
   const requests: Anthropic.Messages.Batches.BatchCreateParams.Request[] = []
