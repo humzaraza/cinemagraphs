@@ -40,3 +40,5 @@ node_modules_old
 # uploaded avatars
 /public/avatars/
 .neon
+# hybrid-sentiment local verification output (scripts/test-hybrid.ts)
+hybrid-test-output.txt
