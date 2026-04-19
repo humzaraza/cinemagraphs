@@ -34,9 +34,27 @@ export type CronRegenDecision =
 
 export interface CronRegenInput {
   releaseDate: Date | null
-  /** Count of quality reviews, per the isQualityReview filter. Callers may
-   *  pass `film.lastReviewCount` as a proxy — it is populated by
-   *  `storeSentimentGraphResult` with the filtered count at write time. */
+  /**
+   * Count of quality reviews, per the isQualityReview filter.
+   *
+   * The cron passes `film.lastReviewCount` here — the filtered count snapshot
+   * written by `storeSentimentGraphResult` at the last regeneration. This is
+   * NOT a live count; it reflects the state at the time of the last graph
+   * write.
+   *
+   * Staleness is bounded by the 30-day stale-regen rule: if the real quality
+   * review count shifts above or below QUALITY_REVIEW_THRESHOLD between
+   * regenerations, the skip decision will rely on the stale value until the
+   * next regen refreshes it — at most REGEN_INTERVAL_DAYS days away, since
+   * the stale-regen branch forces eligibility after that. A film that crosses
+   * the threshold may therefore be skipped (or eligible) one extra cycle
+   * relative to the ground-truth count; acceptable for this optimization.
+   *
+   * If strict live counts ever matter, the alternative is counting quality
+   * reviews at decision time by reading every candidate film's Review rows
+   * and applying `isQualityReview` — a per-film DB read that scales with the
+   * candidate pool.
+   */
   qualityReviewCount: number
   /** SentimentGraph.generatedAt, or null when the film has no graph yet. */
   lastRegenAt: Date | null
