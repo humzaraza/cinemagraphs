@@ -16,7 +16,7 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || process.env.CINEMA_ANTHROPIC_KEY || '',
 })
 
-const MIN_QUALITY_REVIEWS = 3
+export const MIN_QUALITY_REVIEWS = 3
 const HYBRID_PLOT_CHAR_CAP = 6000
 const HYBRID_REVIEW_CAP = 30
 const HYBRID_REVIEW_CHAR_CAP = 1500
@@ -40,12 +40,12 @@ export interface HybridResult {
   prompt: { system: string | null; user: string }
 }
 
-function computeHybridBeatCount(runtime: number): number {
+export function computeHybridBeatCount(runtime: number): number {
   const n = Math.round(runtime / 10)
   return Math.min(Math.max(n, 10), 20)
 }
 
-function buildAnchorString(film: Film): { anchorString: string; target: number } {
+export function buildAnchorString(film: Film): { anchorString: string; target: number } {
   const parts: string[] = []
   if (film.imdbRating) parts.push(`IMDb ${film.imdbRating}`)
   if (film.rtCriticsScore) parts.push(`RT ${film.rtCriticsScore}%`)
@@ -66,7 +66,7 @@ function buildReviewBlock(reviews: Review[]): string {
     .join('\n\n---\n\n')
 }
 
-function buildHybridPrompt(params: {
+export function buildHybridPrompt(params: {
   film: Film
   year: number | 'Unknown'
   runtime: number
@@ -210,7 +210,7 @@ Return EXACTLY ONE JSON object. No prose, no preamble, no markdown fences. Schem
 }`
 }
 
-interface ParsedGraph {
+export interface ParsedGraph {
   dataPoints: SentimentDataPoint[]
   overallSentiment: number
   peakMoment: PeakLowMoment
@@ -230,7 +230,7 @@ function assertLabelPair(obj: unknown, where: string): void {
   }
 }
 
-function validateGraph(raw: unknown): ParsedGraph {
+export function validateGraph(raw: unknown): ParsedGraph {
   if (!raw || typeof raw !== 'object') throw new Error('Response is not an object')
   const obj = raw as Record<string, unknown>
   if (!Array.isArray(obj.dataPoints) || obj.dataPoints.length < 10) {
