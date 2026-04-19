@@ -233,7 +233,7 @@ describe('Film Submission API', () => {
 
     it('triggers generateSentimentGraph', async () => {
       await POST(makeRequest({ tmdbId: 550 }))
-      expect(mockGenerateSentimentGraph).toHaveBeenCalledWith('new-film-id', { callerPath: 'admin-analyze' })
+      expect(mockGenerateSentimentGraph).toHaveBeenCalledWith('new-film-id', { callerPath: 'user-submission' })
     })
 
     it('returns success response with film data', async () => {

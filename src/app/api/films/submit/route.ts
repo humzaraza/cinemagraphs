@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
     // Fire-and-forget: try to generate sentiment graph, then fall back to Wikipedia beats
     // if the graph didn't produce. Graph generation may succeed or fail; either way we
     // attempt beats so the user can rate story moments on their review.
-    generateSentimentGraph(film.id, { callerPath: 'admin-analyze' })
+    generateSentimentGraph(film.id, { callerPath: 'user-submission' })
       .then(() => invalidateHomepageCache())
       .catch((err) => apiLogger.error({ err, filmId: film.id }, 'Failed to generate sentiment graph for user-submitted film'))
       .finally(() => {
