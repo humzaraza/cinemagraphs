@@ -28,6 +28,16 @@
  *   npx tsx scripts/bulk-regen-hybrid.ts --commit --limit 10      # submit first 10 pending
  *
  * Do NOT run --commit without an approved cost plan.
+ *
+ * NOTE on module evaluation order: Any module that reads `process.env` at
+ * load time (prisma.ts, hybrid-sentiment.ts, claude.ts) or transitively
+ * imports src/lib/prisma.ts (sentiment-beat-lock.ts, sentiment-pipeline.ts)
+ * MUST be loaded after dotenv has populated env. ES modules evaluate all
+ * static imports before the importing module's top-level code runs, so those
+ * modules are loaded via dynamic `await import(...)` inside `main()` — after
+ * the top-level `dotenv.config(...)` call below has run. Reverting these to
+ * static imports silently breaks `forceOverwriteSentimentGraph` by binding
+ * the shared PrismaClient to `host=localhost` before DATABASE_URL is set.
  */
 import dotenv from 'dotenv'
 dotenv.config({ path: '.env.local' })
@@ -41,23 +51,22 @@ import path from 'node:path'
 import Anthropic from '@anthropic-ai/sdk'
 import { PrismaClient, type Film } from '../src/generated/prisma/client.js'
 import { PrismaNeon } from '@prisma/adapter-neon'
-import { forceOverwriteSentimentGraph } from '../src/lib/sentiment-beat-lock'
-import { isQualityReview } from '../src/lib/sentiment-pipeline'
 import { fetchWikipediaPlot } from '../src/lib/sources/wikipedia'
-import {
-  SENTIMENT_MODEL,
-  SENTIMENT_MAX_TOKENS,
-  buildAnalysisPromptParts,
-} from '../src/lib/claude'
-import {
-  MIN_QUALITY_REVIEWS,
-  buildAnchorString,
-  buildHybridPrompt,
-  computeHybridBeatCount,
-  validateGraph,
-  type ParsedGraph,
-} from '../src/lib/hybrid-sentiment'
 import type { AnchorScores } from '../src/lib/omdb'
+import type { ParsedGraph } from '../src/lib/hybrid-sentiment'
+
+// Bindings populated inside main() via dynamic import, AFTER dotenv.config()
+// above has run. DO NOT convert to static imports — see NOTE in the header.
+let forceOverwriteSentimentGraph!: typeof import('../src/lib/sentiment-beat-lock')['forceOverwriteSentimentGraph']
+let isQualityReview!: typeof import('../src/lib/sentiment-pipeline')['isQualityReview']
+let SENTIMENT_MODEL!: typeof import('../src/lib/claude')['SENTIMENT_MODEL']
+let SENTIMENT_MAX_TOKENS!: typeof import('../src/lib/claude')['SENTIMENT_MAX_TOKENS']
+let buildAnalysisPromptParts!: typeof import('../src/lib/claude')['buildAnalysisPromptParts']
+let MIN_QUALITY_REVIEWS!: typeof import('../src/lib/hybrid-sentiment')['MIN_QUALITY_REVIEWS']
+let buildAnchorString!: typeof import('../src/lib/hybrid-sentiment')['buildAnchorString']
+let buildHybridPrompt!: typeof import('../src/lib/hybrid-sentiment')['buildHybridPrompt']
+let computeHybridBeatCount!: typeof import('../src/lib/hybrid-sentiment')['computeHybridBeatCount']
+let validateGraph!: typeof import('../src/lib/hybrid-sentiment')['validateGraph']
 
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! })
 const prisma = new PrismaClient({ adapter })
@@ -393,6 +402,25 @@ async function pollUntilEnded(batchId: string): Promise<Anthropic.Messages.Batch
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   console.log('bulk-regen-hybrid:', args)
+
+  // Load env-dependent modules AFTER dotenv.config() has run. DO NOT convert
+  // these to static imports — see NOTE in the header comment.
+  const [sblMod, pipelineMod, claudeMod, hybridMod] = await Promise.all([
+    import('../src/lib/sentiment-beat-lock'),
+    import('../src/lib/sentiment-pipeline'),
+    import('../src/lib/claude'),
+    import('../src/lib/hybrid-sentiment'),
+  ])
+  forceOverwriteSentimentGraph = sblMod.forceOverwriteSentimentGraph
+  isQualityReview = pipelineMod.isQualityReview
+  SENTIMENT_MODEL = claudeMod.SENTIMENT_MODEL
+  SENTIMENT_MAX_TOKENS = claudeMod.SENTIMENT_MAX_TOKENS
+  buildAnalysisPromptParts = claudeMod.buildAnalysisPromptParts
+  MIN_QUALITY_REVIEWS = hybridMod.MIN_QUALITY_REVIEWS
+  buildAnchorString = hybridMod.buildAnchorString
+  buildHybridPrompt = hybridMod.buildHybridPrompt
+  computeHybridBeatCount = hybridMod.computeHybridBeatCount
+  validateGraph = hybridMod.validateGraph
 
   const films = await prisma.film.findMany({ orderBy: { id: 'asc' } })
   console.log(`Loaded ${films.length} films from DB`)
