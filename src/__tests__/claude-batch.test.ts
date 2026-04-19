@@ -25,7 +25,8 @@ vi.mock('@/lib/logger', () => ({
   pipelineLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 
-// A valid SentimentGraphData JSON the parser will accept (≥10 data points).
+// A valid SentimentGraphData JSON the parser will accept (≥10 data points,
+// both label + labelFull on every beat and on peak/lowest).
 function validGraphJson(): string {
   const dataPoints = Array.from({ length: 14 }, (_, i) => ({
     timeStart: i * 8,
@@ -33,6 +34,7 @@ function validGraphJson(): string {
     timeMidpoint: i * 8 + 4,
     score: 7,
     label: `Segment ${i + 1}`,
+    labelFull: `Descriptive Segment ${i + 1} with specific event`,
     confidence: 'medium',
     reviewEvidence: 'Reviewers liked this section.',
   }))
@@ -41,8 +43,18 @@ function validGraphJson(): string {
     anchoredFrom: 'IMDb 7.5',
     dataPoints,
     overallSentiment: 7,
-    peakMoment: { label: 'High', score: 9, time: 60 },
-    lowestMoment: { label: 'Low', score: 5, time: 20 },
+    peakMoment: {
+      label: 'High',
+      labelFull: 'High point of the film where reviewers cheered',
+      score: 9,
+      time: 60,
+    },
+    lowestMoment: {
+      label: 'Low',
+      labelFull: 'Low point where reviewers disengaged from the story',
+      score: 5,
+      time: 20,
+    },
     biggestSentimentSwing: 'Mid-film tonal shift',
     summary: 'A solid run with a strong middle.',
     // Server-controlled fields the parser overwrites; values here don't matter.
@@ -270,6 +282,149 @@ describe('fetchBatchResults', () => {
       ['film-cx', 'canceled'],
       ['film-ex', 'expired'],
     ])
+  })
+
+  // ── parseGraphResponse labelFull strictness ─────────────────────────────
+  //
+  // parseGraphResponse isn't exported directly, so these cases drive it
+  // through fetchBatchResults and assert on the resulting 'errored' entry.
+  // The parser must reject any graph that omits labelFull anywhere: on a
+  // dataPoint, or on peak/lowest moment — matching hybrid-sentiment.ts's
+  // validateGraph strictness so the two pipeline entry points can't drift.
+
+  // Build a SentimentGraphData variant for parser-validation cases. The
+  // mutator lets a test drop labelFull from one location to provoke a
+  // specific error.
+  function graphWithMutation(
+    mutate: (g: ReturnType<typeof validGraphObject>) => void
+  ): string {
+    const g = validGraphObject()
+    mutate(g)
+    return JSON.stringify(g)
+  }
+
+  function validGraphObject() {
+    return {
+      film: 'Test Film',
+      anchoredFrom: 'IMDb 7.5',
+      dataPoints: Array.from({ length: 14 }, (_, i) => ({
+        timeStart: i * 8,
+        timeEnd: (i + 1) * 8,
+        timeMidpoint: i * 8 + 4,
+        score: 7,
+        label: `Segment ${i + 1}`,
+        labelFull: `Descriptive Segment ${i + 1} with specific event`,
+        confidence: 'medium',
+        reviewEvidence: 'Reviewers liked this section.',
+      })) as Array<Record<string, unknown>>,
+      overallSentiment: 7,
+      peakMoment: {
+        label: 'High',
+        labelFull: 'High point of the film where reviewers cheered',
+        score: 9,
+        time: 60,
+      } as Record<string, unknown>,
+      lowestMoment: {
+        label: 'Low',
+        labelFull: 'Low point where reviewers disengaged from the story',
+        score: 5,
+        time: 20,
+      } as Record<string, unknown>,
+      biggestSentimentSwing: 'Mid-film tonal shift',
+      summary: 'A solid run with a strong middle.',
+      sources: ['will-be-overwritten'],
+      varianceSource: 'external_only',
+      reviewCount: 999,
+      generatedAt: '2024-01-01T00:00:00Z',
+    }
+  }
+
+  function makeBatchEntryWith(text: string) {
+    return {
+      custom_id: 'film-parse',
+      result: {
+        type: 'succeeded',
+        message: {
+          content: [{ type: 'text', text }],
+          usage: {
+            input_tokens: 10,
+            output_tokens: 5,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+          },
+        },
+      },
+    }
+  }
+
+  it('throws on missing labelFull in dataPoints', async () => {
+    const body = graphWithMutation((g) => {
+      delete g.dataPoints[3].labelFull
+    })
+    mockBatchesResults.mockResolvedValueOnce(asyncIter([makeBatchEntryWith(body)]))
+
+    const { fetchBatchResults } = await import('@/lib/claude')
+    const results = await fetchBatchResults(
+      'batch_abc',
+      new Map([['film-parse', { reviewCount: 0, sources: [] }]])
+    )
+
+    expect(results[0].outcome).toBe('errored')
+    expect(results[0].error).toMatch(/Parse failure/)
+    expect(results[0].error).toMatch(/dataPoints\[3\]/)
+    expect(results[0].error).toMatch(/labelFull/)
+  })
+
+  it('throws on empty-string labelFull in dataPoints', async () => {
+    const body = graphWithMutation((g) => {
+      g.dataPoints[0].labelFull = '   '
+    })
+    mockBatchesResults.mockResolvedValueOnce(asyncIter([makeBatchEntryWith(body)]))
+
+    const { fetchBatchResults } = await import('@/lib/claude')
+    const results = await fetchBatchResults(
+      'batch_abc',
+      new Map([['film-parse', { reviewCount: 0, sources: [] }]])
+    )
+
+    expect(results[0].outcome).toBe('errored')
+    expect(results[0].error).toMatch(/Parse failure/)
+    expect(results[0].error).toMatch(/dataPoints\[0\]/)
+    expect(results[0].error).toMatch(/labelFull/)
+  })
+
+  it('throws on missing labelFull in peakMoment', async () => {
+    const body = graphWithMutation((g) => {
+      delete g.peakMoment.labelFull
+    })
+    mockBatchesResults.mockResolvedValueOnce(asyncIter([makeBatchEntryWith(body)]))
+
+    const { fetchBatchResults } = await import('@/lib/claude')
+    const results = await fetchBatchResults(
+      'batch_abc',
+      new Map([['film-parse', { reviewCount: 0, sources: [] }]])
+    )
+
+    expect(results[0].outcome).toBe('errored')
+    expect(results[0].error).toMatch(/Parse failure/)
+    expect(results[0].error).toMatch(/peakMoment/)
+    expect(results[0].error).toMatch(/labelFull/)
+  })
+
+  it('accepts valid dual-label input with labelFull on every beat and peak/lowest', async () => {
+    const body = JSON.stringify(validGraphObject())
+    mockBatchesResults.mockResolvedValueOnce(asyncIter([makeBatchEntryWith(body)]))
+
+    const { fetchBatchResults } = await import('@/lib/claude')
+    const results = await fetchBatchResults(
+      'batch_abc',
+      new Map([['film-parse', { reviewCount: 3, sources: ['tmdb'] }]])
+    )
+
+    expect(results[0].outcome).toBe('succeeded')
+    expect(results[0].data?.dataPoints.every((b) => !!b.labelFull)).toBe(true)
+    expect(results[0].data?.peakMoment.labelFull).toBeTruthy()
+    expect(results[0].data?.lowestMoment.labelFull).toBeTruthy()
   })
 
   it('falls back to empty context when customId is unknown', async () => {

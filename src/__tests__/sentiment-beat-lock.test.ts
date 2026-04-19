@@ -373,6 +373,156 @@ describe('safeWriteSentimentGraph', () => {
     )
   })
 
+  it('J. labelFull — merge preserves existing labelFull when incoming also has labelFull', async () => {
+    // Existing row has both labels. Incoming tries to supply a different
+    // labelFull for the same beat. The merge must keep the existing labelFull
+    // (symmetric with label preservation) to protect editorial history.
+    const existingBeats: SentimentDataPoint[] = [
+      {
+        label: 'Trinity test',
+        labelFull: 'Trinity test detonates in the New Mexico desert',
+        timeStart: 60,
+        timeEnd: 70,
+        timeMidpoint: 65,
+        score: 9,
+        confidence: 'high',
+        reviewEvidence: 'Original evidence',
+      },
+    ]
+    mocks.tx.sentimentGraph.findUnique.mockResolvedValueOnce({
+      id: 'g1',
+      filmId: 'film-1',
+      dataPoints: existingBeats,
+    })
+
+    const { safeWriteSentimentGraph } = await import('@/lib/sentiment-beat-lock')
+    const incoming: SentimentDataPoint[] = [
+      {
+        label: 'Trinity test',
+        labelFull: 'A totally different descriptive phrasing here',
+        timeStart: 60,
+        timeEnd: 70,
+        timeMidpoint: 65,
+        score: 8.5,
+        confidence: 'high',
+        reviewEvidence: 'New evidence',
+      },
+    ]
+    const result = await safeWriteSentimentGraph({
+      filmId: 'film-1',
+      incomingDataPoints: incoming,
+      otherFields: {},
+      callerPath: 'cron-analyze',
+    })
+
+    expect(result.status).toBe('written')
+    const merged = capturedDataPoints()
+    expect(merged).toHaveLength(1)
+    // Existing labelFull wins, even when incoming supplies a replacement.
+    expect(merged[0].labelFull).toBe('Trinity test detonates in the New Mexico desert')
+    // Score and reviewEvidence still update from incoming.
+    expect(merged[0].score).toBe(8.5)
+    expect(merged[0].reviewEvidence).toBe('New evidence')
+  })
+
+  it('K. labelFull — merge adopts incoming labelFull when existing has none (legacy upgrade)', async () => {
+    // Existing row is a pre-bae4807 legacy row: label only, no labelFull.
+    // Incoming carries a proper labelFull. The merge must adopt it so the row
+    // self-upgrades the first time it's touched by the new pipeline.
+    const existingBeats: SentimentDataPoint[] = [
+      {
+        label: 'Trinity test',
+        timeStart: 60,
+        timeEnd: 70,
+        timeMidpoint: 65,
+        score: 9,
+        confidence: 'high',
+        reviewEvidence: 'Legacy evidence',
+      },
+    ]
+    mocks.tx.sentimentGraph.findUnique.mockResolvedValueOnce({
+      id: 'g1',
+      filmId: 'film-1',
+      dataPoints: existingBeats,
+    })
+
+    const { safeWriteSentimentGraph } = await import('@/lib/sentiment-beat-lock')
+    const incoming: SentimentDataPoint[] = [
+      {
+        label: 'Trinity test',
+        labelFull: 'Trinity test detonates in the New Mexico desert',
+        timeStart: 60,
+        timeEnd: 70,
+        timeMidpoint: 65,
+        score: 9.2,
+        confidence: 'high',
+        reviewEvidence: 'Fresh evidence',
+      },
+    ]
+    const result = await safeWriteSentimentGraph({
+      filmId: 'film-1',
+      incomingDataPoints: incoming,
+      otherFields: {},
+      callerPath: 'cron-analyze',
+    })
+
+    expect(result.status).toBe('written')
+    const merged = capturedDataPoints()
+    expect(merged).toHaveLength(1)
+    // Legacy row upgrades to carry the incoming labelFull.
+    expect(merged[0].labelFull).toBe('Trinity test detonates in the New Mexico desert')
+    expect(merged[0].label).toBe('Trinity test')
+  })
+
+  it('L. labelFull — merge leaves labelFull absent when neither side has one (legacy stays legacy)', async () => {
+    // Both existing and incoming are legacy-shaped. The merge must not
+    // invent a labelFull; the row stays single-label until a real labelFull
+    // arrives from the pipeline.
+    const existingBeats: SentimentDataPoint[] = [
+      {
+        label: 'Trinity test',
+        timeStart: 60,
+        timeEnd: 70,
+        timeMidpoint: 65,
+        score: 9,
+        confidence: 'high',
+        reviewEvidence: 'Legacy evidence',
+      },
+    ]
+    mocks.tx.sentimentGraph.findUnique.mockResolvedValueOnce({
+      id: 'g1',
+      filmId: 'film-1',
+      dataPoints: existingBeats,
+    })
+
+    const { safeWriteSentimentGraph } = await import('@/lib/sentiment-beat-lock')
+    const incoming: SentimentDataPoint[] = [
+      {
+        label: 'Trinity test',
+        timeStart: 60,
+        timeEnd: 70,
+        timeMidpoint: 65,
+        score: 8.7,
+        confidence: 'high',
+        reviewEvidence: 'Also legacy evidence',
+      },
+    ]
+    const result = await safeWriteSentimentGraph({
+      filmId: 'film-1',
+      incomingDataPoints: incoming,
+      otherFields: {},
+      callerPath: 'cron-analyze',
+    })
+
+    expect(result.status).toBe('written')
+    const merged = capturedDataPoints()
+    expect(merged).toHaveLength(1)
+    // labelFull stays absent — no fabrication from thin air.
+    expect('labelFull' in merged[0]).toBe(false)
+    expect(merged[0].label).toBe('Trinity test')
+    expect(merged[0].score).toBe(8.7)
+  })
+
   it('H. incoming tries to change a timestamp — merge preserves existing timestamp', async () => {
     const existingBeats = [
       {

@@ -281,6 +281,23 @@ function reviewsToContext(reviews: Review[]): ParseGraphContext {
   }
 }
 
+// Mirrors hybrid-sentiment.ts's assertLabelPair so the two entry points into
+// the sentiment pipeline enforce the same dual-label strictness. Kept inline
+// (not imported) to avoid a cross-module dependency: hybrid-sentiment.ts
+// already imports from claude.ts, and reversing that would create a cycle.
+function assertLabelPair(obj: unknown, where: string): void {
+  if (!obj || typeof obj !== 'object') {
+    throw new Error(`parseGraphResponse: ${where} is not an object`)
+  }
+  const o = obj as Record<string, unknown>
+  if (typeof o.label !== 'string' || o.label.trim() === '') {
+    throw new Error(`parseGraphResponse: ${where} missing or empty label`)
+  }
+  if (typeof o.labelFull !== 'string' || o.labelFull.trim() === '') {
+    throw new Error(`parseGraphResponse: ${where} missing or empty labelFull`)
+  }
+}
+
 function parseGraphResponse(rawResponse: string, ctx: ParseGraphContext): SentimentGraphData {
   // Strip any accidental markdown fences (the system prompt forbids them, but
   // models slip up).
@@ -295,9 +312,19 @@ function parseGraphResponse(rawResponse: string, ctx: ParseGraphContext): Sentim
     throw new Error(`Invalid data: expected 10+ data points, got ${data.dataPoints?.length || 0}`)
   }
 
+  for (let i = 0; i < data.dataPoints.length; i++) {
+    assertLabelPair(data.dataPoints[i], `dataPoints[${i}]`)
+  }
+
   if (typeof data.overallSentiment !== 'number') {
     throw new Error('Missing overallSentiment')
   }
+
+  if (!data.peakMoment || !data.lowestMoment) {
+    throw new Error('Missing peak/lowest moment')
+  }
+  assertLabelPair(data.peakMoment, 'peakMoment')
+  assertLabelPair(data.lowestMoment, 'lowestMoment')
 
   // Force trusted server-controlled fields (cheaper than asking the model to
   // be careful, and avoids drift between the prompt template and the schema).

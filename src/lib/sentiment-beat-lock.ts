@@ -131,7 +131,7 @@ export async function safeWriteSentimentGraph(params: {
     for (const incoming of incomingDataPoints) {
       const match = existingByLabel.get(incoming.label)
       if (match) {
-        mergedByLabel.set(match.label, {
+        const merged: SentimentDataPoint = {
           label: match.label,
           timeStart: match.timeStart,
           timeEnd: match.timeEnd,
@@ -139,7 +139,12 @@ export async function safeWriteSentimentGraph(params: {
           score: incoming.score,
           confidence: incoming.confidence,
           reviewEvidence: incoming.reviewEvidence,
-        })
+        }
+        // Prefer existing labelFull; fall back to incoming (upgrade path for
+        // legacy pre-bae4807 rows); preserve absence when neither has one.
+        const labelFull = match.labelFull ?? incoming.labelFull
+        if (labelFull !== undefined) merged.labelFull = labelFull
+        mergedByLabel.set(match.label, merged)
       } else {
         droppedIncomingLabels.push(incoming.label)
       }
