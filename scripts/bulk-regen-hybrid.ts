@@ -24,8 +24,14 @@
  * Usage:
  *   npx tsx scripts/bulk-regen-hybrid.ts --dry-run                # build requests in memory only
  *   npx tsx scripts/bulk-regen-hybrid.ts --dry-run --limit 5      # build 5 in memory
- *   npx tsx scripts/bulk-regen-hybrid.ts --commit                 # submit/poll/apply
+ *   npx tsx scripts/bulk-regen-hybrid.ts --commit                 # submit/poll/apply (lock-preserving write)
+ *   npx tsx scripts/bulk-regen-hybrid.ts --commit --force-orphan  # force overwrite labels (interactive y/n)
+ *   npx tsx scripts/bulk-regen-hybrid.ts --commit --force-orphan --yes  # force overwrite, skip prompt (CI)
  *   npx tsx scripts/bulk-regen-hybrid.ts --commit --limit 10      # submit first 10 pending
+ *
+ * Default write path is safeWriteSentimentGraph. Pass --force-orphan to rewrite
+ * labels + timestamps; this ORPHANS user beat ratings whose labels do not match
+ * the new graph. Interactive confirmation is required (override with --yes).
  *
  * Do NOT run --commit without an approved cost plan.
  *
@@ -48,6 +54,7 @@ neonConfig.webSocketConstructor = ws as unknown as typeof WebSocket
 
 import fs from 'node:fs'
 import path from 'node:path'
+import readline from 'node:readline/promises'
 import Anthropic from '@anthropic-ai/sdk'
 import { PrismaClient, type Film } from '../src/generated/prisma/client.js'
 import { PrismaNeon } from '@prisma/adapter-neon'
@@ -58,6 +65,7 @@ import type { ParsedGraph } from '../src/lib/hybrid-sentiment'
 // Bindings populated inside main() via dynamic import, AFTER dotenv.config()
 // above has run. DO NOT convert to static imports — see NOTE in the header.
 let forceOverwriteSentimentGraph!: typeof import('../src/lib/sentiment-beat-lock')['forceOverwriteSentimentGraph']
+let safeWriteSentimentGraph!: typeof import('../src/lib/sentiment-beat-lock')['safeWriteSentimentGraph']
 let isQualityReview!: typeof import('../src/lib/sentiment-pipeline')['isQualityReview']
 let SENTIMENT_MODEL!: typeof import('../src/lib/claude')['SENTIMENT_MODEL']
 let SENTIMENT_MAX_TOKENS!: typeof import('../src/lib/claude')['SENTIMENT_MAX_TOKENS']
@@ -123,17 +131,29 @@ interface Args {
   limit: number | null
   resume: boolean
   filmIds: Set<string> | null
+  forceOrphan: boolean
+  yes: boolean
 }
 
 // ── Arg parsing ──────────────────────────────────────────────────────────────
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { dryRun: false, commit: false, limit: null, resume: false, filmIds: null }
+  const args: Args = {
+    dryRun: false,
+    commit: false,
+    limit: null,
+    resume: false,
+    filmIds: null,
+    forceOrphan: false,
+    yes: false,
+  }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--dry-run') args.dryRun = true
     else if (a === '--commit') args.commit = true
     else if (a === '--resume') args.resume = true
+    else if (a === '--force-orphan') args.forceOrphan = true
+    else if (a === '--yes') args.yes = true
     else if (a === '--limit') {
       const n = Number(argv[++i])
       if (!Number.isFinite(n) || n < 1) throw new Error(`--limit requires a positive integer, got: ${argv[i]}`)
@@ -149,6 +169,33 @@ function parseArgs(argv: string[]): Args {
   if (!args.dryRun && !args.commit) throw new Error('Must pass --dry-run or --commit')
   if (args.dryRun && args.commit) throw new Error('Cannot pass both --dry-run and --commit')
   return args
+}
+
+async function confirmForceOrphan(args: Args): Promise<void> {
+  if (!args.forceOrphan) return
+  const banner = [
+    '',
+    '================================================================',
+    'WARNING: --force-orphan enabled. Any user beat ratings whose',
+    'labels do not match the new graph will be orphaned.',
+    '================================================================',
+    '',
+  ].join('\n')
+  console.log(banner)
+  if (args.yes) {
+    console.log('[--yes supplied — skipping interactive confirmation]')
+    return
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    const answer = await rl.question("Type 'yes' to continue or anything else to abort: ")
+    if (answer.trim().toLowerCase() !== 'yes') {
+      console.log('Aborted.')
+      process.exit(1)
+    }
+  } finally {
+    rl.close()
+  }
 }
 
 // ── Checkpoint I/O ───────────────────────────────────────────────────────────
@@ -335,7 +382,11 @@ function buildAnchoredFromString(film: {
   return parts.join(' | ') || 'No anchor scores available'
 }
 
-async function applySuccessfulResult(filmId: string, graph: ParsedGraph): Promise<{ beatCount: number }> {
+async function applySuccessfulResult(
+  filmId: string,
+  graph: ParsedGraph,
+  mode: 'safe' | 'force'
+): Promise<{ beatCount: number }> {
   if (graph.dataPoints.length < 8 || graph.dataPoints.length > 22) {
     throw new Error(
       `Beat count out of expected bounds: got ${graph.dataPoints.length}, expected 8–22`
@@ -360,25 +411,36 @@ async function applySuccessfulResult(filmId: string, graph: ParsedGraph): Promis
   const qualityReviews = reviews.filter((r) => isQualityReview(r.reviewText))
   const sourcesUsed = [...new Set(qualityReviews.map((r) => r.sourcePlatform.toLowerCase()))]
 
-  await forceOverwriteSentimentGraph({
-    filmId,
-    dataPoints: graph.dataPoints,
-    otherFields: {
-      overallScore: graph.overallSentiment,
-      previousScore: existing?.overallScore ?? null,
-      anchoredFrom: buildAnchoredFromString(film),
-      peakMoment: graph.peakMoment,
-      lowestMoment: graph.lowestMoment,
-      biggestSwing: graph.biggestSentimentSwing,
-      summary: graph.summary,
-      reviewCount: qualityReviews.length,
-      sourcesUsed,
-      varianceSource: 'external_only',
-      generatedAt: new Date(),
-      version: (existing?.version ?? 0) + 1,
-    },
-    callerPath: 'script-bulk-regen-hybrid',
-  })
+  const otherFields = {
+    overallScore: graph.overallSentiment,
+    previousScore: existing?.overallScore ?? null,
+    anchoredFrom: buildAnchoredFromString(film),
+    peakMoment: graph.peakMoment,
+    lowestMoment: graph.lowestMoment,
+    biggestSwing: graph.biggestSentimentSwing,
+    summary: graph.summary,
+    reviewCount: qualityReviews.length,
+    sourcesUsed,
+    varianceSource: 'external_only',
+    generatedAt: new Date(),
+    version: (existing?.version ?? 0) + 1,
+  }
+
+  if (mode === 'force') {
+    await forceOverwriteSentimentGraph({
+      filmId,
+      dataPoints: graph.dataPoints,
+      otherFields,
+      callerPath: 'script-bulk-regen-hybrid',
+    })
+  } else {
+    await safeWriteSentimentGraph({
+      filmId,
+      incomingDataPoints: graph.dataPoints,
+      otherFields,
+      callerPath: 'script-bulk-regen-hybrid',
+    })
+  }
 
   await prisma.film.update({
     where: { id: filmId },
@@ -410,6 +472,8 @@ async function main() {
   const args = parseArgs(process.argv.slice(2))
   console.log('bulk-regen-hybrid:', args)
 
+  await confirmForceOrphan(args)
+
   // Load env-dependent modules AFTER dotenv.config() has run. DO NOT convert
   // these to static imports — see NOTE in the header comment.
   const [sblMod, pipelineMod, claudeMod, hybridMod] = await Promise.all([
@@ -419,6 +483,7 @@ async function main() {
     import('../src/lib/hybrid-sentiment'),
   ])
   forceOverwriteSentimentGraph = sblMod.forceOverwriteSentimentGraph
+  safeWriteSentimentGraph = sblMod.safeWriteSentimentGraph
   isQualityReview = pipelineMod.isQualityReview
   SENTIMENT_MODEL = claudeMod.SENTIMENT_MODEL
   SENTIMENT_MAX_TOKENS = claudeMod.SENTIMENT_MAX_TOKENS
@@ -436,12 +501,14 @@ async function main() {
   const priorEntries = Object.keys(checkpoint.films).length
   if (priorEntries > 0) console.log(`Checkpoint has ${priorEntries} prior entries`)
 
+  const writeMode: 'safe' | 'force' = args.forceOrphan ? 'force' : 'safe'
+
   // ── Resume path: if a batch is in flight, skip straight to polling + apply ──
   if (args.commit && checkpoint.batch) {
     const batchId = checkpoint.batch.id
     console.log(`Found in-flight batch ${batchId} (submitted ${checkpoint.batch.submittedAt}) — resuming`)
     const finalBatch = await pollUntilEnded(batchId)
-    await processResults(batchId, checkpoint, finalBatch)
+    await processResults(batchId, checkpoint, finalBatch, writeMode)
     return
   }
 
@@ -552,13 +619,14 @@ async function main() {
   saveCheckpoint(checkpoint)
 
   const finalBatch = await pollUntilEnded(submitted.id)
-  await processResults(submitted.id, checkpoint, finalBatch)
+  await processResults(submitted.id, checkpoint, finalBatch, writeMode)
 }
 
 async function processResults(
   batchId: string,
   checkpoint: Checkpoint,
-  finalBatch: Anthropic.Messages.Batches.MessageBatch
+  finalBatch: Anthropic.Messages.Batches.MessageBatch,
+  writeMode: 'safe' | 'force'
 ) {
   console.log('\n--- Downloading & applying results ---')
   const startedAt = Date.now()
@@ -589,7 +657,7 @@ async function processResults(
         const cleaned = responseText.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '').trim()
         const parsed = JSON.parse(cleaned) as unknown
         const graph = validateGraph(parsed)
-        const { beatCount } = await applySuccessfulResult(filmId, graph)
+        const { beatCount } = await applySuccessfulResult(filmId, graph, writeMode)
         checkpoint.films[filmId] = {
           status: 'success',
           timestamp: new Date().toISOString(),

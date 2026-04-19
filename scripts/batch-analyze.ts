@@ -1,10 +1,57 @@
 import 'dotenv/config'
+import readline from 'node:readline/promises'
 import { PrismaClient } from '../src/generated/prisma/client.js'
 import { PrismaNeon } from '@prisma/adapter-neon'
 import Anthropic from '@anthropic-ai/sdk'
 import { createHash } from 'crypto'
 import { isQualityReview } from '../src/lib/sentiment-pipeline'
-import { forceOverwriteSentimentGraph } from '../src/lib/sentiment-beat-lock'
+import {
+  forceOverwriteSentimentGraph,
+  safeWriteSentimentGraph,
+} from '../src/lib/sentiment-beat-lock'
+
+interface BatchAnalyzeArgs {
+  forceOrphan: boolean
+  yes: boolean
+}
+
+function parseBatchAnalyzeArgs(argv: string[]): BatchAnalyzeArgs {
+  const args: BatchAnalyzeArgs = { forceOrphan: false, yes: false }
+  for (const a of argv) {
+    if (a === '--force-orphan') args.forceOrphan = true
+    else if (a === '--yes') args.yes = true
+  }
+  return args
+}
+
+async function confirmForceOrphan(args: BatchAnalyzeArgs): Promise<void> {
+  if (!args.forceOrphan) return
+  const banner = [
+    '',
+    '================================================================',
+    'WARNING: --force-orphan enabled. Any user beat ratings whose',
+    'labels do not match the new graph will be orphaned.',
+    '================================================================',
+    '',
+  ].join('\n')
+  console.log(banner)
+  if (args.yes) {
+    console.log('[--yes supplied — skipping interactive confirmation]')
+    return
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    const answer = await rl.question("Type 'yes' to continue or anything else to abort: ")
+    if (answer.trim().toLowerCase() !== 'yes') {
+      console.log('Aborted.')
+      process.exit(1)
+    }
+  } finally {
+    rl.close()
+  }
+}
+
+const runtimeArgs = parseBatchAnalyzeArgs(process.argv.slice(2))
 
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! })
 const prisma = new PrismaClient({ adapter })
@@ -161,26 +208,37 @@ Return this JSON structure:
   const cleaned = text.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '').trim()
   const graphData = JSON.parse(cleaned)
 
-  // Store graph via force-overwrite — bulk regeneration intentionally rewrites
-  // labels + timestamps without merging against existing beats.
+  // Default path is lock-preserving. --force-orphan switches to force-overwrite
+  // (which rewrites labels + timestamps and can orphan user beat ratings).
   const existing = await prisma.sentimentGraph.findUnique({ where: { filmId: film.id } })
-  await forceOverwriteSentimentGraph({
-    filmId: film.id,
-    dataPoints: graphData.dataPoints,
-    otherFields: {
-      overallScore: graphData.overallSentiment,
-      anchoredFrom: graphData.anchoredFrom,
-      peakMoment: graphData.peakMoment,
-      lowestMoment: graphData.lowestMoment,
-      biggestSwing: graphData.biggestSentimentSwing,
-      summary: graphData.summary,
-      reviewCount: graphData.reviewCount,
-      sourcesUsed: graphData.sources,
-      generatedAt: new Date(),
-      ...(existing ? { version: existing.version + 1 } : {}),
-    },
-    callerPath: 'script-batch-analyze',
-  })
+  const otherFields = {
+    overallScore: graphData.overallSentiment,
+    anchoredFrom: graphData.anchoredFrom,
+    peakMoment: graphData.peakMoment,
+    lowestMoment: graphData.lowestMoment,
+    biggestSwing: graphData.biggestSentimentSwing,
+    summary: graphData.summary,
+    reviewCount: graphData.reviewCount,
+    sourcesUsed: graphData.sources,
+    generatedAt: new Date(),
+    ...(existing ? { version: existing.version + 1 } : {}),
+  }
+
+  if (runtimeArgs.forceOrphan) {
+    await forceOverwriteSentimentGraph({
+      filmId: film.id,
+      dataPoints: graphData.dataPoints,
+      otherFields,
+      callerPath: 'script-batch-analyze',
+    })
+  } else {
+    await safeWriteSentimentGraph({
+      filmId: film.id,
+      incomingDataPoints: graphData.dataPoints,
+      otherFields,
+      callerPath: 'script-batch-analyze',
+    })
+  }
 
   // Update lastReviewCount so future re-analysis checks the delta
   await prisma.film.update({
@@ -193,6 +251,8 @@ Return this JSON structure:
 }
 
 async function main() {
+  await confirmForceOrphan(runtimeArgs)
+
   const films = await prisma.film.findMany({
     where: { status: 'ACTIVE' },
     orderBy: { title: 'asc' },

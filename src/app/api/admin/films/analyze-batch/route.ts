@@ -1,5 +1,5 @@
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
-import { generateBatchSentimentGraphs } from '@/lib/sentiment-pipeline'
+import { generateBatchHybridAndStore } from '@/lib/sentiment-pipeline'
 import { apiLogger } from '@/lib/logger'
 
 export const maxDuration = 300 // 5 minutes for Vercel
@@ -27,12 +27,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Admin batch "Analyze" is an explicit force-regenerate request; route
-    // through force-overwrite so fresh labels replace any stale ones, matching
-    // the single-film admin analyze button.
-    const result = await generateBatchSentimentGraphs(filmIds, {
+    // Admin batch "Regenerate" is an explicit force-regenerate request; route
+    // through the lock-preserving safe write so existing user beat ratings
+    // are not orphaned. Matches the single-film admin Regenerate button.
+    const result = await generateBatchHybridAndStore(filmIds, {
       force: true,
-      forceOverwrite: true,
       callerPath: 'admin-analyze',
     })
     return Response.json(result)

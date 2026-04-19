@@ -1,9 +1,81 @@
+/**
+ * Wikipedia Beat Backfill
+ *
+ * Regenerates sentiment graph beats + scores using Wikipedia plot context so
+ * labels contain character names / proper nouns.
+ *
+ * IMPORTANT: The default write path is lock-preserving (safeWriteSentimentGraph).
+ * Because the whole point of this script is to REPLACE generic labels with
+ * specific, Wikipedia-grounded ones, the label sets almost always differ from
+ * the existing ones. The lock will therefore NO-OP on most films: incoming
+ * labels that don't match existing labels are dropped, and existing labels
+ * that aren't in the incoming set are preserved as-is. Net effect on a normal
+ * run: no labels change, drift logs fill up.
+ *
+ * To actually rewrite labels you must pass --force-orphan. That bypasses the
+ * lock via forceOverwriteSentimentGraph. This is the primary intended mode
+ * for this script going forward. You MUST confirm at the prompt (or pass
+ * --yes in a non-interactive shell).
+ *
+ * Usage:
+ *   npx tsx scripts/backfill-wikipedia-beats.ts                          # default-safe (mostly no-op)
+ *   npx tsx scripts/backfill-wikipedia-beats.ts --force-orphan           # the intended mode
+ *   npx tsx scripts/backfill-wikipedia-beats.ts --force-orphan --yes     # non-interactive
+ *   npx tsx scripts/backfill-wikipedia-beats.ts --start-after "Title"    # resume from title
+ */
 import 'dotenv/config'
+import readline from 'node:readline/promises'
 import { PrismaClient } from '../src/generated/prisma/client.js'
 import { PrismaNeon } from '@prisma/adapter-neon'
 import Anthropic from '@anthropic-ai/sdk'
 import { isQualityReview } from '../src/lib/sentiment-pipeline'
-import { forceOverwriteSentimentGraph } from '../src/lib/sentiment-beat-lock'
+import {
+  forceOverwriteSentimentGraph,
+  safeWriteSentimentGraph,
+} from '../src/lib/sentiment-beat-lock'
+
+interface BackfillArgs {
+  forceOrphan: boolean
+  yes: boolean
+}
+
+function parseBackfillArgs(argv: string[]): BackfillArgs {
+  const args: BackfillArgs = { forceOrphan: false, yes: false }
+  for (const a of argv) {
+    if (a === '--force-orphan') args.forceOrphan = true
+    else if (a === '--yes') args.yes = true
+  }
+  return args
+}
+
+async function confirmForceOrphan(args: BackfillArgs): Promise<void> {
+  if (!args.forceOrphan) return
+  const banner = [
+    '',
+    '================================================================',
+    'WARNING: --force-orphan enabled. Any user beat ratings whose',
+    'labels do not match the new graph will be orphaned.',
+    '================================================================',
+    '',
+  ].join('\n')
+  console.log(banner)
+  if (args.yes) {
+    console.log('[--yes supplied — skipping interactive confirmation]')
+    return
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    const answer = await rl.question("Type 'yes' to continue or anything else to abort: ")
+    if (answer.trim().toLowerCase() !== 'yes') {
+      console.log('Aborted.')
+      process.exit(1)
+    }
+  } finally {
+    rl.close()
+  }
+}
+
+const runtimeArgs = parseBackfillArgs(process.argv.slice(2))
 
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! })
 const prisma = new PrismaClient({ adapter })
@@ -275,23 +347,36 @@ async function processFilm(film: any): Promise<boolean> {
     throw new Error(`Invalid: only ${graphData.dataPoints?.length || 0} data points`)
   }
 
-  // Force-overwrite — backfill intentionally rewrites labels with proper nouns
-  // pulled from plot context, so it must bypass the merge logic in safeWriteSentimentGraph.
-  await forceOverwriteSentimentGraph({
-    filmId: film.id,
-    dataPoints: graphData.dataPoints,
-    otherFields: {
-      previousScore: existingGraph.overallScore,
-      overallScore: graphData.overallSentiment,
-      peakMoment: graphData.peakMoment,
-      lowestMoment: graphData.lowestMoment,
-      biggestSwing: graphData.biggestSentimentSwing,
-      summary: graphData.summary,
-      generatedAt: new Date(),
-      version: existingGraph.version + 1,
-    },
-    callerPath: 'script-backfill-wikipedia-beats',
-  })
+  // Default path is lock-preserving. --force-orphan switches to force-overwrite
+  // (which rewrites labels + timestamps and can orphan user beat ratings).
+  // See header comment — the backfill's purpose is label rewrites, so the
+  // lock-preserving default will mostly no-op here.
+  const otherFields = {
+    previousScore: existingGraph.overallScore,
+    overallScore: graphData.overallSentiment,
+    peakMoment: graphData.peakMoment,
+    lowestMoment: graphData.lowestMoment,
+    biggestSwing: graphData.biggestSentimentSwing,
+    summary: graphData.summary,
+    generatedAt: new Date(),
+    version: existingGraph.version + 1,
+  }
+
+  if (runtimeArgs.forceOrphan) {
+    await forceOverwriteSentimentGraph({
+      filmId: film.id,
+      dataPoints: graphData.dataPoints,
+      otherFields,
+      callerPath: 'script-backfill-wikipedia-beats',
+    })
+  } else {
+    await safeWriteSentimentGraph({
+      filmId: film.id,
+      incomingDataPoints: graphData.dataPoints,
+      otherFields,
+      callerPath: 'script-backfill-wikipedia-beats',
+    })
+  }
 
   // Refresh lastReviewCount to the current quality-review count so the
   // weekly cron's cheap pre-filter doesn't treat this film as "legacy"
@@ -311,8 +396,11 @@ async function processFilm(film: any): Promise<boolean> {
 
 // ── Main ──
 async function main() {
+  await confirmForceOrphan(runtimeArgs)
+
   console.log('Wikipedia Beat Backfill')
   console.log('Regenerating beats + scores using plot context\n')
+  console.log(`Write mode: ${runtimeArgs.forceOrphan ? 'force-overwrite (--force-orphan)' : 'lock-preserving (default)'}\n`)
 
   // Fetch all films with sentiment graphs
   const films = await prisma.film.findMany({

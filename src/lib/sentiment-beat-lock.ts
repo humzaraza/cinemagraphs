@@ -31,6 +31,7 @@ export type BeatLockCallerPath =
   | 'admin-analyze'
   | 'user-submission'
   | 'script-batch-analyze'
+  | 'script-bulk-regen-hybrid'
   | 'script-test-pipeline'
   | 'script-backfill-wikipedia-beats'
   | 'script-diagnose-film'

@@ -34,6 +34,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}))
   const providedIds: unknown = body?.filmIds
   const force = body?.force === true
+  const confirmOrphanRisk = body?.confirmOrphanRisk === true
   const limit = typeof body?.limit === 'number' && body.limit > 0 && body.limit <= 100 ? body.limit : 20
 
   let filmIds: string[]
@@ -74,6 +75,35 @@ export async function POST(request: Request) {
     select: { id: true, title: true },
   })
   const titleMap = new Map(filmTitles.map((f) => [f.id, f.title]))
+
+  // Gate on UserReview presence across all target films. Beat regeneration
+  // rewrites labels and can orphan user beat ratings whose labels no longer
+  // match. The caller must acknowledge via confirmOrphanRisk: true.
+  if (!confirmOrphanRisk) {
+    const userReviewCounts = await prisma.userReview.groupBy({
+      by: ['filmId'],
+      where: { filmId: { in: filmIds } },
+      _count: { _all: true },
+    })
+    const affectedFilms = userReviewCounts
+      .filter((row) => row._count._all > 0)
+      .map((row) => ({
+        id: row.filmId,
+        title: titleMap.get(row.filmId) ?? null,
+        userReviewCount: row._count._all,
+      }))
+    if (affectedFilms.length > 0) {
+      return Response.json(
+        {
+          requiresConfirmation: true,
+          warning:
+            'The following films have user reviews whose beat ratings may be affected by beat regeneration',
+          affectedFilms,
+        },
+        { status: 409 }
+      )
+    }
+  }
 
   const results: BatchResult[] = []
   let generated = 0

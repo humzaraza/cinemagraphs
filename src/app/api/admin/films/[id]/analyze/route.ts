@@ -1,5 +1,5 @@
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
-import { generateSentimentGraph } from '@/lib/sentiment-pipeline'
+import { generateHybridAndStore } from '@/lib/sentiment-pipeline'
 import { apiLogger } from '@/lib/logger'
 import { invalidateFilmCache, invalidateHomepageCache } from '@/lib/cache'
 
@@ -15,12 +15,12 @@ export async function POST(
   const { id } = await params
 
   try {
-    // Admin "Analyze" button is an explicit force-regenerate; bypass the
-    // review-hash skip that the cron uses to avoid duplicate work, and route
-    // through force-overwrite so fresh labels replace any stale ones.
-    await generateSentimentGraph(id, {
+    // Admin "Regenerate" button is an explicit force-regenerate; bypass the
+    // review-hash skip that the cron uses to avoid duplicate work. Write goes
+    // through safeWriteSentimentGraph so existing user beat ratings are not
+    // orphaned by a label rewrite.
+    await generateHybridAndStore(id, {
       force: true,
-      forceOverwrite: true,
       callerPath: 'admin-analyze',
     })
     await Promise.all([invalidateFilmCache(id), invalidateHomepageCache()])

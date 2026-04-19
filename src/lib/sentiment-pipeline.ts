@@ -17,6 +17,11 @@ import {
   forceOverwriteSentimentGraph,
   type BeatLockCallerPath,
 } from './sentiment-beat-lock'
+import {
+  generateHybridSentimentGraph,
+  buildAnchorString,
+  type HybridResult,
+} from './hybrid-sentiment'
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY!
 const TMDB_BASE_URL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3'
@@ -517,5 +522,180 @@ export async function generateBatchSentimentGraphs(
   }
 
   pipelineLogger.info({ succeeded: succeeded.length, failed: failed.length }, 'Batch complete')
+  return { succeeded, failed }
+}
+
+// ── Hybrid pipeline wrapper ────────────────────────────────────────────────
+//
+// The admin per-row Regenerate and Generate All buttons route through here.
+// Unlike generateSentimentGraph (classic), this wrapper:
+//  - calls generateHybridSentimentGraph, which emits beats with labelFull
+//  - persists through safeWriteSentimentGraph (lock-preserving) only — there
+//    is no forceOverwrite option. Admin UI must not be able to orphan user
+//    beat ratings through a regeneration click.
+
+export type GenerateHybridAndStoreResult =
+  | { status: 'generated'; beatCount: number; generationMode: HybridResult['generationMode'] }
+  | { status: 'skipped_pre_release'; releaseDate: Date }
+  | { status: 'skipped_unchanged'; reviewHash: string; filteredCount: number }
+
+/**
+ * Generate a hybrid (Wikipedia-grounded) sentiment graph for one film and
+ * persist it via the beat-lock-preserving safe write.
+ *
+ * Behaviour mirrors generateSentimentGraph's skip logic (film-not-found,
+ * pre-release, insufficient reviews, review-hash unchanged) so admin routes
+ * can swap call sites with no response-shape changes. Throws on
+ * film-not-found and insufficient-reviews to match existing admin error
+ * flows.
+ */
+export async function generateHybridAndStore(
+  filmId: string,
+  options: { force?: boolean; callerPath: BeatLockCallerPath }
+): Promise<GenerateHybridAndStoreResult> {
+  const filmRecord = await prisma.film.findUnique({
+    where: { id: filmId },
+    include: { sentimentGraph: { select: { id: true, reviewHash: true, overallScore: true, version: true } } },
+  })
+  if (!filmRecord) {
+    throw new Error(`Film not found: ${filmId}`)
+  }
+
+  if (filmRecord.releaseDate && filmRecord.releaseDate > new Date()) {
+    pipelineLogger.info(
+      { filmId, releaseDate: filmRecord.releaseDate, reason: 'skipped_pre_release' },
+      'generateHybridAndStore: skipped (pre-release)'
+    )
+    return { status: 'skipped_pre_release', releaseDate: filmRecord.releaseDate }
+  }
+
+  const { sentimentGraph: existingGraph, ...film } = filmRecord
+  const filmForAnalysis = film as Film
+
+  if (!filmForAnalysis.imdbId) {
+    const imdbId = await lookupImdbId(film.tmdbId)
+    if (imdbId) {
+      await prisma.film.update({ where: { id: filmId }, data: { imdbId } })
+      filmForAnalysis.imdbId = imdbId
+    }
+  }
+
+  // Refresh anchor scores from OMDB so the hybrid prompt uses current values.
+  // Matches prepareSentimentGraphInput's behaviour for the classic path.
+  if (filmForAnalysis.imdbId) {
+    const omdbScores = await fetchAnchorScores(filmForAnalysis.imdbId)
+    const updates: Record<string, number | null> = {}
+    if (omdbScores.imdbRating && !filmForAnalysis.imdbRating) updates.imdbRating = omdbScores.imdbRating
+    if (omdbScores.rtCriticsScore) updates.rtCriticsScore = omdbScores.rtCriticsScore
+    if (omdbScores.rtAudienceScore) updates.rtAudienceScore = omdbScores.rtAudienceScore
+    if (omdbScores.metacriticScore) updates.metacriticScore = omdbScores.metacriticScore
+    if (Object.keys(updates).length > 0) {
+      await prisma.film.update({ where: { id: filmId }, data: updates })
+      if (omdbScores.imdbRating && !filmForAnalysis.imdbRating) filmForAnalysis.imdbRating = omdbScores.imdbRating
+      if (omdbScores.rtCriticsScore) filmForAnalysis.rtCriticsScore = omdbScores.rtCriticsScore
+      if (omdbScores.rtAudienceScore) filmForAnalysis.rtAudienceScore = omdbScores.rtAudienceScore
+      if (omdbScores.metacriticScore) filmForAnalysis.metacriticScore = omdbScores.metacriticScore
+    }
+  }
+
+  // Fetch reviews (stores new, dedupes) and compute quality count + hash.
+  await fetchAllReviews(filmForAnalysis)
+  const allReviews = await prisma.review.findMany({
+    where: { filmId: film.id },
+    orderBy: { fetchedAt: 'desc' },
+  })
+  const qualityReviews = allReviews.filter((r) => isQualityReview(r.reviewText))
+  const filteredReviewCount = qualityReviews.length
+
+  if (filteredReviewCount < MIN_QUALITY_REVIEWS_FOR_GENERATION) {
+    throw new Error(
+      `Insufficient quality reviews: only ${filteredReviewCount} found (minimum ${MIN_QUALITY_REVIEWS_FOR_GENERATION} required)`
+    )
+  }
+
+  const reviewHash = computeReviewHash(qualityReviews)
+  const existingHash = existingGraph?.reviewHash
+  if (!options.force && existingHash && existingHash === reviewHash) {
+    pipelineLogger.info(
+      { filmId, reviewHash },
+      'generateHybridAndStore: skipped (review set unchanged)'
+    )
+    return { status: 'skipped_unchanged', reviewHash, filteredCount: filteredReviewCount }
+  }
+
+  const hybrid = await generateHybridSentimentGraph(filmId)
+
+  const { anchorString } = buildAnchorString(filmForAnalysis)
+  const sourcesUsed = [...new Set(qualityReviews.map((r) => r.sourcePlatform.toLowerCase()))]
+
+  await safeWriteSentimentGraph({
+    filmId,
+    incomingDataPoints: hybrid.beats,
+    otherFields: {
+      previousScore: existingGraph?.overallScore ?? null,
+      overallScore: hybrid.overallScore,
+      anchoredFrom: anchorString,
+      varianceSource: 'external_only',
+      peakMoment: hybrid.peakMoment,
+      lowestMoment: hybrid.lowestMoment,
+      biggestSwing: hybrid.biggestSentimentSwing,
+      summary: hybrid.summary,
+      reviewCount: hybrid.reviewCount,
+      sourcesUsed,
+      generatedAt: new Date(),
+      version: (existingGraph?.version ?? 0) + 1,
+      reviewHash,
+    },
+    callerPath: options.callerPath,
+  })
+
+  await prisma.film.update({
+    where: { id: filmId },
+    data: { lastReviewCount: filteredReviewCount },
+  })
+
+  pipelineLogger.info(
+    {
+      filmId,
+      filmTitle: film.title,
+      beatCount: hybrid.beats.length,
+      generationMode: hybrid.generationMode,
+    },
+    'generateHybridAndStore: written'
+  )
+
+  return {
+    status: 'generated',
+    beatCount: hybrid.beats.length,
+    generationMode: hybrid.generationMode,
+  }
+}
+
+export async function generateBatchHybridAndStore(
+  filmIds: string[],
+  options: { force?: boolean; callerPath: BeatLockCallerPath }
+): Promise<{
+  succeeded: string[]
+  failed: { id: string; error: string }[]
+}> {
+  const succeeded: string[] = []
+  const failed: { id: string; error: string }[] = []
+
+  for (const filmId of filmIds) {
+    try {
+      await generateHybridAndStore(filmId, options)
+      succeeded.push(filmId)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      pipelineLogger.error({ filmId, error: message }, 'Hybrid film analysis failed')
+      failed.push({ id: filmId, error: message })
+    }
+
+    if (filmIds.indexOf(filmId) < filmIds.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+    }
+  }
+
+  pipelineLogger.info({ succeeded: succeeded.length, failed: failed.length }, 'Hybrid batch complete')
   return { succeeded, failed }
 }
