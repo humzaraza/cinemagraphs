@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { formatReviewProse } from '@/lib/review-prose'
 
 interface AdminReview {
   id: string
@@ -215,35 +216,13 @@ export default function AdminReviews() {
                 </div>
               )}
 
-              {/* Text Sections */}
-              {(review.beginning || review.middle || review.ending || review.otherThoughts) && (
-                <div className="space-y-2">
-                  {review.beginning && (
-                    <div>
-                      <p className="text-[10px] text-cinema-muted uppercase">Beginning</p>
-                      <p className="text-sm text-cinema-cream/80">{review.beginning}</p>
-                    </div>
-                  )}
-                  {review.middle && (
-                    <div>
-                      <p className="text-[10px] text-cinema-muted uppercase">Middle</p>
-                      <p className="text-sm text-cinema-cream/80">{review.middle}</p>
-                    </div>
-                  )}
-                  {review.ending && (
-                    <div>
-                      <p className="text-[10px] text-cinema-muted uppercase">Ending</p>
-                      <p className="text-sm text-cinema-cream/80">{review.ending}</p>
-                    </div>
-                  )}
-                  {review.otherThoughts && (
-                    <div>
-                      <p className="text-[10px] text-cinema-muted uppercase">Other</p>
-                      <p className="text-sm text-cinema-cream/80">{review.otherThoughts}</p>
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Prose */}
+              {(() => {
+                const prose = formatReviewProse(review)
+                return prose ? (
+                  <p className="text-sm text-cinema-cream/80 whitespace-pre-line">{prose}</p>
+                ) : null
+              })()}
 
               {/* Actions */}
               <div className="flex gap-2 pt-2">

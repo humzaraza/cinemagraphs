@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession, signIn } from 'next-auth/react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { formatReviewProse } from '@/lib/review-prose'
 
 interface BeatInfo {
   label: string
@@ -14,7 +15,10 @@ interface BeatInfo {
 interface ReviewData {
   id: string
   overallRating: number
-  combinedText: string | null
+  beginning: string | null
+  middle: string | null
+  ending: string | null
+  otherThoughts: string | null
   createdAt: string
   user: { id: string; name: string | null; image: string | null }
 }
@@ -23,7 +27,6 @@ interface Summary {
   avgRating: number | null
   totalReviews: number
   distribution: { score: number; count: number }[]
-  sectionCounts: { beginning: number; middle: number; ending: number }
 }
 
 interface Props {
@@ -97,10 +100,7 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
   const { data: session } = useSession()
   const [overallRating, setOverallRating] = useState(5.5)
   const [beatRatings, setBeatRatings] = useState<Record<string, number>>({})
-  const [beginning, setBeginning] = useState('')
-  const [middle, setMiddle] = useState('')
-  const [ending, setEnding] = useState('')
-  const [otherThoughts, setOtherThoughts] = useState('')
+  const [thoughts, setThoughts] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -164,10 +164,7 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
   function startEditing() {
     if (!myReview) return
     setOverallRating(myReview.overallRating)
-    setBeginning(myReview.beginning || '')
-    setMiddle(myReview.middle || '')
-    setEnding(myReview.ending || '')
-    setOtherThoughts(myReview.otherThoughts || '')
+    setThoughts(formatReviewProse(myReview))
     if (myReview.beatRatings) {
       setBeatRatings(myReview.beatRatings)
     }
@@ -190,10 +187,7 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           overallRating,
-          beginning: beginning.trim() || undefined,
-          middle: middle.trim() || undefined,
-          ending: ending.trim() || undefined,
-          otherThoughts: otherThoughts.trim() || undefined,
+          beginning: thoughts.trim() || undefined,
           beatRatings: hasBeats ? beatRatings : undefined,
         }),
       })
@@ -277,9 +271,12 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
                   </span>
                 </div>
               </div>
-              {myReview.combinedText && (
-                <p className="text-sm text-cinema-cream/80 leading-relaxed">{myReview.combinedText}</p>
-              )}
+              {(() => {
+                const prose = formatReviewProse(myReview)
+                return prose ? (
+                  <p className="text-sm text-cinema-cream/80 leading-relaxed whitespace-pre-line">{prose}</p>
+                ) : null
+              })()}
               {myReview.beatRatings && Object.keys(myReview.beatRatings).length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {Object.entries(myReview.beatRatings).map(([label, score]) => (
@@ -418,31 +415,13 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
               </div>
             )}
 
-            {/* Text Sections */}
-            <div className="space-y-3">
+            {/* Prose */}
+            <div>
               <TextArea
-                label="How did it start?"
-                placeholder="Your thoughts on the beginning..."
-                value={beginning}
-                onChange={setBeginning}
-              />
-              <TextArea
-                label="How was the middle?"
-                placeholder="Your thoughts on the middle..."
-                value={middle}
-                onChange={setMiddle}
-              />
-              <TextArea
-                label="How did it end?"
-                placeholder="Your thoughts on the ending..."
-                value={ending}
-                onChange={setEnding}
-              />
-              <TextArea
-                label="Anything else?"
-                placeholder="Other thoughts..."
-                value={otherThoughts}
-                onChange={setOtherThoughts}
+                label="Your thoughts"
+                placeholder="What stood out to you?"
+                value={thoughts}
+                onChange={setThoughts}
               />
             </div>
 
@@ -507,17 +486,6 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
               </div>
             ))}
           </div>
-
-          {/* Section Sentiment */}
-          {(summary.sectionCounts.beginning > 0 ||
-            summary.sectionCounts.middle > 0 ||
-            summary.sectionCounts.ending > 0) && (
-            <div className="flex gap-4 text-xs text-cinema-muted">
-              <span>{summary.sectionCounts.beginning} wrote about beginning</span>
-              <span>{summary.sectionCounts.middle} wrote about middle</span>
-              <span>{summary.sectionCounts.ending} wrote about ending</span>
-            </div>
-          )}
 
           {/* Reviews List */}
           {!showAll && summary.totalReviews > 0 && (
@@ -658,9 +626,12 @@ function ReviewCard({
           )}
         </div>
       </div>
-      {review.combinedText && (
-        <p className="text-sm text-cinema-cream/80 leading-relaxed">{review.combinedText}</p>
-      )}
+      {(() => {
+        const prose = formatReviewProse(review)
+        return prose ? (
+          <p className="text-sm text-cinema-cream/80 leading-relaxed whitespace-pre-line">{prose}</p>
+        ) : null
+      })()}
     </div>
   )
 }
