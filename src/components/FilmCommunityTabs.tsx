@@ -5,6 +5,7 @@ import UserReviewSection from './UserReviewSection'
 
 interface BeatInfo {
   label: string
+  labelFull?: string
   score: number
 }
 

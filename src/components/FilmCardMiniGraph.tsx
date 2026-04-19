@@ -76,7 +76,7 @@ export function FilmCardMiniGraph({
     ...chartData.map((dp) => ({
       timeMidpoint: dp.timeMidpoint,
       score: dp.score,
-      label: (dp as any).label as string | undefined,
+      label: ((dp as any).labelFull ?? (dp as any).label) as string | undefined,
     })),
   ]
 

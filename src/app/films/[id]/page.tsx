@@ -396,7 +396,7 @@ export default async function FilmPage({
             beats={(() => {
               if (film.sentimentGraph) {
                 const points = (film.sentimentGraph.dataPoints as unknown as SentimentDataPoint[]) || []
-                return points.map((dp) => ({ label: dp.label, score: dp.score }))
+                return points.map((dp) => ({ label: dp.label, labelFull: dp.labelFull, score: dp.score }))
               }
               if (film.filmBeats) {
                 const wikiBeats = (film.filmBeats.beats as unknown as { label: string }[]) || []

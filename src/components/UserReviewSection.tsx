@@ -7,6 +7,7 @@ import Link from 'next/link'
 
 interface BeatInfo {
   label: string
+  labelFull?: string
   score: number
 }
 
@@ -370,8 +371,11 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
                       >
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex-1 mr-3">
-                            <span className="text-sm text-cinema-cream leading-snug block">
-                              {beat.label}
+                            <span
+                              className="text-sm text-cinema-cream leading-snug block"
+                              title={beat.labelFull ?? beat.label}
+                            >
+                              {beat.labelFull ?? beat.label}
                             </span>
                             {tag === 'peak' && (
                               <span className="text-[10px] text-[#2DD4A8] mt-0.5 inline-block">

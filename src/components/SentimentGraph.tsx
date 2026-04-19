@@ -124,7 +124,9 @@ function CustomTooltip({
   return (
     <div className="bg-[#1a1a2e] border border-[#2a2a3e] rounded-lg p-3 max-w-xs shadow-xl">
       {showSpoilers && data.label && (
-        <span className="text-cinema-cream font-semibold text-sm block mb-1.5">{data.label}</span>
+        <span className="text-cinema-cream font-semibold text-sm block mb-1.5">
+          {data.labelFull ?? data.label}
+        </span>
       )}
 
       {/* Critics score */}
@@ -858,7 +860,8 @@ export default function SentimentGraph({
                 <button
                   key={i}
                   type="button"
-                  className="text-[10px] px-2 py-0.5 rounded-full border transition-all duration-200 flex-shrink-0 md:flex-shrink whitespace-nowrap"
+                  className="text-[10px] px-2 py-0.5 rounded-full border transition-all duration-200 flex-shrink-0 md:flex-shrink whitespace-normal"
+                  title={dp.labelFull ?? dp.label}
                   style={{
                     color: isActive ? '#1a1a2e' : color,
                     borderColor: isActive ? color : color + '40',
@@ -874,7 +877,8 @@ export default function SentimentGraph({
                       : toggleSpoilers()
                   }
                 >
-                  {dp.label}
+                  <span className="md:hidden">{dp.label}</span>
+                  <span className="hidden md:inline">{dp.labelFull ?? dp.label}</span>
                 </button>
               )
             })}
@@ -949,8 +953,11 @@ export default function SentimentGraph({
               <span className="w-2.5 h-2.5 rounded-full bg-[#2DD4A8]" />
               <span className="text-xs text-cinema-muted uppercase tracking-wider">Peak Moment</span>
             </div>
-            <p className="font-[family-name:var(--font-playfair)] text-cinema-cream mb-1">
-              {peakMoment.label}
+            <p
+              className="font-[family-name:var(--font-playfair)] text-cinema-cream mb-1"
+              title={peakMoment.labelFull ?? peakMoment.label}
+            >
+              {peakMoment.labelFull ?? peakMoment.label}
             </p>
             <div className="flex items-baseline gap-2">
               <span className="font-[family-name:var(--font-bebas)] text-2xl text-[#2DD4A8]">
@@ -974,8 +981,11 @@ export default function SentimentGraph({
               <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
               <span className="text-xs text-cinema-muted uppercase tracking-wider">Lowest Moment</span>
             </div>
-            <p className="font-[family-name:var(--font-playfair)] text-cinema-cream mb-1">
-              {lowestMoment.label}
+            <p
+              className="font-[family-name:var(--font-playfair)] text-cinema-cream mb-1"
+              title={lowestMoment.labelFull ?? lowestMoment.label}
+            >
+              {lowestMoment.labelFull ?? lowestMoment.label}
             </p>
             <div className="flex items-baseline gap-2">
               <span className="font-[family-name:var(--font-bebas)] text-2xl text-red-500">
