@@ -205,11 +205,11 @@ export async function fetchReviewsAndCheckThreshold(filmId: string): Promise<{
   })
   const qualityCount = allReviews.filter((r) => isQualityReview(r.reviewText)).length
 
-  const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
-  const isRecent = film.releaseDate && film.releaseDate > sixMonthsAgo
-  const minRequired = isRecent ? 1 : 2
-
-  return { qualityCount, minRequired, meetsThreshold: qualityCount >= minRequired }
+  return {
+    qualityCount,
+    minRequired: MIN_QUALITY_REVIEWS_FOR_GENERATION,
+    meetsThreshold: qualityCount >= MIN_QUALITY_REVIEWS_FOR_GENERATION,
+  }
 }
 
 // ── Stage 1: prepare (no Claude call) ──────────────────────────────────────
