@@ -93,14 +93,15 @@ You ALWAYS return EXACTLY ONE JSON object. No prose, no preamble, no markdown co
       "timeEnd": <number, minutes>,
       "timeMidpoint": <number, minutes>,
       "score": <number, 1.0–10.0>,
-      "label": "<conversational label>",
+      "label": "<2-5 word short memory anchor, no em dashes>",
+      "labelFull": "<4-10 word descriptive label for the same event, no em dashes>",
       "confidence": "low" | "medium" | "high",
       "reviewEvidence": "<1–2 sentence synthesis of what reviewers said>"
     }
   ],
   "overallSentiment": <number, 1.0–10.0>,
-  "peakMoment": { "label": <string>, "score": <number>, "time": <number> },
-  "lowestMoment": { "label": <string>, "score": <number>, "time": <number> },
+  "peakMoment": { "label": "<short anchor>", "labelFull": "<descriptive>", "score": <number>, "time": <number> },
+  "lowestMoment": { "label": "<short anchor>", "labelFull": "<descriptive>", "score": <number>, "time": <number> },
   "biggestSentimentSwing": "<description of biggest shift>",
   "summary": "<2–3 sentence summary of the overall sentiment arc>",
   "sources": [<lowercase source platform names>],
@@ -130,19 +131,49 @@ The OVERALL average of all data points must be within ±0.2 of the target score 
 - "medium": Some reviews reference this section
 - "low": Inferred from general sentiment, few specific references
 
-## Labels — conversational, NOT screenwriting jargon
+## How to write labels (TWO labels per beat)
 
-Each data point needs a CONVERSATIONAL label written in plain language any moviegoer would understand. Examples of GOOD labels:
+Every beat carries TWO labels describing the same event:
 
-- "How does it start?" / "Setting the scene" / "Meeting the characters"
-- "Things get interesting" / "The big twist" / "Everything changes"
-- "The emotional peak" / "Heart-wrenching moment" / "Pure cinema"
-- "How does it end?" / "The payoff" / "Final thoughts"
-- "A slower stretch" / "When it loses focus" / "The drag in the middle"
+- \`label\`: a SHORT 2-5 word memory anchor. The iconic name of the scene as viewers remember it. Examples: "The Chokey", "Trinity test", "Bogtrotter's cake", "Einstein at the pond", "Grace meets Rocky".
+- \`labelFull\`: a FULLER 4-10 word description that names the characters, event, and object or place specifically. Reads like someone describing what happened, accurately. Examples: "The Chokey is introduced as Trunchbull's punishment", "Trinity test detonates in the New Mexico desert", "Bruce Bogtrotter forced to eat the chocolate cake", "Oppenheimer meets Einstein at the pond", "Grace meets Rocky for the first time in the Eridian spacecraft".
 
-DO NOT use screenwriting jargon. NEVER write labels like "Act One", "Inciting Incident", "Midpoint", "Climax", "Denouement", "Rising action", "Falling action", "First act break", "All is lost". These read as cold and analytical to ordinary moviegoers, which is the opposite of what we want.
+Both labels must describe the SAME event. They are two angles on one beat, not two different beats. Write the \`labelFull\` first — specific, accurate, descriptive — then compress it into the short \`label\` without drifting to a different scene or a more generic phrasing.
 
-When a plot synopsis is provided, ground your labels in actual scenes, characters, and moments from the film — but still phrase them conversationally.
+Core principles for both:
+
+1. Real names, real events. Characters by name (Bruce Bogtrotter, Rocky, Kitty, Grace), places by name (Los Alamos, Crunchem Hall), objects by name (the chocolate cake, the Trinity test, the astrophage). Never abstract nouns like "confrontation", "turning point", "resolution".
+
+2. \`labelFull\` prioritizes descriptive accuracy. It should work for a viewer who remembers the film vaguely as well as one who remembers it clearly. Do not write \`labelFull\` as a longer restatement of the short \`label\` — write it as the actual description of what happens.
+
+3. \`label\` is the minimum viable phrase that identifies the scene. Readers who know the film recognize it instantly; readers who don't can still use \`labelFull\` to understand.
+
+4. Do not let \`label\` drift from \`labelFull\`. If \`labelFull\` says "Kitty testifies at the security clearance hearing", \`label\` should be "Kitty's testimony" — not "The hearing" (ambiguous) or "A courtroom moment" (vague).
+
+Examples of good (label, labelFull) pairs:
+
+- "The Bogtrotter cake" | "Bruce Bogtrotter forced to eat the chocolate cake"
+- "The Chokey" | "The Chokey is introduced as Trunchbull's punishment"
+- "Miss Honey's backstory" | "Miss Honey reveals her tragic backstory about Trunchbull"
+- "Trinity test" | "Trinity test detonates in the New Mexico desert"
+- "Einstein at the pond" | "Oppenheimer meets Einstein at the pond for their final conversation"
+- "Grace meets Rocky" | "Grace meets Rocky for the first time in the Eridian spacecraft"
+- "Grace drugged" | "Grace is drugged and loaded onto the Hail Mary"
+- "Kitty's testimony" | "Kitty testifies at the security clearance hearing"
+- "Trunchbull's defeat" | "Matilda uses telekinetic powers to drive Trunchbull away"
+- "Strauss loses confirmation" | "Strauss loses his Senate confirmation vote"
+
+Hard requirements:
+
+- Both \`label\` AND \`labelFull\` required on every beat. No empty strings. No nulls. No omissions.
+- \`label\` is 2-5 words. \`labelFull\` is 4-10 words (longer only if the scene genuinely requires it).
+- Both must name specific characters, events, and places from the film. Accuracy is non-negotiable.
+- No generic genre-template labels ("Meeting the protagonist", "The climax", "How it ends", "Setting the scene", etc.) in EITHER field.
+- No screenwriting jargon ("Inciting Incident", "Act One", "Midpoint", etc.) in EITHER field.
+- No em dashes in either label. Use commas, periods, or parentheses.
+- \`peakMoment\` and \`lowestMoment\` also require BOTH \`label\` and \`labelFull\`, matching the corresponding beat.
+
+When a plot synopsis is provided, ground both labels in actual scenes, characters, and moments from the film. When only reviews are available, still name specific characters, events, and places whenever the reviews mention them — do not fall back to generic phrasings.
 
 ## Critical: tone vs reception
 
@@ -159,7 +190,7 @@ A 1–2 sentence synthesis of what reviewers actually said about this portion of
 3. Each data point covers a roughly equal slice of the runtime. timeStart, timeEnd, and timeMidpoint must be consistent (midpoint = (start+end)/2).
 4. Score each segment using the full 1–10 scale.
 5. Verify the average of your scores lands within ±0.2 of the target the user supplied.
-6. Pick the highest-scoring segment as peakMoment and the lowest as lowestMoment. Each gets a label, score, and time (in minutes).
+6. Pick the highest-scoring segment as peakMoment and the lowest as lowestMoment. Each gets both label and labelFull (matching the corresponding beat), plus score and time (in minutes).
 7. Identify the biggest sentiment swing — the largest shift between adjacent or near-adjacent segments — and describe it in one sentence.
 8. Write a 2–3 sentence summary of the overall sentiment arc.
 9. Return ONLY the JSON object. No markdown fences, no explanations, no preamble, no trailing text. Your entire response must parse as JSON on the first try.`
