@@ -12,7 +12,11 @@ import type { SentimentDataPoint, SentimentGraphData } from '@/lib/types'
 import type { Film, Review } from '@/generated/prisma/client'
 import { pipelineLogger } from './logger'
 import { fetchWikipediaPlot } from './sources/wikipedia'
-import { safeWriteSentimentGraph, type BeatLockCallerPath } from './sentiment-beat-lock'
+import {
+  safeWriteSentimentGraph,
+  forceOverwriteSentimentGraph,
+  type BeatLockCallerPath,
+} from './sentiment-beat-lock'
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY!
 const TMDB_BASE_URL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3'
@@ -377,30 +381,42 @@ export async function prepareSentimentGraphInput(
 export async function storeSentimentGraphResult(
   input: SentimentGraphInput,
   graphData: SentimentGraphData,
-  callerPath: BeatLockCallerPath
+  callerPath: BeatLockCallerPath,
+  options: { forceOverwrite?: boolean } = {}
 ): Promise<void> {
   const { film, filteredReviewCount, reviewHash } = input
   const existing = await prisma.sentimentGraph.findUnique({ where: { filmId: film.id } })
 
-  await safeWriteSentimentGraph({
-    filmId: film.id,
-    incomingDataPoints: graphData.dataPoints as unknown as SentimentDataPoint[],
-    otherFields: {
-      previousScore: existing ? existing.overallScore : undefined,
-      overallScore: graphData.overallSentiment,
-      anchoredFrom: graphData.anchoredFrom,
-      peakMoment: graphData.peakMoment,
-      lowestMoment: graphData.lowestMoment,
-      biggestSwing: graphData.biggestSentimentSwing,
-      summary: graphData.summary,
-      reviewCount: graphData.reviewCount,
-      sourcesUsed: graphData.sources,
-      generatedAt: new Date(),
-      version: existing ? existing.version + 1 : undefined,
-      reviewHash,
-    },
-    callerPath,
-  })
+  const otherFields = {
+    previousScore: existing ? existing.overallScore : undefined,
+    overallScore: graphData.overallSentiment,
+    anchoredFrom: graphData.anchoredFrom,
+    peakMoment: graphData.peakMoment,
+    lowestMoment: graphData.lowestMoment,
+    biggestSwing: graphData.biggestSentimentSwing,
+    summary: graphData.summary,
+    reviewCount: graphData.reviewCount,
+    sourcesUsed: graphData.sources,
+    generatedAt: new Date(),
+    version: existing ? existing.version + 1 : undefined,
+    reviewHash,
+  }
+
+  if (options.forceOverwrite) {
+    await forceOverwriteSentimentGraph({
+      filmId: film.id,
+      dataPoints: graphData.dataPoints as unknown as SentimentDataPoint[],
+      otherFields,
+      callerPath,
+    })
+  } else {
+    await safeWriteSentimentGraph({
+      filmId: film.id,
+      incomingDataPoints: graphData.dataPoints as unknown as SentimentDataPoint[],
+      otherFields,
+      callerPath,
+    })
+  }
 
   if (existing) {
     pipelineLogger.info(
@@ -428,10 +444,14 @@ export async function storeSentimentGraphResult(
  *
  * `force` defaults to `false` — meaning hash-match skip is honored. Admin
  * "regenerate" buttons should pass `force: true` to bypass the hash skip.
+ *
+ * `forceOverwrite` defaults to `false` — the write goes through the safe,
+ * label-preserving path. Pass `forceOverwrite: true` when the caller's intent
+ * is a clean relabel (e.g. admin "Analyze" button).
  */
 export async function generateSentimentGraph(
   filmId: string,
-  options: { force?: boolean; callerPath: BeatLockCallerPath }
+  options: { force?: boolean; forceOverwrite?: boolean; callerPath: BeatLockCallerPath }
 ): Promise<void> {
   const prep = await prepareSentimentGraphInput(filmId, { force: options.force })
 
@@ -465,12 +485,14 @@ export async function generateSentimentGraph(
     input.anchorScores,
     input.plotContext
   )
-  await storeSentimentGraphResult(input, graphData, options.callerPath)
+  await storeSentimentGraphResult(input, graphData, options.callerPath, {
+    forceOverwrite: options.forceOverwrite,
+  })
 }
 
 export async function generateBatchSentimentGraphs(
   filmIds: string[],
-  options: { force?: boolean; callerPath: BeatLockCallerPath }
+  options: { force?: boolean; forceOverwrite?: boolean; callerPath: BeatLockCallerPath }
 ): Promise<{
   succeeded: string[]
   failed: { id: string; error: string }[]

@@ -29,9 +29,11 @@ export type BeatLockCallerPath =
   | 'cron-analyze'
   | 'cron-refresh-scores'
   | 'admin-analyze'
+  | 'user-submission'
   | 'script-batch-analyze'
   | 'script-test-pipeline'
   | 'script-backfill-wikipedia-beats'
+  | 'script-diagnose-film'
   | 'test'
 
 // ── Public types ────────────────────────────────────────────────────────────
