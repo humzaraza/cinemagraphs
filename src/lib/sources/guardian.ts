@@ -159,69 +159,6 @@ export async function fetchGuardianReviews(
       }
     }
 
-    // Also try a broader search without the reviews tag
-    if (reviews.length === 0) {
-      try {
-        let url = `https://content.guardianapis.com/search?q=${encodeURIComponent(`"${title}" ${year} film`)}&section=film&show-fields=bodyText,byline&page-size=5&api-key=${EFFECTIVE_KEY}`
-        if (fromDate) url += `&from-date=${fromDate}`
-        if (toDate) url += `&to-date=${toDate}`
-
-        const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
-        if (!res.ok) {
-          reviewLogger.warn(
-            { source: 'GUARDIAN', filmTitle: film.title, query: 'fallback', status: res.status },
-            `Guardian: fallback search failed (HTTP ${res.status})`
-          )
-        } else {
-          const data = await res.json()
-          for (const article of (data?.response?.results || [])) {
-            const bodyText = article?.fields?.bodyText || ''
-            const webUrl = article?.webUrl || ''
-
-            const { keep, rejectedByDirector } = shouldKeepArticle(article, title, directorSurnames)
-            if (!keep) {
-              if (rejectedByDirector) {
-                rejectedCount++
-                reviewLogger.debug(
-                  {
-                    source: 'GUARDIAN',
-                    filmTitle: film.title,
-                    webTitle: article?.webTitle,
-                    webUrl,
-                    surnames: directorSurnames,
-                  },
-                  'Guardian: rejected — no director surname in body'
-                )
-              }
-              continue
-            }
-
-            if (bodyText.length < 500) continue
-            if (seenUrls.has(webUrl)) continue
-            seenUrls.add(webUrl)
-
-            reviews.push({
-              sourcePlatform: 'GUARDIAN',
-              sourceUrl: webUrl,
-              author: article?.fields?.byline || 'The Guardian',
-              reviewText: bodyText.slice(0, 6000),
-              sourceRating: null,
-            })
-          }
-        }
-      } catch (err) {
-        reviewLogger.warn(
-          {
-            source: 'GUARDIAN',
-            filmTitle: film.title,
-            query: 'fallback',
-            error: err instanceof Error ? err.message : String(err),
-          },
-          'Guardian: fallback query error'
-        )
-      }
-    }
-
     reviewLogger.info(
       {
         source: 'GUARDIAN',
