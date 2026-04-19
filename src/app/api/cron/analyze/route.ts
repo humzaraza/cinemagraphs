@@ -17,6 +17,7 @@ import {
 } from '@/lib/claude'
 import { cronLogger } from '@/lib/logger'
 import { invalidateFilmCache, invalidateHomepageCache } from '@/lib/cache'
+import { decideCronRegen, type CronRegenDecision } from '@/lib/cron-skip-logic'
 import type { Prisma } from '@/generated/prisma/client'
 
 export const maxDuration = 300
@@ -206,7 +207,7 @@ async function pollBatchUntilDone(
   }
 }
 
-function logCostSummary(stage: string, totals: UsageTotals): void {
+function logCostSummary(stage: string, totals: UsageTotals, filmCount: number): void {
   const cost = estimateSentimentCost(totals, { isBatch: true })
   cronLogger.info(
     {
@@ -216,6 +217,8 @@ function logCostSummary(stage: string, totals: UsageTotals): void {
       cacheReadInputTokens: totals.cacheReadInputTokens,
       cacheCreationInputTokens: totals.cacheCreationInputTokens,
       estimatedUsd: Number(cost.toFixed(4)),
+      filmsProcessed: filmCount,
+      perFilmUsd: filmCount > 0 ? Number((cost / filmCount).toFixed(4)) : 0,
     },
     'Sentiment batch cost'
   )
@@ -254,7 +257,7 @@ export async function GET(request: Request) {
 
       const summary = await processBatchResults(results, pending.jobs)
       await clearPendingBatchState()
-      logCostSummary('resumed_batch', summary.totals)
+      logCostSummary('resumed_batch', summary.totals, summary.generated)
       if (summary.generated > 0) await invalidateHomepageCache()
 
       // Note: we intentionally do NOT submit a new batch in the same run
@@ -281,6 +284,9 @@ export async function GET(request: Request) {
     }
 
     // ── Stage B: find candidates for a new batch ──
+    // Daily cron: most mature films will skip via decideCronRegen, so we pull
+    // a wider pool than the per-batch cap. Candidates are ordered by oldest
+    // sentiment graph first, so stale films rise to the top.
     const candidates = await prisma.film.findMany({
       where: {
         status: 'ACTIVE',
@@ -294,22 +300,78 @@ export async function GET(request: Request) {
         { sentimentGraph: { generatedAt: 'asc' } },
         { createdAt: 'asc' },
       ],
-      take: 50,
+      take: 200,
     })
+
+    const now = new Date()
+    const skipTally = {
+      skipped_prerelease: 0,
+      skipped_mature_stable: 0,
+      skipped_already_regenerated_today: 0,
+    }
+    const eligibleTally = {
+      eligible_no_graph: 0,
+      eligible_recent_release: 0,
+      eligible_thin_coverage: 0,
+      eligible_stale_regen: 0,
+    }
 
     const queueable: { id: string; title: string; reason: string }[] = []
     for (const film of candidates) {
-      if (queueable.length >= MAX_FILMS_PER_BATCH) break
-      const { needsAnalysis, reason } = await filmNeedsReanalysis(film.id)
-      if (needsAnalysis) {
-        queueable.push({ id: film.id, title: film.title, reason })
-        cronLogger.info({ filmId: film.id, filmTitle: film.title, reason }, 'Film queued for batch')
+      const decision: CronRegenDecision = decideCronRegen({
+        releaseDate: film.releaseDate,
+        qualityReviewCount: film.lastReviewCount,
+        lastRegenAt: film.sentimentGraph?.generatedAt ?? null,
+        now,
+      })
+
+      if (decision.skip) {
+        skipTally[decision.reason]++
+        continue
       }
+      eligibleTally[decision.reason]++
+
+      // Stop deep-checking once the per-run queue is full. Remaining eligible
+      // films roll into the next cron tick.
+      if (queueable.length >= MAX_FILMS_PER_BATCH) continue
+
+      const { needsAnalysis, reason } = await filmNeedsReanalysis(film.id)
+      if (!needsAnalysis) {
+        skipTally.skipped_already_regenerated_today++
+        continue
+      }
+      queueable.push({ id: film.id, title: film.title, reason })
+      cronLogger.info({ filmId: film.id, filmTitle: film.title, reason }, 'Film queued for batch')
     }
+
+    const eligibleTotal =
+      eligibleTally.eligible_no_graph +
+      eligibleTally.eligible_recent_release +
+      eligibleTally.eligible_thin_coverage +
+      eligibleTally.eligible_stale_regen
+
+    cronLogger.info(
+      {
+        totalConsidered: candidates.length,
+        skipped: skipTally,
+        eligible: eligibleTally,
+        eligibleTotal,
+        queued: queueable.length,
+        perRunCap: MAX_FILMS_PER_BATCH,
+      },
+      'Cron candidate decision summary'
+    )
 
     if (queueable.length === 0) {
       cronLogger.info('No films need analysis')
-      return Response.json({ stage: 'no_work', message: 'No films need analysis', processed: 0 })
+      return Response.json({
+        stage: 'no_work',
+        message: 'No films need analysis',
+        processed: 0,
+        totalConsidered: candidates.length,
+        skipped: skipTally,
+        eligible: eligibleTally,
+      })
     }
 
     // ── Stage C: prepare inputs (sequential, hash-skip + insufficient-reviews filtering) ──
@@ -399,7 +461,7 @@ export async function GET(request: Request) {
 
     const summary = await processBatchResults(results, jobs)
     await clearPendingBatchState()
-    logCostSummary('inline_batch', summary.totals)
+    logCostSummary('inline_batch', summary.totals, summary.generated)
     if (summary.generated > 0) await invalidateHomepageCache()
 
     cronLogger.info(

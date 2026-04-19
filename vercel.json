@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/analyze",
-      "schedule": "0 3 * * 1"
+      "schedule": "0 3 * * *"
     },
     {
       "path": "/api/cron/import-new-films",
