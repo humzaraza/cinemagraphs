@@ -1,6 +1,6 @@
 import type { SentimentGraph } from '@/generated/prisma/client'
 
-export const MIN_REVIEWS_TO_DISPLAY_GRAPH = 5
+export const MIN_REVIEWS_TO_DISPLAY_GRAPH = 3
 
 export type FilmDisplayState =
   | { kind: 'graph'; sentimentGraph: SentimentGraph }

@@ -169,8 +169,7 @@ describe('prepareSentimentGraphInput', () => {
     expect(result.status).toBe('skipped_insufficient_reviews')
     if (result.status === 'skipped_insufficient_reviews') {
       expect(result.qualityCount).toBe(0)
-      // 2020 release is older than 6 months → minRequired is 2.
-      expect(result.minRequired).toBe(2)
+      expect(result.minRequired).toBe(3)
     }
   })
 

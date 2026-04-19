@@ -26,6 +26,11 @@ const TMDB_BASE_URL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3
 const ENGLISH_REGEX = /^[\x00-\x7F\u00C0-\u024F\u2018-\u201D\u2014\u2013\u2026\s.,;:!?'"()\-[\]{}@#$%^&*+=/<>~`|\\]+$/
 const MIN_WORD_COUNT = 50
 
+// Minimum quality reviews required to generate a sentiment graph. Kept in sync
+// with MIN_REVIEWS_TO_DISPLAY_GRAPH in film-display-state.ts so generation and
+// display agree on the same floor.
+export const MIN_QUALITY_REVIEWS_FOR_GENERATION = 3
+
 export function isQualityReview(text: string): boolean {
   const words = text.trim().split(/\s+/)
   if (words.length < MIN_WORD_COUNT) return false
@@ -321,20 +326,15 @@ export async function prepareSentimentGraphInput(
   const reviews = allReviews.filter((r) => isQualityReview(r.reviewText))
   const filteredReviewCount = reviews.length
 
-  // Quality threshold (lower for newer films)
-  const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
-  const isRecentRelease = film.releaseDate && film.releaseDate > sixMonthsAgo
-  const minReviews = isRecentRelease ? 1 : 2
-
-  if (reviews.length < minReviews) {
+  if (reviews.length < MIN_QUALITY_REVIEWS_FOR_GENERATION) {
     pipelineLogger.info(
-      { filmId: film.id, filmTitle: film.title, qualityCount: reviews.length, minRequired: minReviews },
+      { filmId: film.id, filmTitle: film.title, qualityCount: reviews.length, minRequired: MIN_QUALITY_REVIEWS_FOR_GENERATION },
       'Skipping — insufficient quality reviews'
     )
     return {
       status: 'skipped_insufficient_reviews',
       qualityCount: reviews.length,
-      minRequired: minReviews,
+      minRequired: MIN_QUALITY_REVIEWS_FOR_GENERATION,
     }
   }
 

@@ -46,21 +46,21 @@ describe('getFilmDisplayState', () => {
     }
   })
 
-  it("returns 'not_enough_reviews' when reviewCount is below 5", () => {
+  it("returns 'not_enough_reviews' when reviewCount is below 3", () => {
     const past = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    const graph = makeGraph(4)
-    const state = getFilmDisplayState({ releaseDate: past }, graph, 4)
+    const graph = makeGraph(2)
+    const state = getFilmDisplayState({ releaseDate: past }, graph, 2)
 
     expect(state.kind).toBe('not_enough_reviews')
     if (state.kind === 'not_enough_reviews') {
-      expect(state.reviewCount).toBe(4)
+      expect(state.reviewCount).toBe(2)
     }
   })
 
-  it("returns 'graph' when released, graph exists, and reviewCount >= 5", () => {
+  it("returns 'graph' when released, graph exists, and reviewCount >= 3", () => {
     const past = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    const graph = makeGraph(12)
-    const state = getFilmDisplayState({ releaseDate: past }, graph, 12)
+    const graph = makeGraph(3)
+    const state = getFilmDisplayState({ releaseDate: past }, graph, 3)
 
     expect(state.kind).toBe('graph')
     if (state.kind === 'graph') {
