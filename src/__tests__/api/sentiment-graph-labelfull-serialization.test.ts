@@ -93,7 +93,10 @@ function makeLegacyGraph() {
   }
 }
 
-function makeFilm(id: string, sentimentGraph: ReturnType<typeof makeDualLabelGraph>) {
+function makeFilm(
+  id: string,
+  sentimentGraph: ReturnType<typeof makeDualLabelGraph> | ReturnType<typeof makeLegacyGraph>
+) {
   return {
     id,
     title: `Film ${id}`,
