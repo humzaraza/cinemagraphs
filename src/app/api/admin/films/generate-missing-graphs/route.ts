@@ -1,6 +1,6 @@
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
-import { generateSentimentGraph } from '@/lib/sentiment-pipeline'
+import { generateHybridAndStore } from '@/lib/sentiment-pipeline'
 import { invalidateFilmCache, invalidateHomepageCache } from '@/lib/cache'
 import { apiLogger } from '@/lib/logger'
 
@@ -173,7 +173,7 @@ export async function POST() {
         })
 
         try {
-          await generateSentimentGraph(c.id, { force: true, callerPath: 'admin-analyze' })
+          await generateHybridAndStore(c.id, { force: true, callerPath: 'admin-analyze' })
           await invalidateFilmCache(c.id).catch(() => {})
           results.push({ filmId: c.id, title: c.title, ok: true })
           succeeded++

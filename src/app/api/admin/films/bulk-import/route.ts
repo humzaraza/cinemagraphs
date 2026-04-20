@@ -2,7 +2,7 @@ import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { importMovie } from '@/lib/tmdb'
 import { fetchAllReviews } from '@/lib/review-fetcher'
-import { generateSentimentGraph } from '@/lib/sentiment-pipeline'
+import { generateHybridAndStore } from '@/lib/sentiment-pipeline'
 import { generateAndStoreWikiBeats } from '@/lib/wiki-beat-fallback'
 import { apiLogger } from '@/lib/logger'
 
@@ -329,7 +329,7 @@ export async function POST(request: Request) {
 
         if (!skipGraph && qualityCount >= MIN_QUALITY_REVIEWS_FOR_GRAPH) {
           try {
-            await generateSentimentGraph(film.id, { force: true, callerPath: 'admin-analyze' })
+            await generateHybridAndStore(film.id, { force: true, callerPath: 'admin-analyze' })
             graphGenerated = true
             graphsGenerated++
           } catch (err) {
