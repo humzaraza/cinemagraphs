@@ -45,19 +45,15 @@ function TealDashedGraph() {
 const faqs = [
   {
     q: 'Where does the external data come from?',
-    a: 'We aggregate reviews from TMDB, IMDb, The Guardian, Letterboxd, Reddit, and critic blogs. Scores are anchored against IMDb, Rotten Tomatoes, and Metacritic ratings to stay grounded.',
+    a: 'We aggregate reviews from TMDB, IMDb, The Guardian, and critic blogs. Scores are anchored against IMDb, Rotten Tomatoes, and Metacritic ratings to stay grounded.',
   },
   {
     q: 'When does the teal community line appear?',
-    a: 'The teal line shows up once enough Cinemagraphs users have submitted manual reviews or live reactions for a film. It takes at least 5 user reviews or 20 live reactions before the community data is blended in.',
+    a: 'The teal line shows up once enough Cinemagraphs users have submitted manual reviews for a film. It takes at least 5 user reviews before the community data is blended in.',
   },
   {
     q: 'Can I contribute my own review?',
-    a: 'Yes! Sign in and visit any film page. You can leave a written review with story beat ratings, or use Live React mode to react in real time as you watch.',
-  },
-  {
-    q: 'What is Live React mode?',
-    a: 'Live React lets you tap reaction buttons while watching a film. Your reactions are timestamped and aggregated into the community sentiment line. It is a low-effort way to contribute without writing a full review.',
+    a: 'Yes! Sign in and visit any film page. You can leave a written review with story beat ratings to contribute to the community sentiment line.',
   },
   {
     q: 'How often is data updated?',
