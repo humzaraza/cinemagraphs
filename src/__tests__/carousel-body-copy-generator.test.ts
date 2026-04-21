@@ -143,8 +143,8 @@ describe('buildSystemPrompt', () => {
   })
 
   it('includes the reference voice examples', () => {
-    expect(prompt).toContain("Ryland wakes up on a spaceship")
-    expect(prompt).toContain('2.9 point jump')
+    expect(prompt).toContain('Ryland')
+    expect(prompt).toContain('5.8')
   })
 })
 

@@ -158,6 +158,7 @@ model Film {
   filmPersons          FilmPerson[]
   listFilms            ListFilm[]
   driftLogs            SentimentGraphDriftLog[]
+  carouselDrafts       CarouselDraft[]
 
   @@index([tmdbId])
   @@index([title])
@@ -191,6 +192,21 @@ model FilmBeats {
   generatedAt DateTime @default(now())
   film        Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
 
+  @@index([filmId])
+}
+
+model CarouselDraft {
+  id                  String   @id @default(cuid())
+  filmId              String
+  format              String
+  bodyCopyJson        Json
+  slotSelectionsJson  Json
+  characteristicsJson Json
+  generatedAt         DateTime @default(now())
+  generatedAtModel    String
+  film                Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
+
+  @@unique([filmId, format])
   @@index([filmId])
 }
 

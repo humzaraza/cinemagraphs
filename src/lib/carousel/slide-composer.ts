@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
+import { join } from 'node:path'
 import { Resvg } from '@resvg/resvg-js'
 
 import { renderGraph, type DataPoint } from './graph-renderer'
@@ -33,23 +33,14 @@ export type ComposeSlideInput = {
 
 // ── Font loading (cached at module scope) ─────────────────────
 // Use @expo-google-fonts TTFs — same pattern as graph-renderer.
+// Paths are built from process.cwd() so Turbopack doesn't try to bundle the TTF as a module.
 
-const requireFn = createRequire(import.meta.url)
-const DM_SANS_400_PATH = requireFn.resolve(
-  '@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf',
-)
-const DM_SANS_500_PATH = requireFn.resolve(
-  '@expo-google-fonts/dm-sans/500Medium/DMSans_500Medium.ttf',
-)
-const PLAYFAIR_700_PATH = requireFn.resolve(
-  '@expo-google-fonts/playfair-display/700Bold/PlayfairDisplay_700Bold.ttf',
-)
-const PLAYFAIR_700_ITALIC_PATH = requireFn.resolve(
-  '@expo-google-fonts/playfair-display/700Bold_Italic/PlayfairDisplay_700Bold_Italic.ttf',
-)
-const LIBRE_400_PATH = requireFn.resolve(
-  '@expo-google-fonts/libre-baskerville/400Regular/LibreBaskerville_400Regular.ttf',
-)
+const NODE_MODULES = join(process.cwd(), 'node_modules')
+const DM_SANS_400_PATH = join(NODE_MODULES, '@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf')
+const DM_SANS_500_PATH = join(NODE_MODULES, '@expo-google-fonts/dm-sans/500Medium/DMSans_500Medium.ttf')
+const PLAYFAIR_700_PATH = join(NODE_MODULES, '@expo-google-fonts/playfair-display/700Bold/PlayfairDisplay_700Bold.ttf')
+const PLAYFAIR_700_ITALIC_PATH = join(NODE_MODULES, '@expo-google-fonts/playfair-display/700Bold_Italic/PlayfairDisplay_700Bold_Italic.ttf')
+const LIBRE_400_PATH = join(NODE_MODULES, '@expo-google-fonts/libre-baskerville/400Regular/LibreBaskerville_400Regular.ttf')
 readFileSync(DM_SANS_400_PATH)
 readFileSync(DM_SANS_500_PATH)
 readFileSync(PLAYFAIR_700_PATH)

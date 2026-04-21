@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
+import { join } from 'node:path'
 import { Resvg } from '@resvg/resvg-js'
 import { area as d3Area, curveMonotoneX, line as d3Line } from 'd3-shape'
 
@@ -34,13 +34,10 @@ export type RenderGraphOutput = {
 // ── Font loading (cached at module scope) ─────────────────────
 // @fontsource/dm-sans only ships WOFF/WOFF2, which resvg-js 2.6.2 does not load.
 // Using @expo-google-fonts/dm-sans which ships TTFs compatible with resvg.
-const requireFn = createRequire(import.meta.url)
-const DM_SANS_400_PATH = requireFn.resolve(
-  '@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf',
-)
-const DM_SANS_500_PATH = requireFn.resolve(
-  '@expo-google-fonts/dm-sans/500Medium/DMSans_500Medium.ttf',
-)
+// Paths are built from process.cwd() so Turbopack doesn't try to bundle the TTF as a module.
+const NODE_MODULES = join(process.cwd(), 'node_modules')
+const DM_SANS_400_PATH = join(NODE_MODULES, '@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf')
+const DM_SANS_500_PATH = join(NODE_MODULES, '@expo-google-fonts/dm-sans/500Medium/DMSans_500Medium.ttf')
 // Touch files at load so a missing font surfaces before first render.
 readFileSync(DM_SANS_400_PATH)
 readFileSync(DM_SANS_500_PATH)
