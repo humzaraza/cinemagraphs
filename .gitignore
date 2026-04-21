@@ -47,3 +47,9 @@ hybrid-test-output.txt
 .hybrid-regen-checkpoint.json.tmp
 .claude/
 /*.png
+
+# Carousel scratch outputs (never commit)
+spike-resvg.mjs
+spike-output/
+graph-renderer-output/
+slide-composer-output/
