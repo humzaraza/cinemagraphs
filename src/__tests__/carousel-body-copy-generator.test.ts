@@ -19,6 +19,7 @@ import {
   buildUserPrompt,
   computeCharacteristics,
   generateBodyCopy,
+  parseBodyCopyResponse,
   type GenerateBodyCopyInput,
   type GraphCharacteristics,
   type SlideBeatContext,
@@ -307,5 +308,51 @@ describe('generateBodyCopy (mocked)', () => {
       slides: [...PHM_SLIDES].reverse() as SlideBeatContext[],
     }
     await expect(generateBodyCopy(reordered)).rejects.toThrow(/slideNumber/)
+  })
+})
+
+describe('parseBodyCopyResponse — forgiving JSON extraction', () => {
+  it('parses raw JSON directly', () => {
+    const raw = JSON.stringify(validBodyCopyMap())
+    const parsed = parseBodyCopyResponse(raw)
+    expect(parsed[2]).toContain('7.8')
+    expect(parsed[4]).toContain('5.8')
+    expect(parsed[6]).toContain('9.5')
+  })
+
+  it('parses JSON preceded by a preamble sentence', () => {
+    const json = JSON.stringify(validBodyCopyMap())
+    const raw = `Here is the body copy:\n\n${json}`
+    const parsed = parseBodyCopyResponse(raw)
+    expect(parsed[4]).toContain('5.8')
+    expect(parsed[6]).toContain('9.5')
+  })
+
+  it('parses JSON wrapped in a ```json code fence', () => {
+    const json = JSON.stringify(validBodyCopyMap())
+    const raw = '```json\n' + json + '\n```'
+    const parsed = parseBodyCopyResponse(raw)
+    expect(parsed[6]).toContain('9.5')
+  })
+
+  it('parses JSON wrapped in a plain ``` code fence (no language tag)', () => {
+    const json = JSON.stringify(validBodyCopyMap())
+    const raw = '```\n' + json + '\n```'
+    const parsed = parseBodyCopyResponse(raw)
+    expect(parsed[2]).toContain('7.8')
+  })
+
+  it('throws BodyCopyGenerationError with rawResponse attached when every attempt fails', () => {
+    const raw = 'absolute garbage with no valid json structure whatsoever'
+    let caught: unknown
+    try {
+      parseBodyCopyResponse(raw)
+    } catch (err) {
+      caught = err
+    }
+    expect(caught).toBeInstanceOf(BodyCopyGenerationError)
+    const e = caught as BodyCopyGenerationError
+    expect(e.rawResponse).toBe(raw)
+    expect(e.message).toContain(raw)
   })
 })

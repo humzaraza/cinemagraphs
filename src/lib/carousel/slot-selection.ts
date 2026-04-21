@@ -20,6 +20,10 @@ export interface BeatSlot {
   beat: Beat | null
   timestampLabel: string
   collision: boolean
+  // Set when dedup fails to find a distinct alternative for this slot and
+  // the original (colliding) beat is kept. Phase C4's admin UI surfaces this
+  // as a warning so the editor knows two slides share a timestamp.
+  duplicateTimestamp?: boolean
 }
 
 export function formatTimestamp(minutes: number): string {
@@ -39,6 +43,110 @@ function makeSlot(position: SlotPosition, kind: SlotKind, beat: Beat | null): Be
     beat,
     timestampLabel: beat ? formatTimestamp(beat.timeMidpoint) : '',
     collision: false,
+  }
+}
+
+// ── Deduplication pass ────────────────────────────────────────
+// Walks middle slots (2-7) in order. If a slot's beat timestamp is already
+// taken by an earlier-processed slot, try a per-kind alternative that isn't
+// assigned. On failure, keep the original beat and set duplicateTimestamp.
+
+function findAlternativeBeat(
+  slot: BeatSlot,
+  beats: Beat[],
+  runtimeMinutes: number,
+  assigned: Set<number>,
+  currentDropBeat: Beat | null,
+): Beat | null {
+  switch (slot.kind) {
+    case 'opening': {
+      const max = runtimeMinutes * 0.1
+      return (
+        beats
+          .filter((b) => b.timeMidpoint <= max && !assigned.has(b.timeMidpoint))
+          .sort((a, b) => a.timeMidpoint - b.timeMidpoint)[0] ?? null
+      )
+    }
+    case 'setup': {
+      const min = runtimeMinutes * 0.1
+      const max = runtimeMinutes * 0.4
+      return (
+        beats
+          .filter(
+            (b) =>
+              b.timeMidpoint >= min &&
+              b.timeMidpoint < max &&
+              !assigned.has(b.timeMidpoint),
+          )
+          .sort((a, b) => b.score - a.score || a.timeMidpoint - b.timeMidpoint)[0] ?? null
+      )
+    }
+    case 'drop': {
+      const sorted = [...beats].sort(
+        (a, b) => a.score - b.score || a.timeMidpoint - b.timeMidpoint,
+      )
+      for (const b of sorted) {
+        if (!assigned.has(b.timeMidpoint)) return b
+      }
+      return null
+    }
+    case 'recovery': {
+      if (!currentDropBeat) return null
+      const dropScore = currentDropBeat.score
+      const dropTime = currentDropBeat.timeMidpoint
+      const afterDrop = beats.filter((b) => b.timeMidpoint > dropTime)
+      for (const b of afterDrop) {
+        if (b.score - dropScore >= 1.0 && !assigned.has(b.timeMidpoint)) return b
+      }
+      for (const b of afterDrop) {
+        if (b.score > dropScore && !assigned.has(b.timeMidpoint)) return b
+      }
+      return null
+    }
+    case 'peak': {
+      const sorted = [...beats].sort(
+        (a, b) => b.score - a.score || a.timeMidpoint - b.timeMidpoint,
+      )
+      for (const b of sorted) {
+        if (!assigned.has(b.timeMidpoint)) return b
+      }
+      return null
+    }
+    case 'ending': {
+      for (let i = beats.length - 1; i >= 0; i--) {
+        if (!assigned.has(beats[i].timeMidpoint)) return beats[i]
+      }
+      return null
+    }
+    default:
+      return null
+  }
+}
+
+function dedupMiddleSlots(
+  slots: BeatSlot[],
+  beats: Beat[],
+  runtimeMinutes: number,
+): void {
+  const assigned = new Set<number>()
+  for (const slot of slots) {
+    if (slot.position < 2 || slot.position > 7) continue
+    if (!slot.beat) continue
+    const ts = slot.beat.timeMidpoint
+    if (!assigned.has(ts)) {
+      assigned.add(ts)
+      continue
+    }
+    const dropSlot = slots.find((s) => s.position === 4)
+    const currentDropBeat = dropSlot?.beat ?? null
+    const alt = findAlternativeBeat(slot, beats, runtimeMinutes, assigned, currentDropBeat)
+    if (alt) {
+      slot.beat = alt
+      slot.timestampLabel = formatTimestamp(alt.timeMidpoint)
+      assigned.add(alt.timeMidpoint)
+    } else {
+      slot.duplicateTimestamp = true
+    }
   }
 }
 
@@ -136,15 +244,24 @@ export function selectBeatSlots(beats: Beat[], runtimeMinutes: number): BeatSlot
 
   const slots: BeatSlot[] = [slot1, slot2, slot3, slot4, slot5, slot6, slot7, slot8]
 
-  // Collision detection — positions 2-7. Mark any slot whose beat is shared.
-  const usage = new Map<Beat, number>()
+  dedupMiddleSlots(slots, beats, runtimeMinutes)
+
+  // Collision detection — positions 2-7. Mark any slot whose beat timestamp
+  // is shared. After dedup this only fires when duplicateTimestamp was set.
+  const usage = new Map<number, number>()
   for (const s of slots) {
     if (s.beat && s.position >= 2 && s.position <= 7) {
-      usage.set(s.beat, (usage.get(s.beat) ?? 0) + 1)
+      const t = s.beat.timeMidpoint
+      usage.set(t, (usage.get(t) ?? 0) + 1)
     }
   }
   for (const s of slots) {
-    if (s.position >= 2 && s.position <= 7 && s.beat && (usage.get(s.beat) ?? 0) > 1) {
+    if (
+      s.position >= 2 &&
+      s.position <= 7 &&
+      s.beat &&
+      (usage.get(s.beat.timeMidpoint) ?? 0) > 1
+    ) {
       s.collision = true
     }
   }

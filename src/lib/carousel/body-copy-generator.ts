@@ -306,21 +306,37 @@ function validateSlidesArg(slides: SlideBeatContext[]): void {
   }
 }
 
-function parseBodyCopyResponse(raw: string): Record<MiddleSlideNumber, string> {
-  const cleaned = raw
-    .replace(/^```json?\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim()
-
-  let parsed: unknown
+// Try three progressively-more-forgiving strategies to recover JSON from a
+// Claude response: raw, substring between first `{` and last `}`, and finally
+// a triple-backtick fence strip (with or without a `json` language tag).
+function tryParseJsonWithFallbacks(raw: string): unknown {
   try {
-    parsed = JSON.parse(cleaned)
-  } catch (err) {
-    throw new BodyCopyGenerationError(
-      `Failed to parse JSON response: ${(err as Error).message}`,
-      { rawResponse: raw },
-    )
+    return JSON.parse(raw)
+  } catch {}
+
+  const firstBrace = raw.indexOf('{')
+  const lastBrace = raw.lastIndexOf('}')
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(raw.slice(firstBrace, lastBrace + 1))
+    } catch {}
   }
+
+  const fenceMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/i)
+  if (fenceMatch) {
+    try {
+      return JSON.parse(fenceMatch[1].trim())
+    } catch {}
+  }
+
+  throw new BodyCopyGenerationError(
+    `Failed to parse body copy JSON response (tried raw, substring, and code-fence). Raw response: ${raw}`,
+    { rawResponse: raw },
+  )
+}
+
+function parseBodyCopyResponse(raw: string): Record<MiddleSlideNumber, string> {
+  const parsed = tryParseJsonWithFallbacks(raw)
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new BodyCopyGenerationError(
       'Response is not a JSON object',
