@@ -42,3 +42,8 @@ node_modules_old
 .neon
 # hybrid-sentiment local verification output (scripts/test-hybrid.ts)
 hybrid-test-output.txt
+# bulk hybrid regeneration checkpoint (scripts/bulk-regen-hybrid.ts)
+.hybrid-regen-checkpoint.json
+.hybrid-regen-checkpoint.json.tmp
+.claude/
+/*.png
