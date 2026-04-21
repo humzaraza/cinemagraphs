@@ -74,6 +74,43 @@ export async function getMovieReviews(tmdbId: number, page: number = 1) {
   })
 }
 
+interface TMDBImage {
+  file_path: string
+  iso_639_1: string | null
+  vote_count: number
+  vote_average: number
+  width: number
+  height: number
+}
+
+export interface TMDBImagesResponse {
+  backdrops: TMDBImage[]
+  logos: TMDBImage[]
+  posters: TMDBImage[]
+}
+
+export async function getMovieImages(
+  tmdbId: number,
+  options?: { includeImageLanguage?: string }
+): Promise<TMDBImagesResponse> {
+  const params: Record<string, string> = {}
+  if (options?.includeImageLanguage) {
+    params.include_image_language = options.includeImageLanguage
+  }
+  return tmdbFetch<TMDBImagesResponse>(`/movie/${tmdbId}/images`, params)
+}
+
+export async function getMovieBackdropUrls(tmdbId: number, size: string = 'w1280'): Promise<string[]> {
+  try {
+    const data = await getMovieImages(tmdbId)
+    return [...data.backdrops]
+      .sort((a, b) => b.vote_count - a.vote_count || b.vote_average - a.vote_average)
+      .map((img) => `https://image.tmdb.org/t/p/${size}${img.file_path}`)
+  } catch {
+    return []
+  }
+}
+
 interface TMDBVideo {
   key: string
   site: string
