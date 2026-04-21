@@ -14,10 +14,13 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "@auth/prisma-adapter": "^2.11.1",
+    "@expo-google-fonts/dm-sans": "^0.4.2",
+    "@fontsource/dm-sans": "^5.2.8",
     "@napi-rs/canvas": "^0.1.97",
     "@neondatabase/serverless": "^1.0.2",
     "@prisma/adapter-neon": "^7.6.0",
     "@prisma/client": "^7.6.0",
+    "@resvg/resvg-js": "^2.6.2",
     "@upstash/redis": "^1.37.0",
     "@vercel/analytics": "^2.0.1",
     "@vercel/blob": "^2.3.2",
