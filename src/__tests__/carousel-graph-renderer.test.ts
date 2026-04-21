@@ -133,6 +133,32 @@ describe('renderGraph', () => {
     ).not.toThrow()
   })
 
+  it('keeps the neutral anchor in dotPositions but does not render a visible circle for it', () => {
+    const sample: DataPoint[] = [
+      { t: 20, s: 7.8 },
+      { t: 40, s: 6.8 },
+      { t: 60, s: 8.5 },
+    ]
+    const out = renderGraph({
+      dataPoints: sample,
+      totalRuntime: 90,
+      criticsScore: 7.7,
+      width: 1080,
+      height: 540,
+      format: '4x5',
+    })
+    expect(out.dotPositions.length).toBe(sample.length + 1)
+    expect(out.dotPositions[0].timestamp).toBe(0)
+    expect(out.dotPositions[0].score).toBe(5.0)
+
+    // No <circle> element at the anchor's rendered coordinates.
+    const anchor = out.dotPositions[0]
+    const cx = (+anchor.x.toFixed(3)).toString()
+    const cy = (+anchor.y.toFixed(3)).toString()
+    const anchorCircleRe = new RegExp(`<circle[^>]*cx="${cx}"[^>]*cy="${cy}"`)
+    expect(out.svg).not.toMatch(anchorCircleRe)
+  })
+
   it('exposes dotPositions aligned with the post-anchor point order', () => {
     const phm: DataPoint[] = [
       { t: 5, s: 7.8 },

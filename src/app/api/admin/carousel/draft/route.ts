@@ -5,6 +5,7 @@ import { getMovieBackdropUrls } from '@/lib/tmdb'
 import {
   generateBodyCopy,
   type SlideBeatContext,
+  type SlideCopy,
   type MiddleSlideNumber,
 } from '@/lib/carousel/body-copy-generator'
 import { computeDotColor, type DataPoint } from '@/lib/carousel/graph-renderer'
@@ -14,7 +15,7 @@ import {
   formatTimestamp,
   type Beat,
   type BeatSlot,
-  type SlotKind,
+  type OriginalRole,
   type SlotPosition,
 } from '@/lib/carousel/slot-selection'
 import type { SentimentDataPoint } from '@/lib/types'
@@ -28,48 +29,32 @@ const FORMAT_DIMS: Record<Format, { w: number; h: number }> = {
   '9x16': { w: 1080, h: 1920 },
 }
 
-const KIND_TO_PILL_PREFIX: Record<Exclude<SlotKind, 'hook' | 'takeaway'>, string> = {
+const ROLE_PILL_FALLBACK: Record<OriginalRole, string> = {
   opening: 'THE OPENING',
   setup: 'THE SETUP',
   drop: 'THE DROP',
   recovery: 'RECOVERY',
   peak: 'THE PEAK',
   ending: 'THE ENDING',
+  fallback: 'THIS BEAT',
 }
 
-const KIND_TO_HEADLINE: Record<Exclude<SlotKind, 'hook' | 'takeaway'>, string> = {
+const ROLE_HEADLINE: Record<OriginalRole, string> = {
   opening: 'Where the story starts.',
   setup: 'The audience settles in.',
   drop: 'Then the floor drops out.',
   recovery: 'Then it finds its footing.',
   peak: "The film's highest moment.",
   ending: 'How it lands.',
+  fallback: 'Another beat in the shape.',
 }
 
 function toDataPoints(beats: Beat[]): DataPoint[] {
   return beats.map((b) => ({ t: b.timeMidpoint, s: b.score }))
 }
 
-function defaultPillLabel(slot: BeatSlot): string {
-  const kind = slot.kind as Exclude<SlotKind, 'hook' | 'takeaway'>
-  const prefix = KIND_TO_PILL_PREFIX[kind]
-  return `${prefix} · ${slot.timestampLabel.toUpperCase()}`
-}
-
-function defaultHeadline(slot: BeatSlot): string {
-  return KIND_TO_HEADLINE[slot.kind as Exclude<SlotKind, 'hook' | 'takeaway'>]
-}
-
-function middleSlotsWithBeats(slots: BeatSlot[]): Array<BeatSlot & { beat: Beat }> {
-  const middle = slots.filter((s): s is BeatSlot => s.position >= 2 && s.position <= 7)
-  const withBeats: Array<BeatSlot & { beat: Beat }> = []
-  for (const s of middle) {
-    if (!s.beat) {
-      throw new Error(`Slot ${s.position} (${s.kind}) has no beat — film data is insufficient.`)
-    }
-    withBeats.push(s as BeatSlot & { beat: Beat })
-  }
-  return withBeats
+function storyBeatNameFor(beat: Beat): string {
+  return (beat.labelFull ?? beat.label ?? '').trim()
 }
 
 function runtimeLabel(minutes: number): string {
@@ -79,6 +64,28 @@ function runtimeLabel(minutes: number): string {
     return m === 0 ? `${h}h` : `${h}h ${m}m`
   }
   return `${minutes}m`
+}
+
+function middleSlotsWithBeats(slots: BeatSlot[]): Array<BeatSlot & { beat: Beat; originalRole: OriginalRole }> {
+  const out: Array<BeatSlot & { beat: Beat; originalRole: OriginalRole }> = []
+  for (const s of slots) {
+    if (s.position < 2 || s.position > 7) continue
+    if (!s.beat || !s.originalRole) {
+      throw new Error(`Slot ${s.position} has no beat after selection — film data is insufficient.`)
+    }
+    out.push(s as BeatSlot & { beat: Beat; originalRole: OriginalRole })
+  }
+  return out
+}
+
+// Compose the rendered pill string: `{AI_PILL_OR_FALLBACK} · {TIMESTAMP}`,
+// all uppercase. The AI already writes short mixed/sentence case; uppercasing
+// happens here in the presentation layer.
+function renderedPill(pillSource: string, timestampLabel: string): string {
+  const pill = pillSource.trim()
+  const ts = timestampLabel.trim().toUpperCase()
+  if (!pill) return ts
+  return `${pill.toUpperCase()} · ${ts}`
 }
 
 export async function POST(request: NextRequest) {
@@ -137,7 +144,7 @@ export async function POST(request: NextRequest) {
 
   const slots = selectBeatSlots(beats, film.runtime)
 
-  let middleWithBeats: Array<BeatSlot & { beat: Beat }>
+  let middleWithBeats: Array<BeatSlot & { beat: Beat; originalRole: OriginalRole }>
   try {
     middleWithBeats = middleSlotsWithBeats(slots)
   } catch (err) {
@@ -154,14 +161,14 @@ export async function POST(request: NextRequest) {
     where: { filmId_format: { filmId, format } },
   })
 
-  let bodyCopy: Record<MiddleSlideNumber, string>
+  let slideCopy: Record<MiddleSlideNumber, SlideCopy>
   let characteristics: unknown
   let generatedAtModel: string
   let generatedAt: Date
   let cached: boolean
 
   if (existing && !force) {
-    bodyCopy = existing.bodyCopyJson as unknown as Record<MiddleSlideNumber, string>
+    slideCopy = existing.bodyCopyJson as unknown as Record<MiddleSlideNumber, SlideCopy>
     characteristics = existing.characteristicsJson
     generatedAtModel = existing.generatedAtModel
     generatedAt = existing.generatedAt
@@ -169,10 +176,14 @@ export async function POST(request: NextRequest) {
   } else {
     const slideContexts: SlideBeatContext[] = middleWithBeats.map((s) => ({
       slideNumber: s.position as MiddleSlideNumber,
-      pillLabel: defaultPillLabel(s),
+      // Seed pill with the generic role label; the AI returns its own. Kept
+      // on the context for compatibility with consumers that still read it.
+      pillLabel: ROLE_PILL_FALLBACK[s.originalRole],
       beatTimestamp: s.beat.timeMidpoint,
       beatScore: s.beat.score,
       beatColor: computeDotColor(s.beat.score),
+      originalRole: s.originalRole,
+      storyBeatName: storyBeatNameFor(s.beat),
     }))
 
     const result = await generateBodyCopy({
@@ -184,17 +195,19 @@ export async function POST(request: NextRequest) {
       slides: slideContexts,
     })
 
-    bodyCopy = result.bodyCopy
+    slideCopy = result.slideCopy
     characteristics = result.characteristics
     generatedAtModel = result.modelUsed
 
     const slotSelections = slots.map((s) => ({
       position: s.position,
       kind: s.kind,
+      originalRole: s.originalRole ?? null,
       beatTimestamp: s.beat?.timeMidpoint ?? null,
       beatScore: s.beat?.score ?? null,
       timestampLabel: s.timestampLabel,
       collision: s.collision,
+      duplicateTimestamp: s.duplicateTimestamp ?? false,
     }))
 
     const saved = await prisma.carouselDraft.upsert({
@@ -202,13 +215,13 @@ export async function POST(request: NextRequest) {
       create: {
         filmId,
         format,
-        bodyCopyJson: bodyCopy as unknown as object,
+        bodyCopyJson: slideCopy as unknown as object,
         slotSelectionsJson: slotSelections as unknown as object,
         characteristicsJson: result.characteristics as unknown as object,
         generatedAtModel,
       },
       update: {
-        bodyCopyJson: bodyCopy as unknown as object,
+        bodyCopyJson: slideCopy as unknown as object,
         slotSelectionsJson: slotSelections as unknown as object,
         characteristicsJson: result.characteristics as unknown as object,
         generatedAt: new Date(),
@@ -220,10 +233,6 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Render 8 slides ──────────────────────────────────────────
-  // TODO C5: replace the single backdrop with per-slide TMDB stills. Each of
-  // the 8 slides should pull a distinct, contextually-relevant image from
-  // TMDB (opening still for slide 2, drop still for slide 4, peak still
-  // for slide 6, etc.) rather than reusing the same blurred backdrop.
   const backdrops = await getMovieBackdropUrls(film.tmdbId)
   const backgroundImage = backdrops.length > 0 ? backdrops[0] : undefined
 
@@ -237,8 +246,8 @@ export async function POST(request: NextRequest) {
     totalRuntimeMinutes: film.runtime,
   }
 
-  const beatIndexMap = new Map<Beat, number>()
-  beats.forEach((b, i) => beatIndexMap.set(b, i))
+  const beatIndexMap = new Map<number, number>()
+  beats.forEach((b, i) => beatIndexMap.set(b.timeMidpoint, i))
 
   const dims = FORMAT_DIMS[format]
 
@@ -248,7 +257,7 @@ export async function POST(request: NextRequest) {
     if (position >= 2 && position <= 7) {
       const slot = slots.find((s) => s.position === position)!
       const beat = slot.beat!
-      const beatIndex = beatIndexMap.get(beat)
+      const beatIndex = beatIndexMap.get(beat.timeMidpoint)
       if (beatIndex === undefined) {
         return Response.json(
           { error: `Internal: could not locate beat for slot ${position}` },
@@ -256,10 +265,16 @@ export async function POST(request: NextRequest) {
         )
       }
       const slideNum = position as MiddleSlideNumber
+      const copy = slideCopy[slideNum]
+      const aiPill = copy?.pill ?? ''
+      const role = slot.originalRole ?? 'fallback'
+      const pillSource = aiPill.trim() !== '' ? aiPill : ROLE_PILL_FALLBACK[role]
       middleContent = {
-        pillLabel: defaultPillLabel(slot),
-        headline: defaultHeadline(slot),
-        bodyCopy: bodyCopy[slideNum] ?? '',
+        pillLabel: renderedPill(pillSource, slot.timestampLabel),
+        headline: ROLE_HEADLINE[role],
+        bodyCopy: copy?.body ?? '',
+        // dotPositions in graph-renderer are post-anchor; the anchor is at
+        // index 0 so add 1 to reach the matching beat.
         highlightBeatIndex: beatIndex + 1,
       }
     }
@@ -279,6 +294,8 @@ export async function POST(request: NextRequest) {
       heightPx: dims.h,
     })
   }
+
+  void formatTimestamp // re-exported for tests; keep import alive
 
   return Response.json({
     film: {

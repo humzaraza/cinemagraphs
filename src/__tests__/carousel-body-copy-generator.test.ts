@@ -46,12 +46,12 @@ const PHM_DATA: DataPoint[] = [
 ]
 
 const PHM_SLIDES: SlideBeatContext[] = [
-  { slideNumber: 2, pillLabel: 'THE OPENING \u00b7 0M-5M', beatTimestamp: 5, beatScore: 7.8, beatColor: 'gold' },
-  { slideNumber: 3, pillLabel: 'THE SETUP \u00b7 15M-55M', beatTimestamp: 55, beatScore: 8.1, beatColor: 'teal' },
-  { slideNumber: 4, pillLabel: 'THE DROP \u00b7 1H 15M', beatTimestamp: 75, beatScore: 5.8, beatColor: 'red' },
-  { slideNumber: 5, pillLabel: 'FIRST CONTACT \u00b7 1H 25M', beatTimestamp: 85, beatScore: 8.7, beatColor: 'teal' },
-  { slideNumber: 6, pillLabel: 'THE PEAK \u00b7 1H 55M', beatTimestamp: 115, beatScore: 9.5, beatColor: 'teal' },
-  { slideNumber: 7, pillLabel: 'THE ENDING \u00b7 2H 34M', beatTimestamp: 154, beatScore: 7.4, beatColor: 'gold' },
+  { slideNumber: 2, pillLabel: 'THE OPENING', beatTimestamp: 5, beatScore: 7.8, beatColor: 'gold', originalRole: 'opening', storyBeatName: 'Ryland wakes up alone on the Hail Mary' },
+  { slideNumber: 3, pillLabel: 'THE SETUP', beatTimestamp: 55, beatScore: 8.1, beatColor: 'teal', originalRole: 'setup', storyBeatName: 'Eva Stratt reveals the suicide mission to Tau Ceti' },
+  { slideNumber: 4, pillLabel: 'THE DROP', beatTimestamp: 75, beatScore: 5.8, beatColor: 'red', originalRole: 'drop', storyBeatName: 'Grace is drugged and forcibly loaded onto Hail Mary' },
+  { slideNumber: 5, pillLabel: 'RECOVERY', beatTimestamp: 85, beatScore: 8.7, beatColor: 'teal', originalRole: 'recovery', storyBeatName: "Rocky's spacecraft appears at Tau Ceti" },
+  { slideNumber: 6, pillLabel: 'THE PEAK', beatTimestamp: 115, beatScore: 9.5, beatColor: 'teal', originalRole: 'peak', storyBeatName: 'Rocky breaks his spacesuit to save unconscious Grace' },
+  { slideNumber: 7, pillLabel: 'THE ENDING', beatTimestamp: 154, beatScore: 7.4, beatColor: 'gold', originalRole: 'ending', storyBeatName: 'Grace teaches alien children on Erid' },
 ]
 
 const PHM_INPUT: GenerateBodyCopyInput = {
@@ -185,19 +185,21 @@ describe('buildUserPrompt', () => {
     expect(user).toContain('"recoveryShape": "sharp"')
     expect(user).toContain('"peakIsLate": true')
 
-    // All six slide contexts present.
+    // All six slide contexts present — originalRole + storyBeatName replace
+    // the legacy pillLabel in the serialized user prompt.
     for (const s of PHM_SLIDES) {
       expect(user).toContain(`"slideNumber": ${s.slideNumber}`)
-      expect(user).toContain(s.pillLabel)
+      expect(user).toContain(`"originalRole": "${s.originalRole}"`)
+      expect(user).toContain(s.storyBeatName)
     }
   })
 })
 
 // ── generateBodyCopy with a mocked API client ─────────────────
 
-function mockApiResponse(bodyCopyBySlide: Record<string, string>) {
+function mockApiResponse(slideCopyBySlide: Record<string, { pill: string; body: string }>) {
   return {
-    content: [{ type: 'text', text: JSON.stringify(bodyCopyBySlide) }],
+    content: [{ type: 'text', text: JSON.stringify(slideCopyBySlide) }],
     usage: {
       input_tokens: 1500,
       output_tokens: 300,
@@ -207,14 +209,32 @@ function mockApiResponse(bodyCopyBySlide: Record<string, string>) {
   }
 }
 
-function validBodyCopyMap(): Record<string, string> {
+function validSlideCopyMap(): Record<string, { pill: string; body: string }> {
   return {
-    slide_2: 'The score hits 7.8 almost immediately. Audiences are locked in before minute 5.',
-    slide_3: 'A slow build through the first hour. The score hovers around 8.1.',
-    slide_4: 'At 1h 15m the score bottoms out at 5.8. The only red dot in the film.',
-    slide_5: 'A 2.9 point jump in ten minutes. The score climbs to 8.7.',
-    slide_6: 'The score hits 9.5. You do not get this high without the 5.8 that came before it.',
-    slide_7: 'The ending drops to 7.4. A deliberate, bittersweet landing.',
+    slide_2: {
+      pill: 'Ryland wakes alone',
+      body: 'The score hits 7.8 almost immediately. Audiences are locked in before minute 5.',
+    },
+    slide_3: {
+      pill: 'Stratt reveals the mission',
+      body: 'A slow build through the first hour. The score hovers around 8.1.',
+    },
+    slide_4: {
+      pill: 'Grace forced onto ship',
+      body: 'At 1h 15m the score bottoms out at 5.8. The only red dot in the film.',
+    },
+    slide_5: {
+      pill: 'Rocky at Tau Ceti',
+      body: 'A 2.9 point jump in ten minutes. The score climbs to 8.7.',
+    },
+    slide_6: {
+      pill: 'Rocky saves Grace',
+      body: 'The score hits 9.5. You do not get this high without the 5.8 that came before it.',
+    },
+    slide_7: {
+      pill: 'Grace teaches children',
+      body: 'The ending drops to 7.4. A deliberate, bittersweet landing.',
+    },
   }
 }
 
@@ -223,20 +243,22 @@ describe('generateBodyCopy (mocked)', () => {
     vi.clearAllMocks()
   })
 
-  it('returns bodyCopy for all 6 slides with characteristics, model, and token usage', async () => {
-    mockMessagesCreate.mockResolvedValueOnce(mockApiResponse(validBodyCopyMap()))
+  it('returns slideCopy for all 6 slides with pill + body, characteristics, model, and token usage', async () => {
+    mockMessagesCreate.mockResolvedValueOnce(mockApiResponse(validSlideCopyMap()))
 
     const out = await generateBodyCopy(PHM_INPUT)
-    expect(Object.keys(out.bodyCopy)).toEqual(['2', '3', '4', '5', '6', '7'])
-    expect(out.bodyCopy[4]).toContain('5.8')
+    expect(Object.keys(out.slideCopy)).toEqual(['2', '3', '4', '5', '6', '7'])
+    expect(out.slideCopy[4].body).toContain('5.8')
+    expect(out.slideCopy[4].pill).toBe('Grace forced onto ship')
+    expect(out.slideCopy[6].pill).toBe('Rocky saves Grace')
     expect(out.characteristics.peakHeight).toBe(9.5)
     expect(out.modelUsed).toMatch(/sonnet/i)
     expect(out.totalTokens).toBe(1800)
   })
 
-  it('throws BodyCopyGenerationError when copy contains an em dash', async () => {
-    const map = validBodyCopyMap()
-    map.slide_5 = 'A 2.9 point jump \u2014 the biggest in the film \u2014 lifts the score to 8.7.'
+  it('throws BodyCopyGenerationError when body contains an em dash', async () => {
+    const map = validSlideCopyMap()
+    map.slide_5.body = 'A 2.9 point jump \u2014 the biggest in the film \u2014 lifts the score to 8.7.'
     mockMessagesCreate.mockResolvedValue(mockApiResponse(map))
 
     await expect(generateBodyCopy(PHM_INPUT)).rejects.toThrow(BodyCopyGenerationError)
@@ -254,20 +276,47 @@ describe('generateBodyCopy (mocked)', () => {
     }
   })
 
-  it('throws BodyCopyGenerationError when copy contains an en dash', async () => {
-    const map = validBodyCopyMap()
-    map.slide_6 = 'The score jumps 5.8 \u2013 9.5 across twenty minutes.'
+  it('throws BodyCopyGenerationError when body contains an en dash', async () => {
+    const map = validSlideCopyMap()
+    map.slide_6.body = 'The score jumps 5.8 \u2013 9.5 across twenty minutes.'
     mockMessagesCreate.mockResolvedValueOnce(mockApiResponse(map))
 
     await expect(generateBodyCopy(PHM_INPUT)).rejects.toThrow(BodyCopyGenerationError)
   })
 
+  it('throws BodyCopyGenerationError when a pill contains an em dash', async () => {
+    const map = validSlideCopyMap()
+    map.slide_3.pill = 'Stratt \u2014 the mission'
+    mockMessagesCreate.mockResolvedValueOnce(mockApiResponse(map))
+
+    await expect(generateBodyCopy(PHM_INPUT)).rejects.toThrow(
+      /pill contains forbidden dash/,
+    )
+  })
+
+  it('throws BodyCopyGenerationError when a pill exceeds 30 characters', async () => {
+    const map = validSlideCopyMap()
+    map.slide_2.pill = 'This pill is clearly longer than thirty characters'
+    mockMessagesCreate.mockResolvedValueOnce(mockApiResponse(map))
+
+    await expect(generateBodyCopy(PHM_INPUT)).rejects.toThrow(/exceeds 30 characters/)
+  })
+
   it('throws BodyCopyGenerationError when a slide key is missing', async () => {
-    const map = validBodyCopyMap()
+    const map = validSlideCopyMap()
     delete map.slide_6
     mockMessagesCreate.mockResolvedValueOnce(mockApiResponse(map))
 
     await expect(generateBodyCopy(PHM_INPUT)).rejects.toThrow(/slide_6/)
+  })
+
+  it('throws BodyCopyGenerationError when a slide key is missing pill or body', async () => {
+    const map = validSlideCopyMap() as Record<string, unknown>
+    map.slide_4 = { body: 'only body, no pill' }
+    mockMessagesCreate.mockResolvedValueOnce(
+      mockApiResponse(map as Record<string, { pill: string; body: string }>),
+    )
+    await expect(generateBodyCopy(PHM_INPUT)).rejects.toThrow(/pill/)
   })
 
   it('throws BodyCopyGenerationError on malformed JSON', async () => {
@@ -278,8 +327,8 @@ describe('generateBodyCopy (mocked)', () => {
     await expect(generateBodyCopy(PHM_INPUT)).rejects.toThrow(/JSON/)
   })
 
-  it('sends a request with cache_control on system and includes all 6 slide contexts in user', async () => {
-    mockMessagesCreate.mockResolvedValueOnce(mockApiResponse(validBodyCopyMap()))
+  it('sends a request with cache_control on system and includes originalRole + storyBeatName in user', async () => {
+    mockMessagesCreate.mockResolvedValueOnce(mockApiResponse(validSlideCopyMap()))
     await generateBodyCopy(PHM_INPUT)
 
     expect(mockMessagesCreate).toHaveBeenCalledTimes(1)
@@ -292,7 +341,8 @@ describe('generateBodyCopy (mocked)', () => {
     expect(args.system[0].cache_control?.type).toBe('ephemeral')
     const userContent = args.messages[0].content
     for (const s of PHM_SLIDES) {
-      expect(userContent).toContain(s.pillLabel)
+      expect(userContent).toContain(`"originalRole": "${s.originalRole}"`)
+      expect(userContent).toContain(s.storyBeatName)
     }
   })
 
@@ -313,33 +363,34 @@ describe('generateBodyCopy (mocked)', () => {
 
 describe('parseBodyCopyResponse — forgiving JSON extraction', () => {
   it('parses raw JSON directly', () => {
-    const raw = JSON.stringify(validBodyCopyMap())
+    const raw = JSON.stringify(validSlideCopyMap())
     const parsed = parseBodyCopyResponse(raw)
-    expect(parsed[2]).toContain('7.8')
-    expect(parsed[4]).toContain('5.8')
-    expect(parsed[6]).toContain('9.5')
+    expect(parsed[2].body).toContain('7.8')
+    expect(parsed[4].body).toContain('5.8')
+    expect(parsed[6].body).toContain('9.5')
+    expect(parsed[6].pill).toBe('Rocky saves Grace')
   })
 
   it('parses JSON preceded by a preamble sentence', () => {
-    const json = JSON.stringify(validBodyCopyMap())
+    const json = JSON.stringify(validSlideCopyMap())
     const raw = `Here is the body copy:\n\n${json}`
     const parsed = parseBodyCopyResponse(raw)
-    expect(parsed[4]).toContain('5.8')
-    expect(parsed[6]).toContain('9.5')
+    expect(parsed[4].body).toContain('5.8')
+    expect(parsed[6].body).toContain('9.5')
   })
 
   it('parses JSON wrapped in a ```json code fence', () => {
-    const json = JSON.stringify(validBodyCopyMap())
+    const json = JSON.stringify(validSlideCopyMap())
     const raw = '```json\n' + json + '\n```'
     const parsed = parseBodyCopyResponse(raw)
-    expect(parsed[6]).toContain('9.5')
+    expect(parsed[6].body).toContain('9.5')
   })
 
   it('parses JSON wrapped in a plain ``` code fence (no language tag)', () => {
-    const json = JSON.stringify(validBodyCopyMap())
+    const json = JSON.stringify(validSlideCopyMap())
     const raw = '```\n' + json + '\n```'
     const parsed = parseBodyCopyResponse(raw)
-    expect(parsed[2]).toContain('7.8')
+    expect(parsed[2].body).toContain('7.8')
   })
 
   it('throws BodyCopyGenerationError with rawResponse attached when every attempt fails', () => {

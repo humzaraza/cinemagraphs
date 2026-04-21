@@ -15,12 +15,38 @@ export type GraphCharacteristics = {
 
 export type MiddleSlideNumber = 2 | 3 | 4 | 5 | 6 | 7
 
+// Narrative role preserved from slot-selection so the model can tell a drop
+// from a peak when writing copy. 'fallback' means the beat was picked by
+// chronological window rather than narrative fit.
+export type SlideOriginalRole =
+  | 'opening'
+  | 'setup'
+  | 'drop'
+  | 'recovery'
+  | 'peak'
+  | 'ending'
+  | 'fallback'
+
 export type SlideBeatContext = {
   slideNumber: MiddleSlideNumber
+  // Optional AI-derived pill; always present in response. The legacy field
+  // below seeds a fallback when the film's story-beat label is missing.
   pillLabel: string
   beatTimestamp: number
   beatScore: number
   beatColor: 'red' | 'gold' | 'teal'
+  // Narrative role the slot was picked under. 'fallback' if this beat was
+  // chosen by chronological window rather than narrative fit.
+  originalRole: SlideOriginalRole
+  // Full story-beat label for the beat at this timestamp, pulled from the
+  // film's sentiment graph. Empty string means "no story beat at this time"
+  // — the generator should fall back to the generic role label in that case.
+  storyBeatName: string
+}
+
+export type SlideCopy = {
+  pill: string
+  body: string
 }
 
 export type GenerateBodyCopyInput = {
@@ -33,7 +59,9 @@ export type GenerateBodyCopyInput = {
 }
 
 export type GenerateBodyCopyOutput = {
-  bodyCopy: Record<MiddleSlideNumber, string>
+  // Indexed by MiddleSlideNumber. Each entry holds both the AI-shortened pill
+  // and the body copy for that slide.
+  slideCopy: Record<MiddleSlideNumber, SlideCopy>
   characteristics: GraphCharacteristics
   modelUsed: string
   totalTokens: number
@@ -149,7 +177,7 @@ export function computeCharacteristics(dataPoints: DataPoint[]): GraphCharacteri
 // ── Prompt construction ───────────────────────────────────────
 
 export function buildSystemPrompt(): string {
-  return `You are a thoughtful film critic writing body copy for Cinemagraphs, a brand that visualizes how audience sentiment shifts across a film's runtime as a graph of scored beats. Each post is a carousel of 8 slides. Slides 2 through 7 each highlight a single beat on the graph. Your job is to write the short body copy that sits under the graph on those middle slides.
+  return `You are a thoughtful film critic writing body copy for Cinemagraphs, a brand that visualizes how audience sentiment shifts across a film's runtime as a graph of scored beats. Each post is a carousel of 8 slides. Slides 2 through 7 each highlight a single beat on the graph. Your job is to write a short pill label AND the body copy that sits under the graph on those middle slides.
 
 ## Voice
 
@@ -162,7 +190,7 @@ export function buildSystemPrompt(): string {
 
 - Sentence count: hard maximum of 3 sentences per slide. Two is often better than three.
 - Sentence length: hard maximum of 18 words per sentence. Most should be 8-14 words. Short sentences are part of the voice.
-- Word count: 25-40 words total per slide. Concision is non-negotiable.
+- Word count: 30-50 words total per slide. Sentence count serves content; do not pad to reach three sentences.
 
 ## Plot knowledge
 
@@ -171,6 +199,34 @@ export function buildSystemPrompt(): string {
 - If you know the film, do not write vague descriptions of what happens. "Something resets the emotional register" is forbidden; name what actually happens. "Rocky's spacecraft appears at Tau Ceti" is correct. "Eva Stratt drugs Ryland" is correct. Specificity is the brand.
 - If you do NOT know specific details, describe the score shape concretely without inventing events. Do NOT use placeholders like "something happens", "the spell breaks", "something on screen shifts". Describe the shape: magnitude of change, pacing, relationship to other beats, position within the runtime.
 - Do not name characters, locations, or plot points unless you genuinely know them from the film or they are given in the user prompt.
+
+## Sentence content priority
+
+Each slide's body copy should cover two things:
+
+1. What happens at this beat in the film — use the provided storyBeatName to ground the scene, but make the prose vivid, not a restatement.
+2. Why the score is what it is — the emotional or dramatic reason audiences scored this moment the way they did.
+
+Do not restate the storyBeatName verbatim. Expand on it with scene context, then connect it to the score.
+
+Good example:
+  storyBeatName: "Rocky breaks his spacesuit to save unconscious Grace"
+  body: "Rocky ruptures his own suit to save Grace when she blacks out. {{teal:9.5}} at 1h 55m is the film's peak because audiences watched an alien commit the ultimate sacrifice for a human stranger."
+
+Bad example (too close to the label, no reasoning):
+  "Rocky breaks his spacesuit to save unconscious Grace. {{teal:9.5}} is the peak."
+
+## Forbidden sentence patterns
+
+Do not write summary-philosophical closing sentences that sound meaningful but say nothing. Examples to avoid verbatim or in spirit:
+
+- "The dread is present, but so is the investment."
+- "It is both a loss and a beginning."
+- "What it sacrifices in X, it gains in Y."
+- "The film earns what it asks for."
+- "Resonance over relief." (or any "X over Y" construction)
+
+Every sentence must either describe a specific scene, state a specific data point, or draw an explicit connection between beats. If you cannot make a sentence do real work, cut it — two sentences is better than three with a filler closer.
 
 ## No generalizations
 
@@ -223,20 +279,44 @@ Markers wrap only the numeric value itself, never the surrounding words or punct
 
 Use numerals for every time reference. Write "1h 15m", "25 minutes", "0m-5m". Do not spell out numbers ("one hour fifteen minutes", "twenty-five minutes"). This keeps the body copy visually consistent with the pill labels above each slide, which are also in numerals.
 
+## Pill labels
+
+Each slide also has a short pill label rendered above the headline. Derive the pill from the film's actual story beat for that timestamp (provided as storyBeatName in the user prompt). Do not invent; compress.
+
+Pill constraints:
+- Maximum 30 characters including spaces. The renderer uppercases the pill, so write in sentence case or mixed case.
+- Must be derived from the provided storyBeatName. Strip articles, minor characters, and secondary clauses until the name fits.
+- Describe the beat, not the slot. Do NOT use generic labels like "THE OPENING", "THE SETUP", "THE DROP", "RECOVERY", "THE PEAK", "THE ENDING" unless the storyBeatName is truly absent.
+- No punctuation other than apostrophes inside names. No em dashes, no en dashes, no quotes.
+
+Example transformations:
+- storyBeatName: "Eva Stratt reveals the suicide mission to Tau Ceti" → pill: "Stratt reveals the mission"
+- storyBeatName: "Rocky breaks his spacesuit to save unconscious Grace" → pill: "Rocky saves Grace"
+- storyBeatName: "Grace is drugged and forcibly loaded onto Hail Mary" → pill: "Grace forced onto the ship"
+
+If storyBeatName is an empty string for a given slide, use one of these generic labels as a fallback, matched to the slide's originalRole:
+- opening → "The opening"
+- setup → "The setup"
+- drop → "The drop"
+- recovery → "Recovery"
+- peak → "The peak"
+- ending → "The ending"
+- fallback → "This beat"
+
 ## Output format
 
 Return ONLY a single JSON object, no markdown fences, no preamble, no trailing text. Schema:
 
 {
-  "slide_2": "body copy for slide 2",
-  "slide_3": "body copy for slide 3",
-  "slide_4": "body copy for slide 4",
-  "slide_5": "body copy for slide 5",
-  "slide_6": "body copy for slide 6",
-  "slide_7": "body copy for slide 7"
+  "slide_2": { "pill": "...", "body": "..." },
+  "slide_3": { "pill": "...", "body": "..." },
+  "slide_4": { "pill": "...", "body": "..." },
+  "slide_5": { "pill": "...", "body": "..." },
+  "slide_6": { "pill": "...", "body": "..." },
+  "slide_7": { "pill": "...", "body": "..." }
 }
 
-All six keys are required. Each value is a plain string (no nested objects, no arrays).`
+All six keys are required. Each value is an object with exactly two string fields: pill and body.`
 }
 
 export function buildUserPrompt(
@@ -252,13 +332,14 @@ export function buildUserPrompt(
   const dataPoints = input.dataPoints.map((p) => ({ t: p.t, s: p.s }))
   const slides = input.slides.map((s) => ({
     slideNumber: s.slideNumber,
-    pillLabel: s.pillLabel,
+    originalRole: s.originalRole,
+    storyBeatName: s.storyBeatName,
     beatTimestamp: s.beatTimestamp,
     beatScore: s.beatScore,
     beatColor: s.beatColor,
   }))
 
-  return `Write body copy for slides 2 through 7 of a Cinemagraphs carousel for the following film. Return ONLY the JSON object described in the system prompt.
+  return `Write pill labels and body copy for slides 2 through 7 of a Cinemagraphs carousel for the following film. Return ONLY the JSON object described in the system prompt.
 
 Film:
 ${JSON.stringify(film, null, 2)}
@@ -269,13 +350,14 @@ ${JSON.stringify(dataPoints, null, 2)}
 Computed graph characteristics:
 ${JSON.stringify(characteristics, null, 2)}
 
-Slide beat contexts (each slide highlights one beat):
+Slide beat contexts (each slide highlights one beat, ordered chronologically):
 ${JSON.stringify(slides, null, 2)}
 
 Remember:
-- Every body-copy string must reference its highlighted beat's exact score.
-- No em dashes, no en dashes. Sentence case. Two to three sentences each.
-- Slides 4, 5, 6 should chain: the drop, the recovery off that drop, and the peak that the recovery builds to.
+- Every body-copy string must reference its highlighted beat's exact score, wrapped in the correct color marker.
+- Derive each pill from the storyBeatName, compressed to 30 characters or fewer. Fall back to the generic role label only when storyBeatName is empty.
+- No em dashes, no en dashes. Sentence case. Two to three sentences each, 30-50 words.
+- Body copy must describe the scene AND the reason the score is what it is. Do not close with a summary-philosophical sentence.
 - Do not invent plot details beyond what is provided above.`
 }
 
@@ -335,7 +417,9 @@ function tryParseJsonWithFallbacks(raw: string): unknown {
   )
 }
 
-function parseBodyCopyResponse(raw: string): Record<MiddleSlideNumber, string> {
+const MAX_PILL_LENGTH = 30
+
+function parseBodyCopyResponse(raw: string): Record<MiddleSlideNumber, SlideCopy> {
   const parsed = tryParseJsonWithFallbacks(raw)
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new BodyCopyGenerationError(
@@ -345,24 +429,51 @@ function parseBodyCopyResponse(raw: string): Record<MiddleSlideNumber, string> {
   }
 
   const obj = parsed as Record<string, unknown>
-  const out = {} as Record<MiddleSlideNumber, string>
+  const out = {} as Record<MiddleSlideNumber, SlideCopy>
   for (const n of MIDDLE_SLIDE_NUMBERS) {
     const key = `slide_${n}`
     const val = obj[key]
-    if (typeof val !== 'string' || val.trim() === '') {
+    if (!val || typeof val !== 'object' || Array.isArray(val)) {
       throw new BodyCopyGenerationError(
-        `Response missing or empty key "${key}"`,
+        `Response missing or malformed key "${key}" — expected object with pill and body`,
         { rawResponse: raw, offendingSlide: n },
       )
     }
-    out[n] = val
+    const entry = val as Record<string, unknown>
+    const pill = entry.pill
+    const body = entry.body
+    if (typeof pill !== 'string' || pill.trim() === '') {
+      throw new BodyCopyGenerationError(
+        `Response key "${key}" missing or empty "pill"`,
+        { rawResponse: raw, offendingSlide: n },
+      )
+    }
+    if (typeof body !== 'string' || body.trim() === '') {
+      throw new BodyCopyGenerationError(
+        `Response key "${key}" missing or empty "body"`,
+        { rawResponse: raw, offendingSlide: n },
+      )
+    }
+    out[n] = { pill: pill.trim(), body }
   }
 
   for (const n of MIDDLE_SLIDE_NUMBERS) {
-    const text = out[n]
-    if (text.includes(EM_DASH) || text.includes(EN_DASH)) {
+    const { pill, body } = out[n]
+    if (body.includes(EM_DASH) || body.includes(EN_DASH)) {
       throw new BodyCopyGenerationError(
         'Generated copy contains forbidden dash character',
+        { rawResponse: raw, offendingSlide: n },
+      )
+    }
+    if (pill.includes(EM_DASH) || pill.includes(EN_DASH)) {
+      throw new BodyCopyGenerationError(
+        'Generated pill contains forbidden dash character',
+        { rawResponse: raw, offendingSlide: n },
+      )
+    }
+    if (pill.length > MAX_PILL_LENGTH) {
+      throw new BodyCopyGenerationError(
+        `Generated pill exceeds ${MAX_PILL_LENGTH} characters (got ${pill.length}): "${pill}"`,
         { rawResponse: raw, offendingSlide: n },
       )
     }
@@ -399,7 +510,7 @@ export async function generateBodyCopy(
     .map((block) => (block as { type: 'text'; text: string }).text)
     .join('')
 
-  const bodyCopy = parseBodyCopyResponse(responseText)
+  const slideCopy = parseBodyCopyResponse(responseText)
 
   const totalTokens =
     (message.usage?.input_tokens ?? 0) +
@@ -408,7 +519,7 @@ export async function generateBodyCopy(
     (message.usage?.cache_read_input_tokens ?? 0)
 
   return {
-    bodyCopy,
+    slideCopy,
     characteristics,
     modelUsed: BODY_COPY_MODEL,
     totalTokens,

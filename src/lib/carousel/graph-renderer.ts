@@ -211,6 +211,11 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
       timestamp: p.t,
     })
 
+    // Index 0 is the prepended neutral anchor at (t=0, s=5.0) used only for
+    // curve smoothing. Keep it in dotPositions so downstream indexing stays
+    // stable, but skip rendering a visible circle for it.
+    if (i === 0) continue
+
     if (highlighted && i === highlightBeatIndex) {
       body.push(
         `<circle cx="${fmt(cx)}" cy="${fmt(cy)}" r="${dotRadius + 8}" fill="${fill}" opacity="0.6" filter="url(#peakGlow)"/>`,

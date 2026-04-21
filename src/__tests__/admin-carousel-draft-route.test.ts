@@ -72,7 +72,14 @@ const FILM_SHAPE = {
   },
 }
 
-const BODY_COPY = { 2: 'copy 2', 3: 'copy 3', 4: 'copy 4', 5: 'copy 5', 6: 'copy 6', 7: 'copy 7' }
+const SLIDE_COPY = {
+  2: { pill: 'Ryland wakes alone', body: 'copy 2' },
+  3: { pill: 'Stratt reveals mission', body: 'copy 3' },
+  4: { pill: 'Grace forced onto ship', body: 'copy 4' },
+  5: { pill: 'Rocky at Tau Ceti', body: 'copy 5' },
+  6: { pill: 'Rocky saves Grace', body: 'copy 6' },
+  7: { pill: 'Grace teaches children', body: 'copy 7' },
+}
 
 const CHARACTERISTICS = {
   dropSeverity: 'moderate' as const,
@@ -101,7 +108,7 @@ beforeEach(() => {
   mocks.composeSlide.mockResolvedValue(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
   mocks.getMovieBackdropUrls.mockResolvedValue([])
   mocks.generateBodyCopy.mockResolvedValue({
-    bodyCopy: BODY_COPY,
+    slideCopy: SLIDE_COPY,
     characteristics: CHARACTERISTICS,
     modelUsed: 'claude-sonnet-4-6',
     totalTokens: 1234,
@@ -140,7 +147,7 @@ describe('POST /api/admin/carousel/draft', () => {
       id: 'draft-1',
       filmId: 'film-1',
       format: '4x5',
-      bodyCopyJson: BODY_COPY,
+      bodyCopyJson: SLIDE_COPY,
       slotSelectionsJson: [],
       characteristicsJson: CHARACTERISTICS,
       generatedAt: new Date('2026-04-21T10:00:00Z'),
@@ -165,7 +172,7 @@ describe('POST /api/admin/carousel/draft', () => {
       id: 'draft-1',
       filmId: 'film-1',
       format: '4x5',
-      bodyCopyJson: BODY_COPY,
+      bodyCopyJson: SLIDE_COPY,
       slotSelectionsJson: [],
       characteristicsJson: CHARACTERISTICS,
       generatedAt: new Date('2026-04-21T11:00:00Z'),
@@ -192,7 +199,7 @@ describe('POST /api/admin/carousel/draft', () => {
       id: 'draft-1',
       filmId: 'film-1',
       format: '4x5',
-      bodyCopyJson: BODY_COPY,
+      bodyCopyJson: SLIDE_COPY,
       slotSelectionsJson: [],
       characteristicsJson: CHARACTERISTICS,
       generatedAt: new Date('2026-04-21T10:00:00Z'),
@@ -202,7 +209,7 @@ describe('POST /api/admin/carousel/draft', () => {
       id: 'draft-1',
       filmId: 'film-1',
       format: '4x5',
-      bodyCopyJson: BODY_COPY,
+      bodyCopyJson: SLIDE_COPY,
       slotSelectionsJson: [],
       characteristicsJson: CHARACTERISTICS,
       generatedAt: new Date('2026-04-21T12:00:00Z'),
@@ -226,7 +233,7 @@ describe('POST /api/admin/carousel/draft', () => {
       id: 'draft-1',
       filmId: 'film-1',
       format: '4x5',
-      bodyCopyJson: BODY_COPY,
+      bodyCopyJson: SLIDE_COPY,
       slotSelectionsJson: [],
       characteristicsJson: CHARACTERISTICS,
       generatedAt: new Date('2026-04-21T11:00:00Z'),
@@ -256,7 +263,7 @@ describe('POST /api/admin/carousel/draft', () => {
       id: 'draft-1',
       filmId: 'film-1',
       format: '9x16',
-      bodyCopyJson: BODY_COPY,
+      bodyCopyJson: SLIDE_COPY,
       slotSelectionsJson: [],
       characteristicsJson: CHARACTERISTICS,
       generatedAt: new Date('2026-04-21T11:00:00Z'),

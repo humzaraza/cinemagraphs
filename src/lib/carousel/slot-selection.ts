@@ -2,29 +2,50 @@ import type { SentimentDataPoint } from '@/lib/types'
 
 export type Beat = SentimentDataPoint
 
-export type SlotKind =
-  | 'hook'
+// Narrative role a beat was picked as during phase 1 of selection. After the
+// chronological reassignment in phase 2, this is preserved on the slot so
+// body-copy generation can tell "this is the beat that was picked as the
+// drop" vs. "this is the peak beat". Slots that could not be filled by the
+// narrative pass use 'fallback'.
+export type OriginalRole =
   | 'opening'
   | 'setup'
   | 'drop'
   | 'recovery'
   | 'peak'
   | 'ending'
-  | 'takeaway'
+  | 'fallback'
+
+export type SlotKind = 'hook' | OriginalRole | 'takeaway'
 
 export type SlotPosition = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
 
 export interface BeatSlot {
   position: SlotPosition
   kind: SlotKind
+  // Narrative role the beat at this slot was originally picked under. Set
+  // only for middle slots (2-7) that ended up with a beat.
+  originalRole?: OriginalRole
   beat: Beat | null
   timestampLabel: string
   collision: boolean
-  // Set when dedup fails to find a distinct alternative for this slot and
-  // the original (colliding) beat is kept. Phase C4's admin UI surfaces this
-  // as a warning so the editor knows two slides share a timestamp.
+  // Set when the selector could not find a distinct beat for this slot and
+  // had to reuse one already assigned elsewhere. Admin UI surfaces it as a
+  // warning.
   duplicateTimestamp?: boolean
 }
+
+// Narrow projection of a middle slot for downstream consumers (body-copy
+// generator, draft route). Decoupled from the wider BeatSlot so clients do
+// not need to reason about hook/takeaway.
+export type SlotSelection = {
+  slideNumber: 2 | 3 | 4 | 5 | 6 | 7
+  beatIndex: number
+  originalRole: OriginalRole
+  duplicateTimestamp?: boolean
+}
+
+// ── Timestamp formatting ──────────────────────────────────────
 
 export function formatTimestamp(minutes: number): string {
   const total = Math.round(minutes)
@@ -36,70 +57,127 @@ export function formatTimestamp(minutes: number): string {
   return `${Math.max(0, total)}m`
 }
 
-function makeSlot(position: SlotPosition, kind: SlotKind, beat: Beat | null): BeatSlot {
-  return {
-    position,
-    kind,
-    beat,
-    timestampLabel: beat ? formatTimestamp(beat.timeMidpoint) : '',
-    collision: false,
-  }
+// ── Narrative picking ─────────────────────────────────────────
+// Each picker returns a Beat or null — null means "no beat fits this role
+// under the original narrative rules". Phase 3 (fallback) fills nulls.
+
+function pickOpening(beats: Beat[]): Beat | null {
+  return beats[0] ?? null
 }
 
-// ── Deduplication pass ────────────────────────────────────────
-// Walks middle slots (2-7) in order. If a slot's beat timestamp is already
-// taken by an earlier-processed slot, try a per-kind alternative that isn't
-// assigned. On failure, keep the original beat and set duplicateTimestamp.
+function pickSetup(beats: Beat[], runtime: number): Beat | null {
+  const threshold = runtime * 0.4
+  let best: Beat | null = null
+  for (let i = 1; i < beats.length; i++) {
+    const b = beats[i]
+    if (b.timeMidpoint < threshold) {
+      if (!best || b.score > best.score) best = b
+    }
+  }
+  if (!best) return beats[1] ?? null
+  return best
+}
 
-function findAlternativeBeat(
-  slot: BeatSlot,
+function pickDrop(beats: Beat[]): Beat | null {
+  if (beats.length === 0) return null
+  let lowIdx = 0
+  for (let i = 1; i < beats.length; i++) {
+    if (beats[i].score < beats[lowIdx].score) lowIdx = i
+  }
+  return beats[lowIdx]
+}
+
+function pickRecovery(beats: Beat[], drop: Beat | null): Beat | null {
+  if (!drop) return null
+  const dropTime = drop.timeMidpoint
+  const dropScore = drop.score
+  // Prefer post-drop rise ≥ 1.0.
+  for (const b of beats) {
+    if (b.timeMidpoint > dropTime && b.score - dropScore >= 1.0) return b
+  }
+  // Fall back to any post-drop higher beat.
+  for (const b of beats) {
+    if (b.timeMidpoint > dropTime && b.score > dropScore) return b
+  }
+  return null
+}
+
+function pickPeak(beats: Beat[]): Beat | null {
+  if (beats.length === 0) return null
+  let hiIdx = 0
+  for (let i = 1; i < beats.length; i++) {
+    if (beats[i].score > beats[hiIdx].score) hiIdx = i
+  }
+  return beats[hiIdx]
+}
+
+function pickEnding(beats: Beat[]): Beat | null {
+  return beats[beats.length - 1] ?? null
+}
+
+// ── Deduplication during narrative phase ──────────────────────
+// If two roles pick the same beat, try to find an alternative for the later
+// role using role-specific rules. Order matters: earlier roles in this list
+// keep priority over later ones.
+
+const NARRATIVE_ORDER: OriginalRole[] = [
+  'opening',
+  'setup',
+  'drop',
+  'recovery',
+  'peak',
+  'ending',
+]
+
+function findAlternativeForRole(
+  role: OriginalRole,
   beats: Beat[],
-  runtimeMinutes: number,
-  assigned: Set<number>,
-  currentDropBeat: Beat | null,
+  taken: Set<number>,
+  drop: Beat | null,
+  runtime: number,
 ): Beat | null {
-  switch (slot.kind) {
+  switch (role) {
     case 'opening': {
-      const max = runtimeMinutes * 0.1
+      const max = runtime * 0.1
       return (
         beats
-          .filter((b) => b.timeMidpoint <= max && !assigned.has(b.timeMidpoint))
+          .filter((b) => b.timeMidpoint <= max && !taken.has(b.timeMidpoint))
           .sort((a, b) => a.timeMidpoint - b.timeMidpoint)[0] ?? null
       )
     }
     case 'setup': {
-      const min = runtimeMinutes * 0.1
-      const max = runtimeMinutes * 0.4
+      const min = runtime * 0.1
+      const max = runtime * 0.4
       return (
         beats
           .filter(
             (b) =>
               b.timeMidpoint >= min &&
               b.timeMidpoint < max &&
-              !assigned.has(b.timeMidpoint),
+              !taken.has(b.timeMidpoint),
           )
-          .sort((a, b) => b.score - a.score || a.timeMidpoint - b.timeMidpoint)[0] ?? null
+          .sort(
+            (a, b) => b.score - a.score || a.timeMidpoint - b.timeMidpoint,
+          )[0] ?? null
       )
     }
     case 'drop': {
       const sorted = [...beats].sort(
         (a, b) => a.score - b.score || a.timeMidpoint - b.timeMidpoint,
       )
-      for (const b of sorted) {
-        if (!assigned.has(b.timeMidpoint)) return b
-      }
+      for (const b of sorted) if (!taken.has(b.timeMidpoint)) return b
       return null
     }
     case 'recovery': {
-      if (!currentDropBeat) return null
-      const dropScore = currentDropBeat.score
-      const dropTime = currentDropBeat.timeMidpoint
-      const afterDrop = beats.filter((b) => b.timeMidpoint > dropTime)
-      for (const b of afterDrop) {
-        if (b.score - dropScore >= 1.0 && !assigned.has(b.timeMidpoint)) return b
+      if (!drop) return null
+      const dropTime = drop.timeMidpoint
+      const dropScore = drop.score
+      const after = beats.filter((b) => b.timeMidpoint > dropTime)
+      for (const b of after) {
+        if (b.score - dropScore >= 1.0 && !taken.has(b.timeMidpoint)) return b
       }
-      for (const b of afterDrop) {
-        if (b.score > dropScore && !assigned.has(b.timeMidpoint)) return b
+      for (const b of after) {
+        if (b.score > dropScore && !taken.has(b.timeMidpoint)) return b
       }
       return null
     }
@@ -107,14 +185,12 @@ function findAlternativeBeat(
       const sorted = [...beats].sort(
         (a, b) => b.score - a.score || a.timeMidpoint - b.timeMidpoint,
       )
-      for (const b of sorted) {
-        if (!assigned.has(b.timeMidpoint)) return b
-      }
+      for (const b of sorted) if (!taken.has(b.timeMidpoint)) return b
       return null
     }
     case 'ending': {
       for (let i = beats.length - 1; i >= 0; i--) {
-        if (!assigned.has(beats[i].timeMidpoint)) return beats[i]
+        if (!taken.has(beats[i].timeMidpoint)) return beats[i]
       }
       return null
     }
@@ -123,35 +199,85 @@ function findAlternativeBeat(
   }
 }
 
-function dedupMiddleSlots(
-  slots: BeatSlot[],
+// ── Fallback picking (phase 3) ────────────────────────────────
+// When a role returns null and its narrative alternative also fails, pick a
+// beat by the chronological window for the slot position it would occupy.
+// The spec ties windows to *slot positions* (2-7), which map 1:1 to the
+// narrative order in the pre-chronological assignment.
+
+type Window =
+  | { type: 'range'; min: number; max: number }
+  | { type: 'center'; pct: number }
+
+const ROLE_WINDOWS: Record<OriginalRole, Window | null> = {
+  opening: { type: 'range', min: 0.0, max: 0.15 },
+  setup: { type: 'range', min: 0.15, max: 0.4 },
+  drop: { type: 'center', pct: 0.45 },
+  recovery: { type: 'range', min: 0.5, max: 0.7 },
+  peak: { type: 'center', pct: 0.75 },
+  ending: { type: 'range', min: 0.85, max: 1.0 },
+  fallback: null,
+}
+
+function fallbackByWindow(
+  role: OriginalRole,
   beats: Beat[],
-  runtimeMinutes: number,
-): void {
-  const assigned = new Set<number>()
-  for (const slot of slots) {
-    if (slot.position < 2 || slot.position > 7) continue
-    if (!slot.beat) continue
-    const ts = slot.beat.timeMidpoint
-    if (!assigned.has(ts)) {
-      assigned.add(ts)
-      continue
+  taken: Set<number>,
+  runtime: number,
+): Beat | null {
+  const win = ROLE_WINDOWS[role]
+  if (!win) return null
+  const unused = beats.filter((b) => !taken.has(b.timeMidpoint))
+  if (unused.length === 0) return null
+  if (win.type === 'range') {
+    const min = runtime * win.min
+    const max = runtime * win.max
+    // Ending slot wants the LAST unused beat in its window; others want first.
+    const inWindow = unused.filter(
+      (b) => b.timeMidpoint >= min && b.timeMidpoint <= max,
+    )
+    if (inWindow.length > 0) {
+      if (role === 'ending') return inWindow[inWindow.length - 1]
+      return inWindow[0]
     }
-    const dropSlot = slots.find((s) => s.position === 4)
-    const currentDropBeat = dropSlot?.beat ?? null
-    const alt = findAlternativeBeat(slot, beats, runtimeMinutes, assigned, currentDropBeat)
-    if (alt) {
-      slot.beat = alt
-      slot.timestampLabel = formatTimestamp(alt.timeMidpoint)
-      assigned.add(alt.timeMidpoint)
-    } else {
-      slot.duplicateTimestamp = true
-    }
+    // No beat falls inside the window — pick the unused beat closest to the
+    // window center so the chronological flow still roughly lines up.
+    const target = (min + max) / 2
+    return [...unused].sort(
+      (a, b) =>
+        Math.abs(a.timeMidpoint - target) - Math.abs(b.timeMidpoint - target),
+    )[0]
+  }
+  const target = runtime * win.pct
+  return [...unused].sort(
+    (a, b) =>
+      Math.abs(a.timeMidpoint - target) - Math.abs(b.timeMidpoint - target),
+  )[0]
+}
+
+// ── Main entry point ──────────────────────────────────────────
+
+function makeSlot(
+  position: SlotPosition,
+  kind: SlotKind,
+  beat: Beat | null,
+  originalRole?: OriginalRole,
+): BeatSlot {
+  return {
+    position,
+    kind,
+    originalRole,
+    beat,
+    timestampLabel: beat ? formatTimestamp(beat.timeMidpoint) : '',
+    collision: false,
   }
 }
 
-export function selectBeatSlots(beats: Beat[], runtimeMinutes: number): BeatSlot[] {
-  const emptySlots: BeatSlot[] = [
+export function selectBeatSlots(
+  beats: Beat[],
+  runtimeMinutes: number,
+): BeatSlot[] {
+  const empty: BeatSlot[] = [
     makeSlot(1, 'hook', null),
     makeSlot(2, 'opening', null),
     makeSlot(3, 'setup', null),
@@ -162,92 +288,97 @@ export function selectBeatSlots(beats: Beat[], runtimeMinutes: number): BeatSlot
     makeSlot(8, 'takeaway', null),
   ]
 
-  if (beats.length === 0) {
-    return emptySlots
+  if (beats.length === 0) return empty
+
+  // ── Phase 1: narrative pick per role ────────────────────────
+  const narrative: Record<OriginalRole, Beat | null> = {
+    opening: pickOpening(beats),
+    setup: pickSetup(beats, runtimeMinutes),
+    drop: pickDrop(beats),
+    recovery: null, // set below after drop is known
+    peak: pickPeak(beats),
+    ending: pickEnding(beats),
+    fallback: null,
+  }
+  narrative.recovery = pickRecovery(beats, narrative.drop)
+
+  // ── Phase 2: dedupe within narrative picks ──────────────────
+  // Walk in NARRATIVE_ORDER, tracking timestamps already assigned. If a role
+  // would repeat, look up an alternative first (same role-specific rules as
+  // before). If that fails too, leave null — phase 3 handles it.
+  const taken = new Set<number>()
+  for (const role of NARRATIVE_ORDER) {
+    const beat = narrative[role]
+    if (!beat) continue
+    if (!taken.has(beat.timeMidpoint)) {
+      taken.add(beat.timeMidpoint)
+      continue
+    }
+    const alt = findAlternativeForRole(
+      role,
+      beats,
+      taken,
+      narrative.drop,
+      runtimeMinutes,
+    )
+    narrative[role] = alt
+    if (alt) taken.add(alt.timeMidpoint)
   }
 
-  const slot1 = makeSlot(1, 'hook', null)
-  const slot8 = makeSlot(8, 'takeaway', null)
-
-  // Slot 2: opening = first beat
-  const slot2 = makeSlot(2, 'opening', beats[0])
-
-  // Slot 3: setup = highest-scoring beat with timeMidpoint < runtime * 0.4,
-  // excluding beats[0]. Ties → earliest. Fall back to beats[1] if no candidate.
-  const setupThreshold = runtimeMinutes * 0.4
-  let setupBeat: Beat | null = null
-  for (let i = 1; i < beats.length; i++) {
-    const b = beats[i]
-    if (b.timeMidpoint < setupThreshold) {
-      if (!setupBeat || b.score > setupBeat.score) {
-        setupBeat = b
-      }
+  // ── Phase 3: fall back to time-window pick for any still-null role ──
+  // Role becomes 'fallback' for any slot filled here.
+  const roleOfSlot: Record<OriginalRole, OriginalRole> = {
+    opening: 'opening',
+    setup: 'setup',
+    drop: 'drop',
+    recovery: 'recovery',
+    peak: 'peak',
+    ending: 'ending',
+    fallback: 'fallback',
+  }
+  for (const role of NARRATIVE_ORDER) {
+    if (narrative[role]) continue
+    const fb = fallbackByWindow(role, beats, taken, runtimeMinutes)
+    if (fb) {
+      narrative[role] = fb
+      taken.add(fb.timeMidpoint)
+      roleOfSlot[role] = 'fallback'
     }
   }
-  if (!setupBeat) {
-    setupBeat = beats[1] ?? null
-  }
-  const slot3 = makeSlot(3, 'setup', setupBeat)
 
-  // Slot 4: drop = lowest score overall. Ties → earliest.
-  let dropIdx = 0
-  for (let i = 1; i < beats.length; i++) {
-    if (beats[i].score < beats[dropIdx].score) {
-      dropIdx = i
-    }
+  // ── Phase 4: collect assigned (beat, role) pairs and sort by time ──
+  const assigned: Array<{ beat: Beat; role: OriginalRole }> = []
+  for (const role of NARRATIVE_ORDER) {
+    const b = narrative[role]
+    if (b) assigned.push({ beat: b, role: roleOfSlot[role] })
   }
-  const slot4 = makeSlot(4, 'drop', beats[dropIdx])
+  assigned.sort((a, b) => a.beat.timeMidpoint - b.beat.timeMidpoint)
 
-  // Slot 5: recovery = first beat after slot4 with (score - slot4.score) >= 1.0.
-  // If none, first beat after slot4 with higher score. If slot4 is last beat,
-  // beat = null and collision = true.
-  let slot5: BeatSlot
-  if (dropIdx === beats.length - 1) {
-    slot5 = {
-      position: 5,
-      kind: 'recovery',
-      beat: null,
-      timestampLabel: '',
-      collision: true,
-    }
-  } else {
-    const slot4Score = beats[dropIdx].score
-    let recoveryBeat: Beat | null = null
-    for (let i = dropIdx + 1; i < beats.length; i++) {
-      if (beats[i].score - slot4Score >= 1.0) {
-        recoveryBeat = beats[i]
-        break
-      }
-    }
-    if (!recoveryBeat) {
-      for (let i = dropIdx + 1; i < beats.length; i++) {
-        if (beats[i].score > slot4Score) {
-          recoveryBeat = beats[i]
-          break
-        }
-      }
-    }
-    slot5 = makeSlot(5, 'recovery', recoveryBeat)
+  // ── Phase 5: assign to slots 2-7 in chronological order ────
+  const slots = empty.slice()
+  for (let i = 0; i < assigned.length && i < 6; i++) {
+    const position = (i + 2) as SlotPosition
+    const { beat, role } = assigned[i]
+    slots[i + 1] = makeSlot(position, role as SlotKind, beat, role)
   }
 
-  // Slot 6: peak = highest score overall. Ties → earliest.
-  let peakIdx = 0
-  for (let i = 1; i < beats.length; i++) {
-    if (beats[i].score > beats[peakIdx].score) {
-      peakIdx = i
+  // ── Phase 6: if still fewer than 6 filled, duplicate the closest beat ──
+  // This only fires for films with extremely few distinct beats (fewer than
+  // 6). The duplicate is flagged so the admin UI can warn.
+  for (let i = assigned.length; i < 6; i++) {
+    const position = (i + 2) as SlotPosition
+    // Find the nearest already-assigned beat by chronological position.
+    if (assigned.length === 0) {
+      slots[i + 1] = makeSlot(position, 'fallback' as SlotKind, null, 'fallback')
+      slots[i + 1].duplicateTimestamp = true
+      continue
     }
+    const dup = assigned[Math.min(i, assigned.length - 1)]
+    slots[i + 1] = makeSlot(position, dup.role as SlotKind, dup.beat, dup.role)
+    slots[i + 1].duplicateTimestamp = true
   }
-  const slot6 = makeSlot(6, 'peak', beats[peakIdx])
 
-  // Slot 7: ending = last beat
-  const slot7 = makeSlot(7, 'ending', beats[beats.length - 1])
-
-  const slots: BeatSlot[] = [slot1, slot2, slot3, slot4, slot5, slot6, slot7, slot8]
-
-  dedupMiddleSlots(slots, beats, runtimeMinutes)
-
-  // Collision detection — positions 2-7. Mark any slot whose beat timestamp
-  // is shared. After dedup this only fires when duplicateTimestamp was set.
+  // ── Phase 7: collision flag for any shared timestamp ───────
   const usage = new Map<number, number>()
   for (const s of slots) {
     if (s.beat && s.position >= 2 && s.position <= 7) {
@@ -267,4 +398,27 @@ export function selectBeatSlots(beats: Beat[], runtimeMinutes: number): BeatSlot
   }
 
   return slots
+}
+
+// Downstream projection for body-copy generation. Takes the full slot list
+// plus the beats array (to resolve beatIndex) and emits a SlotSelection per
+// middle slot. beatIndex is the position of the beat in the beats array; -1
+// if the slot has no beat (shouldn't happen after fallback but guarded).
+export function toSlotSelections(
+  slots: BeatSlot[],
+  beats: Beat[],
+): SlotSelection[] {
+  const out: SlotSelection[] = []
+  for (const s of slots) {
+    if (s.position < 2 || s.position > 7) continue
+    if (!s.beat || !s.originalRole) continue
+    const idx = beats.findIndex((b) => b.timeMidpoint === s.beat!.timeMidpoint)
+    out.push({
+      slideNumber: s.position as SlotSelection['slideNumber'],
+      beatIndex: idx,
+      originalRole: s.originalRole,
+      duplicateTimestamp: s.duplicateTimestamp,
+    })
+  }
+  return out
 }
