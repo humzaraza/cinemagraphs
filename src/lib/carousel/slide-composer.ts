@@ -573,6 +573,7 @@ function composeTakeawaySlide(film: FilmData, spec: FormatSpec): BuiltSvg {
         height: miniH,
         format: '4x5',
         highlightBeatIndex: undefined,
+        minimal: true,
       })
       const miniDataUrl = toDataUrl(miniPng)
       body.push(

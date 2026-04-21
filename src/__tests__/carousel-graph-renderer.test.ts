@@ -185,4 +185,86 @@ describe('renderGraph', () => {
       expect(d.y).toBeLessThanOrEqual(height)
     }
   })
+
+  describe('minimal mode', () => {
+    it('returns a non-empty PNG buffer at 240x80 without crashing', () => {
+      const out = renderGraph({
+        dataPoints: SAMPLE,
+        totalRuntime: 60,
+        criticsScore: 8.1,
+        width: 240,
+        height: 80,
+        format: '4x5',
+        minimal: true,
+      })
+      expect(Buffer.isBuffer(out.png)).toBe(true)
+      expect(out.png.length).toBeGreaterThan(0)
+    })
+
+    it('produces SVG without "Critics" label or score value when minimal: true', () => {
+      const out = renderGraph({
+        dataPoints: SAMPLE,
+        totalRuntime: 60,
+        criticsScore: 8.3,
+        width: 240,
+        height: 80,
+        format: '4x5',
+        minimal: true,
+      })
+      expect(out.svg).not.toContain('Critics')
+      expect(out.svg).not.toContain('8.3')
+    })
+
+    it('still contains "Critics" and score when minimal is false', () => {
+      const out = renderGraph({
+        dataPoints: SAMPLE,
+        totalRuntime: 60,
+        criticsScore: 8.3,
+        width: 1080,
+        height: 540,
+        format: '4x5',
+        minimal: false,
+      })
+      expect(out.svg).toContain('Critics')
+      expect(out.svg).toContain('8.3')
+    })
+
+    it('still contains "Critics" and score when minimal is undefined', () => {
+      const out = renderGraph({
+        dataPoints: SAMPLE,
+        totalRuntime: 60,
+        criticsScore: 8.3,
+        width: 1080,
+        height: 540,
+        format: '4x5',
+      })
+      expect(out.svg).toContain('Critics')
+      expect(out.svg).toContain('8.3')
+    })
+
+    it('returns dotPositions in minimal mode aligned with the post-anchor point order', () => {
+      const width = 240
+      const height = 80
+      const out = renderGraph({
+        dataPoints: SAMPLE,
+        totalRuntime: 60,
+        criticsScore: 8.1,
+        width,
+        height,
+        format: '4x5',
+        minimal: true,
+      })
+      expect(out.dotPositions.length).toBe(SAMPLE.length + 1)
+      expect(out.dotPositions[0].timestamp).toBe(0)
+      expect(out.dotPositions[0].score).toBe(5.0)
+      for (const d of out.dotPositions) {
+        expect(Number.isFinite(d.x)).toBe(true)
+        expect(Number.isFinite(d.y)).toBe(true)
+        expect(d.x).toBeGreaterThanOrEqual(0)
+        expect(d.x).toBeLessThanOrEqual(width)
+        expect(d.y).toBeGreaterThanOrEqual(0)
+        expect(d.y).toBeLessThanOrEqual(height)
+      }
+    })
+  })
 })

@@ -14,6 +14,7 @@ export type RenderGraphInput = {
   height: number
   format: Format
   highlightBeatIndex?: number
+  minimal?: boolean
 }
 
 export type DotPosition = {
@@ -114,9 +115,11 @@ export function renderGraph(input: RenderGraphInput): RenderGraphOutput {
 }
 
 function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosition[] } {
-  const { totalRuntime, criticsScore, width, height, format, highlightBeatIndex } = input
+  const { totalRuntime, criticsScore, width, height, format, highlightBeatIndex, minimal } = input
   const points = prependNeutralAnchor(input.dataPoints)
-  const margins = marginsFor(format)
+  const margins = minimal
+    ? { left: 4, right: 4, top: 4, bottom: 4 }
+    : marginsFor(format)
   const dotRadius = dotRadiusFor(format)
 
   const plotW = width - margins.left - margins.right
@@ -223,23 +226,25 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
   }
 
   // ── score text ────────────────────────────────────────────
-  const valueText = criticsScore.toFixed(1)
-  if (format === '4x5') {
-    const x = width - 60
-    body.push(
-      `<text x="${x}" y="20" fill="${LABEL_COLOR}" font-family="DM Sans" font-size="13" font-weight="400" text-anchor="middle">Critics</text>`,
-    )
-    body.push(
-      `<text x="${x}" y="56" fill="${VALUE_COLOR}" font-family="DM Sans" font-size="38" font-weight="500" text-anchor="middle">${valueText}</text>`,
-    )
-  } else {
-    const x = 54
-    body.push(
-      `<text x="${x}" y="40" fill="${LABEL_COLOR}" font-family="DM Sans" font-size="18" font-weight="400" text-anchor="start">Critics</text>`,
-    )
-    body.push(
-      `<text x="${x}" y="92" fill="${VALUE_COLOR}" font-family="DM Sans" font-size="56" font-weight="500" text-anchor="start">${valueText}</text>`,
-    )
+  if (!minimal) {
+    const valueText = criticsScore.toFixed(1)
+    if (format === '4x5') {
+      const x = width - 60
+      body.push(
+        `<text x="${x}" y="20" fill="${LABEL_COLOR}" font-family="DM Sans" font-size="13" font-weight="400" text-anchor="middle">Critics</text>`,
+      )
+      body.push(
+        `<text x="${x}" y="56" fill="${VALUE_COLOR}" font-family="DM Sans" font-size="38" font-weight="500" text-anchor="middle">${valueText}</text>`,
+      )
+    } else {
+      const x = 54
+      body.push(
+        `<text x="${x}" y="40" fill="${LABEL_COLOR}" font-family="DM Sans" font-size="18" font-weight="400" text-anchor="start">Critics</text>`,
+      )
+      body.push(
+        `<text x="${x}" y="92" fill="${VALUE_COLOR}" font-family="DM Sans" font-size="56" font-weight="500" text-anchor="start">${valueText}</text>`,
+      )
+    }
   }
 
   const svg =
