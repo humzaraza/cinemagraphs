@@ -269,9 +269,16 @@ export async function POST(request: NextRequest) {
       const aiPill = copy?.pill ?? ''
       const role = slot.originalRole ?? 'fallback'
       const pillSource = aiPill.trim() !== '' ? aiPill : ROLE_PILL_FALLBACK[role]
+      // Prefer the AI-generated headline; fall back to the generic role
+      // headline only if the AI output is missing or empty. The AI writes
+      // short 3-6 word editorial framing tuned to each beat; the fallback
+      // is a static per-role string that reads like filler by comparison.
+      const aiHeadline = copy?.headline ?? ''
+      const headlineSource =
+        aiHeadline.trim() !== '' ? aiHeadline : ROLE_HEADLINE[role]
       middleContent = {
         pillLabel: renderedPill(pillSource, slot.timestampLabel),
-        headline: ROLE_HEADLINE[role],
+        headline: headlineSource,
         bodyCopy: copy?.body ?? '',
         // dotPositions in graph-renderer are post-anchor; the anchor is at
         // index 0 so add 1 to reach the matching beat.

@@ -143,9 +143,35 @@ describe('buildSystemPrompt', () => {
     }
   })
 
+  it('specifies the JSON shape includes pill, headline, and body fields', () => {
+    expect(prompt).toContain('"pill"')
+    expect(prompt).toContain('"headline"')
+    expect(prompt).toContain('"body"')
+  })
+
   it('includes the reference voice examples', () => {
     expect(prompt).toContain('Ryland')
     expect(prompt).toContain('5.8')
+  })
+
+  it('contains HEADLINE GUIDANCE with length + forbidden-phrase rules', () => {
+    expect(prompt).toMatch(/headline/i)
+    expect(prompt).toMatch(/3 to 6 words/i)
+    // A sampling of the forbidden generic filler phrases must be listed
+    // verbatim so the model learns to avoid them.
+    expect(prompt).toContain('Where the story starts')
+    expect(prompt).toContain('How it lands')
+    expect(prompt).toContain('Then the floor drops out')
+    expect(prompt).toContain('Then it finds its footing')
+    expect(prompt).toContain('The audience settles in')
+    expect(prompt).toContain('Another beat in the shape')
+    expect(prompt).toContain("The film's highest moment")
+  })
+
+  it('instructs the model to trust data over slot role when they disagree', () => {
+    // Used to keep the model honest when the slot label (drop/peak) no
+    // longer matches the actual score behaviour after the spacing swap.
+    expect(prompt).toMatch(/trust the data/i)
   })
 
   it('specifies the FORMAT MARKERS rule with {{color:value}} syntax and all three color thresholds', () => {
@@ -193,11 +219,33 @@ describe('buildUserPrompt', () => {
       expect(user).toContain(s.storyBeatName)
     }
   })
+
+  it('includes scoreDelta on each slide (0 for the first, delta to previous for the rest)', () => {
+    const chars: GraphCharacteristics = computeCharacteristics(PHM_DATA)
+    const user = buildUserPrompt(PHM_INPUT, chars)
+
+    // The serializer must emit scoreDelta on every slide context.
+    expect(user).toContain('"scoreDelta"')
+
+    // slide_2 is first → scoreDelta = 0.
+    // slide_3 score 8.1 - slide_2 score 7.8 = 0.3.
+    // slide_4 score 5.8 - slide_3 score 8.1 = -2.3.
+    // slide_5 score 8.7 - slide_4 score 5.8 = 2.9.
+    // slide_6 score 9.5 - slide_5 score 8.7 = 0.8.
+    // slide_7 score 7.4 - slide_6 score 9.5 = -2.1.
+    // Match a few representative deltas. Exact decimal formatting depends
+    // on JSON.stringify, so look for the numeric substring.
+    expect(user).toMatch(/"scoreDelta":\s*0[,\n]/) // first slide
+    expect(user).toMatch(/"scoreDelta":\s*-2\.3/) // slide 4
+    expect(user).toMatch(/"scoreDelta":\s*2\.9/) // slide 5
+  })
 })
 
 // ── generateBodyCopy with a mocked API client ─────────────────
 
-function mockApiResponse(slideCopyBySlide: Record<string, { pill: string; body: string }>) {
+function mockApiResponse(
+  slideCopyBySlide: Record<string, { pill: string; headline: string; body: string }>,
+) {
   return {
     content: [{ type: 'text', text: JSON.stringify(slideCopyBySlide) }],
     usage: {
@@ -209,30 +257,39 @@ function mockApiResponse(slideCopyBySlide: Record<string, { pill: string; body: 
   }
 }
 
-function validSlideCopyMap(): Record<string, { pill: string; body: string }> {
+function validSlideCopyMap(): Record<
+  string,
+  { pill: string; headline: string; body: string }
+> {
   return {
     slide_2: {
       pill: 'Ryland wakes alone',
+      headline: 'Already inside the mystery.',
       body: 'The score hits 7.8 almost immediately. Audiences are locked in before minute 5.',
     },
     slide_3: {
       pill: 'Stratt reveals the mission',
+      headline: 'Stakes become clear.',
       body: 'A slow build through the first hour. The score hovers around 8.1.',
     },
     slide_4: {
       pill: 'Grace forced onto ship',
+      headline: 'No consent, no way back.',
       body: 'At 1h 15m the score bottoms out at 5.8. The only red dot in the film.',
     },
     slide_5: {
       pill: 'Rocky at Tau Ceti',
+      headline: 'Hope arrives with company.',
       body: 'A 2.9 point jump in ten minutes. The score climbs to 8.7.',
     },
     slide_6: {
       pill: 'Rocky saves Grace',
+      headline: 'Sacrifice without hesitation.',
       body: 'The score hits 9.5. You do not get this high without the 5.8 that came before it.',
     },
     slide_7: {
       pill: 'Grace teaches children',
+      headline: 'A quieter resolution.',
       body: 'The ending drops to 7.4. A deliberate, bittersweet landing.',
     },
   }
@@ -243,14 +300,16 @@ describe('generateBodyCopy (mocked)', () => {
     vi.clearAllMocks()
   })
 
-  it('returns slideCopy for all 6 slides with pill + body, characteristics, model, and token usage', async () => {
+  it('returns slideCopy for all 6 slides with pill + headline + body, characteristics, model, and token usage', async () => {
     mockMessagesCreate.mockResolvedValueOnce(mockApiResponse(validSlideCopyMap()))
 
     const out = await generateBodyCopy(PHM_INPUT)
     expect(Object.keys(out.slideCopy)).toEqual(['2', '3', '4', '5', '6', '7'])
     expect(out.slideCopy[4].body).toContain('5.8')
     expect(out.slideCopy[4].pill).toBe('Grace forced onto ship')
+    expect(out.slideCopy[4].headline).toBe('No consent, no way back.')
     expect(out.slideCopy[6].pill).toBe('Rocky saves Grace')
+    expect(out.slideCopy[6].headline).toBe('Sacrifice without hesitation.')
     expect(out.characteristics.peakHeight).toBe(9.5)
     expect(out.modelUsed).toMatch(/sonnet/i)
     expect(out.totalTokens).toBe(1800)
@@ -312,11 +371,43 @@ describe('generateBodyCopy (mocked)', () => {
 
   it('throws BodyCopyGenerationError when a slide key is missing pill or body', async () => {
     const map = validSlideCopyMap() as Record<string, unknown>
-    map.slide_4 = { body: 'only body, no pill' }
+    map.slide_4 = { body: 'only body, no pill', headline: 'headline ok' }
     mockMessagesCreate.mockResolvedValueOnce(
-      mockApiResponse(map as Record<string, { pill: string; body: string }>),
+      mockApiResponse(
+        map as Record<string, { pill: string; headline: string; body: string }>,
+      ),
     )
     await expect(generateBodyCopy(PHM_INPUT)).rejects.toThrow(/pill/)
+  })
+
+  it('throws BodyCopyGenerationError when a slide key is missing headline', async () => {
+    const map = validSlideCopyMap() as Record<string, unknown>
+    map.slide_5 = {
+      pill: 'Rocky at Tau Ceti',
+      body: 'A 2.9 point jump in ten minutes. The score climbs to 8.7.',
+    }
+    mockMessagesCreate.mockResolvedValueOnce(
+      mockApiResponse(
+        map as Record<string, { pill: string; headline: string; body: string }>,
+      ),
+    )
+    await expect(generateBodyCopy(PHM_INPUT)).rejects.toThrow(/headline/)
+  })
+
+  it('throws BodyCopyGenerationError when a headline is an empty string', async () => {
+    const map = validSlideCopyMap()
+    map.slide_3.headline = '   '
+    mockMessagesCreate.mockResolvedValueOnce(mockApiResponse(map))
+    await expect(generateBodyCopy(PHM_INPUT)).rejects.toThrow(/headline/)
+  })
+
+  it('throws BodyCopyGenerationError when a headline contains an em dash', async () => {
+    const map = validSlideCopyMap()
+    map.slide_6.headline = 'Sacrifice \u2014 without hesitation.'
+    mockMessagesCreate.mockResolvedValueOnce(mockApiResponse(map))
+    await expect(generateBodyCopy(PHM_INPUT)).rejects.toThrow(
+      /headline contains forbidden dash/,
+    )
   })
 
   it('throws BodyCopyGenerationError on malformed JSON', async () => {
@@ -369,6 +460,13 @@ describe('parseBodyCopyResponse — forgiving JSON extraction', () => {
     expect(parsed[4].body).toContain('5.8')
     expect(parsed[6].body).toContain('9.5')
     expect(parsed[6].pill).toBe('Rocky saves Grace')
+    expect(parsed[6].headline).toBe('Sacrifice without hesitation.')
+    // Every middle slide must carry all three string fields.
+    for (const n of [2, 3, 4, 5, 6, 7] as const) {
+      expect(typeof parsed[n].pill).toBe('string')
+      expect(typeof parsed[n].headline).toBe('string')
+      expect(typeof parsed[n].body).toBe('string')
+    }
   })
 
   it('parses JSON preceded by a preamble sentence', () => {

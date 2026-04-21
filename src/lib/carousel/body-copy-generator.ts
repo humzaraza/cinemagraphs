@@ -46,6 +46,9 @@ export type SlideBeatContext = {
 
 export type SlideCopy = {
   pill: string
+  // Short serif headline rendered under the pill. Supporting copy — emotional
+  // framing in 3-6 words. NOT a restatement of the pill or storyBeatName.
+  headline: string
   body: string
 }
 
@@ -177,7 +180,7 @@ export function computeCharacteristics(dataPoints: DataPoint[]): GraphCharacteri
 // ── Prompt construction ───────────────────────────────────────
 
 export function buildSystemPrompt(): string {
-  return `You are a thoughtful film critic writing body copy for Cinemagraphs, a brand that visualizes how audience sentiment shifts across a film's runtime as a graph of scored beats. Each post is a carousel of 8 slides. Slides 2 through 7 each highlight a single beat on the graph. Your job is to write a short pill label AND the body copy that sits under the graph on those middle slides.
+  return `You are a thoughtful film critic writing body copy for Cinemagraphs, a brand that visualizes how audience sentiment shifts across a film's runtime as a graph of scored beats. Each post is a carousel of 8 slides. Slides 2 through 7 each highlight a single beat on the graph. Your job is to write a short pill label, a short serif headline, AND the body copy that sits under the graph on those middle slides.
 
 ## Voice
 
@@ -303,20 +306,41 @@ If storyBeatName is an empty string for a given slide, use one of these generic 
 - ending → "The ending"
 - fallback → "This beat"
 
+## Headlines
+
+Each slide has a short serif headline rendered below the pill. The headline is SUPPORTING copy — emotional framing for the beat in 3 to 6 words. It is NOT a restatement of the storyBeatName (that's the pill's job) and it is NOT a plot summary. Think of it as a caption that captures the vibe or the stakes of the moment.
+
+Headline constraints:
+- 3 to 6 words. Short.
+- Sentence case with a trailing period. Examples: "Already inside the world.", "No score survives this.", "The floor is gone."
+- Emotional or observational framing. Specific to the beat, not the slot.
+- Must NOT repeat the pill or the storyBeatName verbatim. If the pill names the scene, the headline frames the feeling.
+- Do NOT use these generic filler phrases (they sound like slot-label defaults, not editorial):
+  - "Where the story starts"
+  - "How it lands"
+  - "Then the floor drops out"
+  - "Then it finds its footing"
+  - "The audience settles in"
+  - "Another beat in the shape"
+  - "How it begins"
+  - "The film's highest moment"
+  - "Straight into the mystery"
+- If the beat's actual score behavior contradicts its slot role (for example, originalRole is "drop" but the score sits near a peak, or originalRole is "recovery" but the score is one of the lowest), TRUST THE DATA. Write the headline to match what the score is actually doing, not what the slot was named. A slot named "drop" at score 9.2 should read like a peak moment.
+
 ## Output format
 
 Return ONLY a single JSON object, no markdown fences, no preamble, no trailing text. Schema:
 
 {
-  "slide_2": { "pill": "...", "body": "..." },
-  "slide_3": { "pill": "...", "body": "..." },
-  "slide_4": { "pill": "...", "body": "..." },
-  "slide_5": { "pill": "...", "body": "..." },
-  "slide_6": { "pill": "...", "body": "..." },
-  "slide_7": { "pill": "...", "body": "..." }
+  "slide_2": { "pill": "...", "headline": "...", "body": "..." },
+  "slide_3": { "pill": "...", "headline": "...", "body": "..." },
+  "slide_4": { "pill": "...", "headline": "...", "body": "..." },
+  "slide_5": { "pill": "...", "headline": "...", "body": "..." },
+  "slide_6": { "pill": "...", "headline": "...", "body": "..." },
+  "slide_7": { "pill": "...", "headline": "...", "body": "..." }
 }
 
-All six keys are required. Each value is an object with exactly two string fields: pill and body.`
+All six keys are required. Each value is an object with exactly three string fields: pill, headline, and body.`
 }
 
 export function buildUserPrompt(
@@ -330,16 +354,26 @@ export function buildUserPrompt(
     criticsScore: input.criticsScore,
   }
   const dataPoints = input.dataPoints.map((p) => ({ t: p.t, s: p.s }))
-  const slides = input.slides.map((s) => ({
-    slideNumber: s.slideNumber,
-    originalRole: s.originalRole,
-    storyBeatName: s.storyBeatName,
-    beatTimestamp: s.beatTimestamp,
-    beatScore: s.beatScore,
-    beatColor: s.beatColor,
-  }))
+  // scoreDelta = change from the previous chronological slide's beat score.
+  // Lets the model cross-check its drop/peak claims against the actual
+  // local movement: a slot labeled "drop" with a positive delta means the
+  // score is actually rising at that moment, and the copy should reflect
+  // that rather than the slot label.
+  const slides = input.slides.map((s, i) => {
+    const prev = i > 0 ? input.slides[i - 1] : null
+    const scoreDelta = prev ? +(s.beatScore - prev.beatScore).toFixed(2) : 0
+    return {
+      slideNumber: s.slideNumber,
+      originalRole: s.originalRole,
+      storyBeatName: s.storyBeatName,
+      beatTimestamp: s.beatTimestamp,
+      beatScore: s.beatScore,
+      beatColor: s.beatColor,
+      scoreDelta,
+    }
+  })
 
-  return `Write pill labels and body copy for slides 2 through 7 of a Cinemagraphs carousel for the following film. Return ONLY the JSON object described in the system prompt.
+  return `Write pill labels, headlines, and body copy for slides 2 through 7 of a Cinemagraphs carousel for the following film. Return ONLY the JSON object described in the system prompt.
 
 Film:
 ${JSON.stringify(film, null, 2)}
@@ -350,12 +384,14 @@ ${JSON.stringify(dataPoints, null, 2)}
 Computed graph characteristics:
 ${JSON.stringify(characteristics, null, 2)}
 
-Slide beat contexts (each slide highlights one beat, ordered chronologically):
+Slide beat contexts (each slide highlights one beat, ordered chronologically; scoreDelta is the change from the previous slide's beat score and is 0 for the first slide):
 ${JSON.stringify(slides, null, 2)}
 
 Remember:
 - Every body-copy string must reference its highlighted beat's exact score, wrapped in the correct color marker.
 - Derive each pill from the storyBeatName, compressed to 30 characters or fewer. Fall back to the generic role label only when storyBeatName is empty.
+- Headline is 3-6 words, sentence case with a period, NOT a restatement of the pill. Avoid the forbidden generic filler phrases in the system prompt.
+- When scoreDelta contradicts the slot's originalRole (e.g., originalRole "drop" with a positive delta, or originalRole "peak" with a negative delta), trust the data and write the headline and body to match what the score is actually doing.
 - No em dashes, no en dashes. Sentence case. Two to three sentences each, 30-50 words.
 - Body copy must describe the scene AND the reason the score is what it is. Do not close with a summary-philosophical sentence.
 - Do not invent plot details beyond what is provided above.`
@@ -418,6 +454,9 @@ function tryParseJsonWithFallbacks(raw: string): unknown {
 }
 
 const MAX_PILL_LENGTH = 30
+// Headline is short editorial framing (3-6 words). 80 chars leaves room for
+// longer words while still catching runaway generations.
+const MAX_HEADLINE_LENGTH = 80
 
 function parseBodyCopyResponse(raw: string): Record<MiddleSlideNumber, SlideCopy> {
   const parsed = tryParseJsonWithFallbacks(raw)
@@ -435,16 +474,23 @@ function parseBodyCopyResponse(raw: string): Record<MiddleSlideNumber, SlideCopy
     const val = obj[key]
     if (!val || typeof val !== 'object' || Array.isArray(val)) {
       throw new BodyCopyGenerationError(
-        `Response missing or malformed key "${key}" — expected object with pill and body`,
+        `Response missing or malformed key "${key}" — expected object with pill, headline, and body`,
         { rawResponse: raw, offendingSlide: n },
       )
     }
     const entry = val as Record<string, unknown>
     const pill = entry.pill
+    const headline = entry.headline
     const body = entry.body
     if (typeof pill !== 'string' || pill.trim() === '') {
       throw new BodyCopyGenerationError(
         `Response key "${key}" missing or empty "pill"`,
+        { rawResponse: raw, offendingSlide: n },
+      )
+    }
+    if (typeof headline !== 'string' || headline.trim() === '') {
+      throw new BodyCopyGenerationError(
+        `Response key "${key}" missing or empty "headline"`,
         { rawResponse: raw, offendingSlide: n },
       )
     }
@@ -454,11 +500,11 @@ function parseBodyCopyResponse(raw: string): Record<MiddleSlideNumber, SlideCopy
         { rawResponse: raw, offendingSlide: n },
       )
     }
-    out[n] = { pill: pill.trim(), body }
+    out[n] = { pill: pill.trim(), headline: headline.trim(), body }
   }
 
   for (const n of MIDDLE_SLIDE_NUMBERS) {
-    const { pill, body } = out[n]
+    const { pill, headline, body } = out[n]
     if (body.includes(EM_DASH) || body.includes(EN_DASH)) {
       throw new BodyCopyGenerationError(
         'Generated copy contains forbidden dash character',
@@ -471,9 +517,21 @@ function parseBodyCopyResponse(raw: string): Record<MiddleSlideNumber, SlideCopy
         { rawResponse: raw, offendingSlide: n },
       )
     }
+    if (headline.includes(EM_DASH) || headline.includes(EN_DASH)) {
+      throw new BodyCopyGenerationError(
+        'Generated headline contains forbidden dash character',
+        { rawResponse: raw, offendingSlide: n },
+      )
+    }
     if (pill.length > MAX_PILL_LENGTH) {
       throw new BodyCopyGenerationError(
         `Generated pill exceeds ${MAX_PILL_LENGTH} characters (got ${pill.length}): "${pill}"`,
+        { rawResponse: raw, offendingSlide: n },
+      )
+    }
+    if (headline.length > MAX_HEADLINE_LENGTH) {
+      throw new BodyCopyGenerationError(
+        `Generated headline exceeds ${MAX_HEADLINE_LENGTH} characters (got ${headline.length}): "${headline}"`,
         { rawResponse: raw, offendingSlide: n },
       )
     }

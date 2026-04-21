@@ -111,6 +111,10 @@ type FormatSpec = {
   bodySize: number
   beatLabelSize: number
   pillSize: number
+  // Headline size varies by format; the headline is the serif line under the
+  // pill on slides 2-7. Kept alongside pillSize so the two can be tuned
+  // together when the format changes.
+  headlineSize: number
   miniGraph: { w: number; h: number }
 }
 
@@ -134,7 +138,8 @@ function specFor(format: '4x5' | '9x16'): FormatSpec {
       counterSize: 14,
       bodySize: 24,
       beatLabelSize: 28,
-      pillSize: 18,
+      pillSize: 22,
+      headlineSize: 44,
       miniGraph: { w: 800, h: 160 },
     }
   }
@@ -157,7 +162,8 @@ function specFor(format: '4x5' | '9x16'): FormatSpec {
     counterSize: 16,
     bodySize: 30,
     beatLabelSize: 36,
-    pillSize: 22,
+    pillSize: 28,
+    headlineSize: 56,
     miniGraph: { w: 900, h: 180 },
   }
 }
@@ -461,14 +467,15 @@ function pillText(label: string, x: number, yBaseline: number, spec: FormatSpec)
   )
 }
 
-// Headline renders a single <text> with tspans for multi-line.
+// Headline renders a single <text> with tspans for multi-line. `size` is the
+// format-specific font size supplied by the caller (see FormatSpec.headlineSize).
 function headlineTspans(
   text: string,
   x: number,
   firstBaseline: number,
   maxWidthPx: number,
+  size: number,
 ): { svg: string; lines: number; fontSize: number; lineHeight: number } {
-  const size = 56
   const lineHeight = size * 1.1
   const lines = wrapText(text, maxWidthPx, size, CHAR_FACTOR_SERIF)
   const safeLines = lines.length > 0 ? lines : ['']
@@ -617,12 +624,13 @@ function composeMiddleSlide(
   body.push(pillText(content.pillLabel, 60, pillBaseline, spec))
 
   const headlineMaxWidth = (spec.canvasW - 120) * 0.7
-  const headlineFirstBaseline = pillBaseline + 16 + 56
+  const headlineFirstBaseline = pillBaseline + 16 + spec.headlineSize
   const headline = headlineTspans(
     content.headline,
     60,
     headlineFirstBaseline,
     headlineMaxWidth,
+    spec.headlineSize,
   )
   body.push(headline.svg)
 
@@ -655,15 +663,37 @@ function composeMiddleSlide(
   )
 
   // Inline beat label — anchored off the highlighted dot position.
+  // Edge-aware: when the dot sits within 60px of either side of the graph
+  // zone, the label flips inward so its text never runs past the canvas
+  // edge. The dot's glow halo can still extend past the edge; only the
+  // numeric text shifts. Anywhere mid-zone, the label centers on the dot.
   const dot = dotPositions[content.highlightBeatIndex]
   const plotMidY = spec.graphZone.h / 2
   const inUpperHalf = dot.y < plotMidY
-  const labelX = spec.graphZone.x + dot.x
+  const dotX = spec.graphZone.x + dot.x
   const labelY = spec.graphZone.y + dot.y + (inUpperHalf ? -32 : 40)
   const labelColor = DOT_COLOR_HEX[dot.color]
   const labelSize = spec.beatLabelSize
+
+  const EDGE_THRESHOLD = 60
+  const EDGE_OFFSET = 40
+  let labelX: number
+  let labelAnchor: 'start' | 'middle' | 'end'
+  if (dot.x > spec.graphZone.w - EDGE_THRESHOLD) {
+    // Close to right edge: push label inward and anchor its right side.
+    labelX = dotX - EDGE_OFFSET
+    labelAnchor = 'end'
+  } else if (dot.x < EDGE_THRESHOLD) {
+    // Close to left edge: push label inward and anchor its left side.
+    labelX = dotX + EDGE_OFFSET
+    labelAnchor = 'start'
+  } else {
+    labelX = dotX
+    labelAnchor = 'middle'
+  }
+
   body.push(
-    `<text x="${fmt(labelX)}" y="${fmt(labelY)}" fill="${labelColor}" font-family="DM Sans" font-size="${labelSize}" font-weight="500" text-anchor="middle">${dot.score.toFixed(1)}</text>`,
+    `<text x="${fmt(labelX)}" y="${fmt(labelY)}" fill="${labelColor}" font-family="DM Sans" font-size="${labelSize}" font-weight="500" text-anchor="${labelAnchor}">${dot.score.toFixed(1)}</text>`,
   )
 
   // Body copy (plain monochrome in C1).

@@ -354,6 +354,84 @@ export function selectBeatSlots(
   }
   assigned.sort((a, b) => a.beat.timeMidpoint - b.beat.timeMidpoint)
 
+  // ── Phase 4b: spacing fix ──────────────────────────────────
+  // When narrative picks cluster (e.g. drop and recovery landing within a few
+  // minutes of each other on a film like Kill Bill Vol. 1), the slides lose
+  // the visual sense of motion across the runtime. If two chronologically
+  // adjacent picks sit <10 min apart AND there is an unused beat that would
+  // sit ≥15 min from the surrounding (preceding + following) picks, swap in
+  // the better-spread beat. The slot's originalRole is preserved — only the
+  // underlying beat changes. A few passes run in sequence so a single swap
+  // that opens a new tight gap can be corrected on a follow-up pass.
+  const MIN_GAP = 10
+  const MIN_NEIGHBOR_DISTANCE = 15
+  for (let pass = 0; pass < 4; pass++) {
+    let swapped = false
+    const usedTimes = new Set(assigned.map((a) => a.beat.timeMidpoint))
+    const unused = beats.filter((b) => !usedTimes.has(b.timeMidpoint))
+    if (unused.length === 0) break
+
+    for (let i = 0; i < assigned.length - 1; i++) {
+      const a = assigned[i]
+      const next = assigned[i + 1]
+      const gap = next.beat.timeMidpoint - a.beat.timeMidpoint
+      if (gap >= MIN_GAP) continue
+
+      const prev = i > 0 ? assigned[i - 1].beat : null
+      const after = i + 2 < assigned.length ? assigned[i + 2].beat : null
+
+      let bestChoice:
+        | { replaceIdx: number; beat: Beat; minDist: number }
+        | null = null
+
+      for (const b of unused) {
+        // Option 1: replace assigned[i] (the earlier element of the tight
+        // pair) with b. b must sit ≥15 min from the preceding pick and from
+        // the other element of the tight pair.
+        {
+          const distPrev = prev
+            ? Math.abs(b.timeMidpoint - prev.timeMidpoint)
+            : Infinity
+          const distOther = Math.abs(b.timeMidpoint - next.beat.timeMidpoint)
+          if (distPrev >= MIN_NEIGHBOR_DISTANCE && distOther >= MIN_NEIGHBOR_DISTANCE) {
+            const minDist = Math.min(distPrev, distOther)
+            if (!bestChoice || minDist > bestChoice.minDist) {
+              bestChoice = { replaceIdx: i, beat: b, minDist }
+            }
+          }
+        }
+        // Option 2: replace assigned[i+1] (the later element of the tight
+        // pair) with b. b must sit ≥15 min from the other element of the
+        // tight pair and from the following pick.
+        {
+          const distOther = Math.abs(b.timeMidpoint - a.beat.timeMidpoint)
+          const distAfter = after
+            ? Math.abs(b.timeMidpoint - after.timeMidpoint)
+            : Infinity
+          if (distOther >= MIN_NEIGHBOR_DISTANCE && distAfter >= MIN_NEIGHBOR_DISTANCE) {
+            const minDist = Math.min(distOther, distAfter)
+            if (!bestChoice || minDist > bestChoice.minDist) {
+              bestChoice = { replaceIdx: i + 1, beat: b, minDist }
+            }
+          }
+        }
+      }
+
+      if (bestChoice) {
+        const old = assigned[bestChoice.replaceIdx]
+        assigned[bestChoice.replaceIdx] = {
+          beat: bestChoice.beat,
+          role: old.role,
+        }
+        assigned.sort((x, y) => x.beat.timeMidpoint - y.beat.timeMidpoint)
+        swapped = true
+        break // restart outer loop on re-sorted assigned
+      }
+    }
+
+    if (!swapped) break
+  }
+
   // ── Phase 5: assign to slots 2-7 in chronological order ────
   const slots = empty.slice()
   for (let i = 0; i < assigned.length && i < 6; i++) {

@@ -336,3 +336,70 @@ describe('selectBeatSlots — chronological reassignment', () => {
     })
   })
 })
+
+describe('selectBeatSlots — spacing fix for clustered picks', () => {
+  describe('Kill Bill-like clustering: drop and recovery land 5 minutes apart', () => {
+    it('swaps in a better-spread unused beat so no consecutive picks sit <10 min apart, preserving originalRole on the slot whose beat changes', () => {
+      // Handcrafted beat array where the narrative drop (t=75, s=4.5) and
+      // recovery (t=80, s=7.0) sit 5 min apart — the scenario that triggers
+      // the spacing fix. Unused beats at t=20 and t=60 are available as
+      // better-spread alternatives; the spacing pass should pick one.
+      const beats: Beat[] = [
+        { timeStart: 0, timeEnd: 10, timeMidpoint: 5, score: 6.5, label: 'b0', labelFull: 'b0', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 15, timeEnd: 25, timeMidpoint: 20, score: 8.0, label: 'b1', labelFull: 'b1', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 30, timeEnd: 50, timeMidpoint: 40, score: 8.2, label: 'b2', labelFull: 'b2', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 55, timeEnd: 65, timeMidpoint: 60, score: 7.0, label: 'b3', labelFull: 'b3', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 70, timeEnd: 80, timeMidpoint: 75, score: 4.5, label: 'b4', labelFull: 'b4', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 75, timeEnd: 85, timeMidpoint: 80, score: 7.0, label: 'b5', labelFull: 'b5', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 80, timeEnd: 90, timeMidpoint: 85, score: 8.5, label: 'b6', labelFull: 'b6', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 85, timeEnd: 95, timeMidpoint: 90, score: 9.5, label: 'b7', labelFull: 'b7', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 90, timeEnd: 100, timeMidpoint: 95, score: 9.0, label: 'b8', labelFull: 'b8', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 95, timeEnd: 105, timeMidpoint: 100, score: 8.2, label: 'b9', labelFull: 'b9', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 100, timeEnd: 111, timeMidpoint: 108, score: 7.5, label: 'b10', labelFull: 'b10', confidence: 'medium', reviewEvidence: '' },
+      ]
+      const runtime = 111
+      const slots = selectBeatSlots(beats, runtime)
+
+      // After the spacing fix, no two consecutive middle slots should be
+      // less than 10 minutes apart.
+      const times = slots.slice(1, 7).map((s) => s.beat!.timeMidpoint)
+      for (let i = 1; i < times.length; i++) {
+        expect(times[i] - times[i - 1]).toBeGreaterThanOrEqual(10)
+      }
+
+      // The 6 picks should span at least 40% of the runtime.
+      const span = times[times.length - 1] - times[0]
+      expect(span).toBeGreaterThanOrEqual(Math.round(runtime * 0.4))
+
+      // Every slot that received a beat still carries an originalRole, even
+      // though the spacing pass may have swapped in a different beat than
+      // the narrative role originally picked.
+      for (let i = 1; i <= 6; i++) {
+        expect(slots[i].originalRole).toBeDefined()
+        expect(slots[i].originalRole).not.toBe(undefined)
+      }
+
+      // One of slots 2-7 must now hold an earlier beat that the original
+      // narrative picks missed — specifically t=20 (beats[1]) or t=60
+      // (beats[3]). Without the spacing fix, neither would appear.
+      const allTimes = slots.slice(1, 7).map((s) => s.beat!.timeMidpoint)
+      const pulledInEarly = allTimes.some((t) => t === 20 || t === 60)
+      expect(pulledInEarly).toBe(true)
+    })
+  })
+
+  describe('Already well-spread picks are left alone', () => {
+    it('does not swap when all consecutive gaps are already ≥10 min', () => {
+      const runtime = 100
+      const total = 10
+      const scores = [7.0, 7.2, 6.8, 4.5, 5.0, 6.0, 7.5, 8.8, 9.5, 8.0]
+      const beats = scores.map((s, i) => mkBeat(i, runtime, total, s))
+      const slots = selectBeatSlots(beats, runtime)
+
+      // Original V-shape assertion (unchanged by spacing pass): drop at
+      // beats[3], peak at beats[8]. No swap fires because every gap is ≥10.
+      expect(slots[3].beat).toBe(beats[3])
+      expect(slots[5].beat).toBe(beats[8])
+    })
+  })
+})
