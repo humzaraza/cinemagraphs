@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Carousel structure reference (Instagram 4:5)</title>
+<!--
+  ============================================================
+  Carousel structure reference. Instagram 4:5 (1080 x 1350).
+  ============================================================
+
+  What this file is.
+  Design reference, not production. It documents the slot
+  layout, chrome positions, background treatments, and the
+  zone into which Phase B graph output is composited. Phase C
+  should read positions and styles from here, not extract
+  markup to ship as templates.
+
+  Phase B contract (graph renderer).
+  renderGraph({ width, height, format, highlightBeatIndex })
+    returns a PNG buffer sized to width x height in the given
+    format ('4x5' or '9x16'). When highlightBeatIndex is set,
+    one dot is emphasised and others dimmed.
+  Phase B also returns dotPositions: Array<{ x, y, score, color }>
+    where x, y are pixel coordinates inside the rendered graph.
+    Phase C uses dotPositions[highlightBeatIndex] to place the
+    inline beat label next to the highlighted dot. The
+    data-beat-x / data-beat-y attributes below are placeholders
+    only (approximate, for layout review).
+
+  Background rules.
+  - Slide 1 and slide 8: sharp background (no blur). Film still
+    renders without filter. A single vertical gradient overlay
+    sits on top. No dark panel behind anything.
+  - Slides 2 through 7: blurred background plus dark panel.
+    Film still renders with filter: blur(20px) (CSS equivalent
+    of resvg stdDeviation=10 in production). Vertical gradient
+    overlay on top. A dark rectangular panel with
+    background: var(--panel-bg) sits behind the graph zone with
+    20px padding on all sides.
+
+  Backgrounds in this reference file are solid dark gradients,
+  not real images. Each slide uses a slightly different hue so
+  the blur treatment remains visible. Each is annotated
+  "Placeholder for TMDB still".
+
+  Units, alignment, anchors.
+  - All offsets are in px from the corresponding canvas edge.
+  - "Top-left 60/60" means top: 60; left: 60.
+  - The graph zone is centered horizontally and sits in the
+    middle vertical third of the canvas.
+
+  Content rules.
+  - Sentence case everywhere, including headlines. No Title Case.
+  - No em dashes anywhere. Periods, commas, or parentheses only.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&family=DM+Sans:wght@400;500;700&family=Libre+Baskerville:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* ── Design tokens ──────────────────────────────────── */
+  :root {
+    --bg: #0D0D1A;
+    --gold: #C8A951;
+    --teal: #2DD4A8;
+    --red: #E05555;
+    --cream: #F5F0E1;
+    --cream-muted: rgba(245, 240, 225, 0.7);
+    --cream-subtle: rgba(245, 240, 225, 0.5);
+    --panel-bg: rgba(13, 13, 26, 0.25);
+    --gradient-top: rgba(13, 13, 26, 0.5);
+    --gradient-bottom: rgba(13, 13, 26, 0.97);
+    --font-serif: 'Playfair Display', Georgia, serif;
+    --font-sans: 'DM Sans', system-ui, sans-serif;
+    --font-brand: 'Libre Baskerville', Georgia, serif;
+  }
+
+  /* ── Page chrome (not part of the slide design) ────── */
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #14141d;
+    color: var(--cream);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  .page {
+    padding: 48px 24px 96px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+  }
+  .slide-caption {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: rgba(245, 240, 225, 0.4);
+    margin-top: 40px;
+  }
+
+  /* ── Canvas (the actual slide, 1080 x 1350) ────────── */
+  .slide {
+    position: relative;
+    width: 1080px;
+    height: 1350px;
+    overflow: hidden;
+    background: var(--bg);
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
+  }
+
+  /* ── Background layers ──────────────────────────────── */
+  .bg-still {
+    position: absolute;
+    inset: 0;
+  }
+  .bg-still.blur {
+    filter: blur(20px);
+    /* Scale up so blurred edges do not reveal the canvas edge. */
+    transform: scale(1.08);
+  }
+  .bg-gradient {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to bottom,
+      var(--gradient-top),
+      var(--gradient-bottom)
+    );
+  }
+
+  /* ── Graph panel and zone (slides 2 through 7) ─────── */
+  .graph-panel {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    padding: 20px;
+    background: var(--panel-bg);
+  }
+  .graph-zone {
+    position: relative;
+    width: 960px;
+    height: 540px;
+  }
+  .graph-zone > img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* Inline beat label. Positioned via left/top percentages
+     against the graph zone. In production these come from
+     Phase B dotPositions; values in this reference are
+     approximate placeholders for layout review only. */
+  .beat-label {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    font-family: var(--font-sans);
+    font-size: 28px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  /* ── Chrome shared across slides 2 through 7 ───────── */
+  .top-text {
+    position: absolute;
+    top: 60px;
+    left: 60px;
+    right: 60px;
+  }
+  .pill {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin: 0 0 16px 0;
+  }
+  .headline {
+    font-family: var(--font-serif);
+    font-size: 56px;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--cream);
+    max-width: 70%;
+    margin: 0;
+  }
+
+  .body {
+    position: absolute;
+    left: 60px;
+    right: 60px;
+    bottom: 220px;
+    font-family: var(--font-sans);
+    font-size: 24px;
+    line-height: 1.5;
+    color: var(--cream-muted);
+  }
+  .body .score-gold { color: var(--gold); font-weight: 500; }
+  .body .score-teal { color: var(--teal); font-weight: 500; }
+  .body .score-red  { color: var(--red);  font-weight: 500; }
+
+  .brand {
+    position: absolute;
+    left: 60px;
+    bottom: 60px;
+  }
+  .brand-name {
+    font-family: var(--font-brand);
+    font-size: 20px;
+    color: var(--gold);
+    line-height: 1.2;
+  }
+  .brand-tagline {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    color: var(--cream-muted);
+    margin-top: 4px;
+  }
+  .counter {
+    position: absolute;
+    right: 60px;
+    bottom: 60px;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    color: var(--cream-subtle);
+  }
+
+  /* ── Slide 1 (Hook) unique chrome ──────────────────── */
+  .film-title {
+    font-family: var(--font-serif);
+    font-size: 88px;
+    font-weight: 700;
+    line-height: 1.05;
+    color: var(--cream);
+    max-width: 88%;
+    margin: 0 0 20px 0;
+  }
+  .film-metadata {
+    font-family: var(--font-sans);
+    font-size: 22px;
+    color: var(--cream-muted);
+    margin: 0;
+  }
+  .big-score {
+    position: absolute;
+    left: 60px;
+    bottom: 180px;
+    display: flex;
+    align-items: baseline;
+    gap: 20px;
+  }
+  .big-score-label {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--cream-muted);
+  }
+  .big-score-number {
+    font-family: var(--font-serif);
+    font-size: 120px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--gold);
+  }
+
+  /* ── Slide 8 (Takeaway) unique chrome ──────────────── */
+  .slide-8-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0 60px;
+    box-sizing: border-box;
+  }
+  .s8-number {
+    font-family: var(--font-serif);
+    font-size: 140px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--gold);
+    margin: 0 0 24px 0;
+  }
+  .s8-italic {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 40px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--cream);
+    max-width: 70%;
+    margin: 0 0 32px 0;
+  }
+  .s8-rule {
+    width: 60px;
+    height: 1px;
+    background: var(--cream-muted);
+    margin: 0 0 32px 0;
+  }
+  .s8-uppercase {
+    font-family: var(--font-sans);
+    font-size: 20px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--cream);
+    margin: 0 0 32px 0;
+  }
+  .s8-mini-graph {
+    width: 240px;
+    height: 80px;
+    margin: 0 0 48px 0;
+  }
+  .s8-mini-graph > img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+  .s8-brand {
+    font-family: var(--font-brand);
+    font-size: 32px;
+    color: var(--gold);
+    margin: 0 0 12px 0;
+  }
+  .s8-tagline {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    color: var(--cream-subtle);
+    margin: 0;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ══════════════════════════════════════════════════════════
+     Slide 1. Hook. Sharp background. No graph. Unique chrome.
+     ══════════════════════════════════════════════════════════ -->
+<div class="slide-caption">Slide 01. Hook. 1080 x 1350.</div>
+<section class="slide slide-1">
+
+  <!-- Background. Sharp (no blur). -->
+  <!-- Placeholder for TMDB still -->
+  <div class="bg-still" style="background: linear-gradient(135deg, #1a1a2e, #0D0D1A);"></div>
+
+  <!-- Vertical gradient overlay. -->
+  <div class="bg-gradient"></div>
+
+  <!-- Top chrome. Pill, film title, metadata. Anchored top-left 60/60. -->
+  <div class="top-text">
+    <div class="pill">BEAT BY BEAT</div>
+    <h1 class="film-title">Project Hail Mary</h1>
+    <div class="film-metadata">2026 · 2h 37m · Sci-Fi · Drama</div>
+  </div>
+
+  <!-- Big score. Bottom-left, above the brand block.
+       CRITICS label and 8.3 number share one baseline. -->
+  <div class="big-score">
+    <span class="big-score-label">CRITICS</span>
+    <span class="big-score-number">8.3</span>
+  </div>
+
+  <!-- Brand block. Bottom-left 60/60. -->
+  <div class="brand">
+    <div class="brand-name">Cinemagraphs</div>
+    <div class="brand-tagline">Movie reviews, visualized</div>
+  </div>
+
+  <!-- Slide counter. Bottom-right 60/60. -->
+  <div class="counter">01 / 08</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     Slide 2. The Opening. Standard template.
+     Highlighted beat: t=5, s=7.8, gold.
+     ══════════════════════════════════════════════════════════ -->
+<div class="slide-caption">Slide 02. The opening. 1080 x 1350.</div>
+<section class="slide slide-2">
+
+  <!-- Background. Blurred. Subtle blue tint for spaceship opening. -->
+  <!-- Placeholder for TMDB still -->
+  <div class="bg-still blur" style="background: linear-gradient(135deg, #1a2438, #0D1020);"></div>
+
+  <!-- Vertical gradient overlay. -->
+  <div class="bg-gradient"></div>
+
+  <!-- Top chrome. Pill plus headline. Anchored top-left 60/60. -->
+  <div class="top-text">
+    <div class="pill">THE OPENING · 0M–5M</div>
+    <h2 class="headline">Straight into the mystery.</h2>
+  </div>
+
+  <!-- Graph zone. Centered horizontally and vertically.
+       960 x 540 inner, wrapped in a dark panel with 20px padding.
+       Phase B renderGraph output composited here.
+       Dimensions match width/height params passed to renderGraph. -->
+  <div class="graph-panel">
+    <div class="graph-zone">
+      <img src="../phase-b-renderer-output.png" alt="">
+      <!-- Inline beat label. Placeholder position only. -->
+      <div class="beat-label"
+           data-beat-x="5%" data-beat-y="28%"
+           style="left: 5%; top: 28%; color: var(--gold);">7.8</div>
+    </div>
+  </div>
+
+  <!-- Body copy. 60/60 sides, 220 from bottom. -->
+  <div class="body">
+    Ryland wakes up on a spaceship light-years from Earth with no memory. The audience is locked in before minute 5. The score hits <span class="score-gold">7.8</span> almost immediately.
+  </div>
+
+  <!-- Brand block. -->
+  <div class="brand">
+    <div class="brand-name">Cinemagraphs</div>
+    <div class="brand-tagline">Movie reviews, visualized</div>
+  </div>
+
+  <!-- Slide counter. -->
+  <div class="counter">02 / 08</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     Slide 3. The Setup. Standard template.
+     Highlighted beat: t=55, s=8.1, teal (admin-picked Hook).
+     ══════════════════════════════════════════════════════════ -->
+<div class="slide-caption">Slide 03. The setup. 1080 x 1350.</div>
+<section class="slide slide-3">
+
+  <!-- Background. Blurred. Teal-gray tint for science montage. -->
+  <!-- Placeholder for TMDB still -->
+  <div class="bg-still blur" style="background: linear-gradient(135deg, #1e2a2a, #0D1818);"></div>
+
+  <div class="bg-gradient"></div>
+
+  <div class="top-text">
+    <div class="pill">THE SETUP · 15M–55M</div>
+    <h2 class="headline">Then the science kicks in.</h2>
+  </div>
+
+  <div class="graph-panel">
+    <div class="graph-zone">
+      <img src="../phase-b-renderer-output.png" alt="">
+      <div class="beat-label"
+           data-beat-x="35%" data-beat-y="25%"
+           style="left: 35%; top: 25%; color: var(--teal);">8.1</div>
+    </div>
+  </div>
+
+  <div class="body">
+    A slow build through the first hour. Petrova Line. Astrophage. Recruitment. Audiences are patient but not gripped. The score hovers in the <span class="score-gold">7s</span> for forty minutes.
+  </div>
+
+  <div class="brand">
+    <div class="brand-name">Cinemagraphs</div>
+    <div class="brand-tagline">Movie reviews, visualized</div>
+  </div>
+
+  <div class="counter">03 / 08</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     Slide 4. The Drop. Standard template.
+     Highlighted beat: t=75, s=5.9, red.
+     ══════════════════════════════════════════════════════════ -->
+<div class="slide-caption">Slide 04. The drop. 1080 x 1350.</div>
+<section class="slide slide-4">
+
+  <!-- Background. Blurred. Muted purple. Hooded-portrait feel for the drugging scene. -->
+  <!-- Placeholder for TMDB still -->
+  <div class="bg-still blur" style="background: linear-gradient(135deg, #2b1e33, #1a0D22);"></div>
+
+  <div class="bg-gradient"></div>
+
+  <div class="top-text">
+    <div class="pill">THE DROP · 1H 15M</div>
+    <h2 class="headline">Then everything crashes.</h2>
+  </div>
+
+  <div class="graph-panel">
+    <div class="graph-zone">
+      <img src="../phase-b-renderer-output.png" alt="">
+      <div class="beat-label"
+           data-beat-x="48%" data-beat-y="43%"
+           style="left: 48%; top: 43%; color: var(--red);">5.9</div>
+    </div>
+  </div>
+
+  <div class="body">
+    At 1h 15m the score bottoms out at <span class="score-red">5.9</span>. The only red dot in the film. Eva Stratt drugs Ryland and forces him onto the ship. Audiences hate it, even knowing the plot needs it.
+  </div>
+
+  <div class="brand">
+    <div class="brand-name">Cinemagraphs</div>
+    <div class="brand-tagline">Movie reviews, visualized</div>
+  </div>
+
+  <div class="counter">04 / 08</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     Slide 5. First Contact. Standard template.
+     Highlighted beat: t=85, s=8.7, teal (admin-picked recovery).
+     ══════════════════════════════════════════════════════════ -->
+<div class="slide-caption">Slide 05. First contact. 1080 x 1350.</div>
+<section class="slide slide-5">
+
+  <!-- Background. Blurred. Cooler blue. Spacecraft rendezvous at Tau Ceti. -->
+  <!-- Placeholder for TMDB still -->
+  <div class="bg-still blur" style="background: linear-gradient(135deg, #1f2a38, #0D1a22);"></div>
+
+  <div class="bg-gradient"></div>
+
+  <div class="top-text">
+    <div class="pill">FIRST CONTACT · 1H 25M</div>
+    <h2 class="headline">Then Rocky shows up.</h2>
+  </div>
+
+  <div class="graph-panel">
+    <div class="graph-zone">
+      <img src="../phase-b-renderer-output.png" alt="">
+      <div class="beat-label"
+           data-beat-x="54%" data-beat-y="20%"
+           style="left: 54%; top: 20%; color: var(--teal);">8.7</div>
+    </div>
+  </div>
+
+  <div class="body">
+    A <span class="score-gold">2.8 point jump</span> in ten minutes. Rocky's alien spacecraft at Tau Ceti. The film transforms from cold thriller into something warmer.
+  </div>
+
+  <div class="brand">
+    <div class="brand-name">Cinemagraphs</div>
+    <div class="brand-tagline">Movie reviews, visualized</div>
+  </div>
+
+  <div class="counter">05 / 08</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     Slide 6. The Peak. Standard template.
+     Highlighted beat: t=115, s=9.5, teal.
+     ══════════════════════════════════════════════════════════ -->
+<div class="slide-caption">Slide 06. The peak. 1080 x 1350.</div>
+<section class="slide slide-6">
+
+  <!-- Background. Blurred. Warm amber for the emotional peak. -->
+  <!-- Placeholder for TMDB still -->
+  <div class="bg-still blur" style="background: linear-gradient(135deg, #2a1a18, #1a0D0A);"></div>
+
+  <div class="bg-gradient"></div>
+
+  <div class="top-text">
+    <div class="pill">THE PEAK · 1H 55M</div>
+    <h2 class="headline">The film's highest moment.</h2>
+  </div>
+
+  <div class="graph-panel">
+    <div class="graph-zone">
+      <img src="../phase-b-renderer-output.png" alt="">
+      <div class="beat-label"
+           data-beat-x="73%" data-beat-y="14%"
+           style="left: 73%; top: 14%; color: var(--teal);">9.5</div>
+    </div>
+  </div>
+
+  <div class="body">
+    Rocky breaks his spacesuit to save unconscious Ryland. The score hits <span class="score-teal">9.5</span>. You don't get this high without the <span class="score-red">5.9</span> that came before it.
+  </div>
+
+  <div class="brand">
+    <div class="brand-name">Cinemagraphs</div>
+    <div class="brand-tagline">Movie reviews, visualized</div>
+  </div>
+
+  <div class="counter">06 / 08</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     Slide 7. The Ending. Standard template.
+     Highlighted beat: t=154, s=7.4, gold.
+     ══════════════════════════════════════════════════════════ -->
+<div class="slide-caption">Slide 07. The ending. 1080 x 1350.</div>
+<section class="slide slide-7">
+
+  <!-- Background. Blurred. Cool muted blue for the bittersweet landing. -->
+  <!-- Placeholder for TMDB still -->
+  <div class="bg-still blur" style="background: linear-gradient(135deg, #1a2030, #0D1018);"></div>
+
+  <div class="bg-gradient"></div>
+
+  <div class="top-text">
+    <div class="pill">THE ENDING · 2H 34M</div>
+    <h2 class="headline">It pulls back on purpose.</h2>
+  </div>
+
+  <div class="graph-panel">
+    <div class="graph-zone">
+      <img src="../phase-b-renderer-output.png" alt="">
+      <div class="beat-label"
+           data-beat-x="96%" data-beat-y="31%"
+           style="left: 96%; top: 31%; color: var(--gold);">7.4</div>
+    </div>
+  </div>
+
+  <div class="body">
+    Ryland stays behind on Erid. No hero's return. The ending drops to <span class="score-gold">7.4</span>, the largest pullback of the final act. Not disappointment. A deliberate, bittersweet landing.
+  </div>
+
+  <div class="brand">
+    <div class="brand-name">Cinemagraphs</div>
+    <div class="brand-tagline">Movie reviews, visualized</div>
+  </div>
+
+  <div class="counter">07 / 08</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     Slide 8. Takeaway. Sharp background. Centered stack.
+     No pill, no headline, no body, no counter.
+     ══════════════════════════════════════════════════════════ -->
+<div class="slide-caption">Slide 08. Takeaway. 1080 x 1350.</div>
+<section class="slide slide-8">
+
+  <!-- Background. Sharp (no blur). Same neutral base as slide 1. -->
+  <!-- Placeholder for TMDB still -->
+  <div class="bg-still" style="background: linear-gradient(135deg, #1a1a2e, #0D0D1A);"></div>
+
+  <!-- Vertical gradient overlay. -->
+  <div class="bg-gradient"></div>
+
+  <!-- Centered vertical stack. Gaps between elements encoded as
+       margin-bottom on each item per the spec. -->
+  <div class="slide-8-center">
+
+    <!-- 8.3 in Playfair 140 gold. -->
+    <div class="s8-number">8.3</div>
+
+    <!-- "doesn't tell this story." in Playfair italic 40 cream. -->
+    <div class="s8-italic">doesn't tell this story.</div>
+
+    <!-- 1 px rule, 60 wide, cream-muted. -->
+    <div class="s8-rule"></div>
+
+    <!-- "THE GRAPH DOES." in DM Sans 20 uppercase letter-spaced cream. -->
+    <div class="s8-uppercase">THE GRAPH DOES.</div>
+
+    <!-- Mini graph. Phase B renderGraph output at 240 x 80. -->
+    <div class="s8-mini-graph">
+      <img src="../phase-b-renderer-output.png" alt="">
+    </div>
+
+    <!-- cinemagraphs.ca in Libre Baskerville 32 gold. -->
+    <div class="s8-brand">cinemagraphs.ca</div>
+
+    <!-- Tagline in DM Sans 16 cream-subtle. -->
+    <div class="s8-tagline">Every film. Every beat. Visualized.</div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

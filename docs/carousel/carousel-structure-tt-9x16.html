@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Carousel structure reference (TikTok 9:16)</title>
+<!--
+  ============================================================
+  Carousel structure reference. TikTok 9:16 (1080 x 1920).
+  Slide 6 only (The peak), shown as a representative sample.
+  ============================================================
+
+  What this file is.
+  Design reference, not production. It documents how the 4:5
+  slide layout transposes to 9:16. The deltas below apply to
+  all slides when scaling from 4:5 to 9:16. Slide 6 is the
+  reference sample because it exercises every chrome block
+  (pill, headline, graph zone, highlighted beat, multi-score
+  body copy, brand, counter).
+
+  Phase B contract (graph renderer).
+  renderGraph({ width, height, format, highlightBeatIndex })
+    returns a PNG buffer sized to width x height in the given
+    format ('4x5' or '9x16'). When highlightBeatIndex is set,
+    one dot is emphasised and others dimmed.
+  Phase B also returns dotPositions: Array<{ x, y, score, color }>
+    where x, y are pixel coordinates inside the rendered graph.
+    Phase C uses dotPositions[highlightBeatIndex] to place the
+    inline beat label next to the highlighted dot. The
+    data-beat-x / data-beat-y attributes below are placeholders
+    only (approximate, for layout review).
+
+  Background rules.
+  - Slide 1 and slide 8: sharp background (no blur). Film still
+    renders without filter. A single vertical gradient overlay
+    sits on top. No dark panel behind anything.
+  - Slides 2 through 7: blurred background plus dark panel.
+    Film still renders with filter: blur(20px) (CSS equivalent
+    of resvg stdDeviation=10 in production). Vertical gradient
+    overlay on top. A dark rectangular panel with
+    background: var(--panel-bg) sits behind the graph zone with
+    20px padding on all sides.
+
+  ────────────────────────────────────────────────────────────
+  9:16 DELTAS (apply to all slides when scaling 4:5 → 9:16).
+  ────────────────────────────────────────────────────────────
+
+  Canvas.
+    4:5:  1080 x 1350.
+    9:16: 1080 x 1920.
+
+  Graph zone.
+    4:5:  960 x 540, centered horizontally, centered in the
+          middle vertical third of the canvas.
+    9:16: 1000 x 1100, centered horizontally, vertical band
+          from roughly 15% to 75% of canvas height (per
+          GRAPH_OVERLAY_SPEC convention for the vertical
+          format). In this reference file the panel is anchored
+          with its top edge at 15% of canvas height (288 px)
+          and extends downward; the graph zone is 1000 x 1100
+          inside a panel with 20 px padding.
+    Dark panel (slides 2 through 7) still wraps the graph with
+    20 px padding on all sides. Panel outer dimensions scale
+    accordingly.
+
+  Pill and headline.
+    4:5:  top 60, left 60. Headline 56 px Playfair.
+    9:16: top 120, left 60. Headline size unchanged. More top
+          padding because 9:16 has more vertical room above
+          the graph zone.
+
+  Body copy.
+    4:5:  font-size 24, bottom 220, left/right 60.
+    9:16: font-size 30, bottom 220, left/right 60. Slightly
+          larger because vertical space is more generous.
+
+  Brand block and slide counter.
+    Same anchors (60 from the bottom corners).
+    Slightly larger type to match the larger canvas:
+      brand-name    20 → 24
+      brand-tagline 13 → 15
+      counter       14 → 16
+
+  General.
+    Chrome padding scales proportionally with the extra
+    vertical space. Horizontal anchors (60 from left / right
+    edges) are unchanged because the canvas width is the same
+    in both formats.
+
+  Content rules.
+  - Sentence case everywhere, including headlines. No Title Case.
+  - No em dashes anywhere. Periods, commas, or parentheses only.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&family=DM+Sans:wght@400;500;700&family=Libre+Baskerville:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* ── Design tokens ──────────────────────────────────── */
+  :root {
+    --bg: #0D0D1A;
+    --gold: #C8A951;
+    --teal: #2DD4A8;
+    --red: #E05555;
+    --cream: #F5F0E1;
+    --cream-muted: rgba(245, 240, 225, 0.7);
+    --cream-subtle: rgba(245, 240, 225, 0.5);
+    --panel-bg: rgba(13, 13, 26, 0.25);
+    --gradient-top: rgba(13, 13, 26, 0.5);
+    --gradient-bottom: rgba(13, 13, 26, 0.97);
+    --font-serif: 'Playfair Display', Georgia, serif;
+    --font-sans: 'DM Sans', system-ui, sans-serif;
+    --font-brand: 'Libre Baskerville', Georgia, serif;
+  }
+
+  /* ── Page chrome (not part of the slide design) ────── */
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #14141d;
+    color: var(--cream);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  .page {
+    padding: 48px 24px 96px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+  }
+  .slide-caption {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: rgba(245, 240, 225, 0.4);
+    margin-top: 40px;
+  }
+
+  /* ── Canvas (the actual slide, 1080 x 1920) ────────── */
+  .slide {
+    position: relative;
+    width: 1080px;
+    height: 1920px;
+    overflow: hidden;
+    background: var(--bg);
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
+  }
+
+  /* ── Background layers ──────────────────────────────── */
+  .bg-still {
+    position: absolute;
+    inset: 0;
+  }
+  .bg-still.blur {
+    filter: blur(20px);
+    /* Scale up so blurred edges do not reveal the canvas edge. */
+    transform: scale(1.08);
+  }
+  .bg-gradient {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to bottom,
+      var(--gradient-top),
+      var(--gradient-bottom)
+    );
+  }
+
+  /* ── Graph panel and zone.
+     Anchored at 15% of canvas height (288 px from top).
+     Panel is centered horizontally. 20 px padding wraps a
+     1000 x 1100 graph zone. Panel bottom sits near 75%. ── */
+  .graph-panel {
+    position: absolute;
+    left: 50%;
+    top: 288px;
+    transform: translateX(-50%);
+    padding: 20px;
+    background: var(--panel-bg);
+  }
+  .graph-zone {
+    position: relative;
+    width: 1000px;
+    height: 1100px;
+  }
+  .graph-zone > img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* Inline beat label. Positioned via left/top percentages
+     against the graph zone. In production these come from
+     Phase B dotPositions; values in this reference are
+     approximate placeholders for layout review only. */
+  .beat-label {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    font-family: var(--font-sans);
+    font-size: 28px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  /* ── Chrome ────────────────────────────────────────── */
+  .top-text {
+    position: absolute;
+    top: 120px; /* 9:16 delta: 60 → 120 */
+    left: 60px;
+    right: 60px;
+  }
+  .pill {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin: 0 0 16px 0;
+  }
+  .headline {
+    font-family: var(--font-serif);
+    font-size: 56px;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--cream);
+    max-width: 70%;
+    margin: 0;
+  }
+
+  .body {
+    position: absolute;
+    left: 60px;
+    right: 60px;
+    bottom: 220px;
+    font-family: var(--font-sans);
+    font-size: 30px; /* 9:16 delta: 24 → 30 */
+    line-height: 1.5;
+    color: var(--cream-muted);
+  }
+  .body .score-gold { color: var(--gold); font-weight: 500; }
+  .body .score-teal { color: var(--teal); font-weight: 500; }
+  .body .score-red  { color: var(--red);  font-weight: 500; }
+
+  .brand {
+    position: absolute;
+    left: 60px;
+    bottom: 60px;
+  }
+  .brand-name {
+    font-family: var(--font-brand);
+    font-size: 24px; /* 9:16 delta: 20 → 24 */
+    color: var(--gold);
+    line-height: 1.2;
+  }
+  .brand-tagline {
+    font-family: var(--font-sans);
+    font-size: 15px; /* 9:16 delta: 13 → 15 */
+    color: var(--cream-muted);
+    margin-top: 4px;
+  }
+  .counter {
+    position: absolute;
+    right: 60px;
+    bottom: 60px;
+    font-family: var(--font-sans);
+    font-size: 16px; /* 9:16 delta: 14 → 16 */
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    color: var(--cream-subtle);
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ══════════════════════════════════════════════════════════
+     Slide 6. The Peak. 9:16 sample.
+     Highlighted beat: t=115, s=9.5, teal.
+     ══════════════════════════════════════════════════════════ -->
+<div class="slide-caption">Slide 06. The peak. 1080 x 1920.</div>
+<section class="slide slide-6">
+
+  <!-- Background. Blurred. Warm amber for the emotional peak. -->
+  <!-- Placeholder for TMDB still -->
+  <div class="bg-still blur" style="background: linear-gradient(135deg, #2a1a18, #1a0D0A);"></div>
+
+  <!-- Vertical gradient overlay. -->
+  <div class="bg-gradient"></div>
+
+  <!-- Top chrome. Pill plus headline. Anchored top-left 120/60
+       (9:16 delta: top 60 → 120). -->
+  <div class="top-text">
+    <div class="pill">THE PEAK · 1H 55M</div>
+    <h2 class="headline">The film's highest moment.</h2>
+  </div>
+
+  <!-- Graph zone. 1000 x 1100, centered horizontally, anchored
+       at 15% of canvas height, wrapped in a dark panel with
+       20 px padding. Phase B renderGraph output composited here.
+       Dimensions match width/height params passed to renderGraph. -->
+  <div class="graph-panel">
+    <div class="graph-zone">
+      <img src="../phase-b-renderer-output.png" alt="">
+      <!-- Inline beat label. Placeholder position only. -->
+      <div class="beat-label"
+           data-beat-x="73%" data-beat-y="14%"
+           style="left: 73%; top: 14%; color: var(--teal);">9.5</div>
+    </div>
+  </div>
+
+  <!-- Body copy. 60/60 sides, 220 from bottom. 30 px font
+       (9:16 delta: 24 → 30). -->
+  <div class="body">
+    Rocky breaks his spacesuit to save unconscious Ryland. The score hits <span class="score-teal">9.5</span>. You don't get this high without the <span class="score-red">5.9</span> that came before it.
+  </div>
+
+  <!-- Brand block. Slightly larger type (9:16 delta). -->
+  <div class="brand">
+    <div class="brand-name">Cinemagraphs</div>
+    <div class="brand-tagline">Movie reviews, visualized</div>
+  </div>
+
+  <!-- Slide counter. Slightly larger type (9:16 delta). -->
+  <div class="counter">06 / 08</div>
+</section>
+
+</div>
+</body>
+</html>
