@@ -67,9 +67,10 @@ const cases = [
 ]
 
 const results = []
+let highlightDotPositions = null
 for (const c of cases) {
   const t0 = performance.now()
-  const { png } = renderGraph({
+  const { png, dotPositions } = renderGraph({
     dataPoints: PHM_DATA,
     totalRuntime: TOTAL_RUNTIME,
     criticsScore: CRITICS_SCORE,
@@ -83,6 +84,23 @@ for (const c of cases) {
   writeFileSync(outPath, png)
   results.push({ label: c.label, path: outPath, ms, bytes: png.length })
   console.log(`  ${c.label.padEnd(16)}  ${ms.toString().padStart(6)}ms  ${(png.length / 1024).toFixed(1)} KB  ${outPath}`)
+  if (c.label === '4x5_highlight') {
+    highlightDotPositions = dotPositions
+  }
+}
+
+if (highlightDotPositions) {
+  const fmtPos = (d) =>
+    `{ x: ${d.x.toFixed(2).padStart(7)}, y: ${d.y.toFixed(2).padStart(6)}, score: ${d.score.toFixed(1)}, color: ${String(d.color).padEnd(4)}, timestamp: ${String(d.timestamp).padStart(3)} }`
+  const n = highlightDotPositions.length
+  console.log('\n--- 4x5_highlight dotPositions (first 3, last 3) ---')
+  for (let i = 0; i < 3 && i < n; i++) {
+    console.log(`  [${String(i).padStart(2)}] ${fmtPos(highlightDotPositions[i])}`)
+  }
+  if (n > 6) console.log('  ...')
+  for (let i = Math.max(3, n - 3); i < n; i++) {
+    console.log(`  [${String(i).padStart(2)}] ${fmtPos(highlightDotPositions[i])}`)
+  }
 }
 
 console.log('\n=== SUMMARY ===')

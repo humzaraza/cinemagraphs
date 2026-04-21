@@ -16,9 +16,18 @@ export type RenderGraphInput = {
   highlightBeatIndex?: number
 }
 
+export type DotPosition = {
+  x: number
+  y: number
+  score: number
+  color: 'red' | 'gold' | 'teal'
+  timestamp: number
+}
+
 export type RenderGraphOutput = {
   svg: string
   png: Buffer
+  dotPositions: DotPosition[]
 }
 
 // ── Font loading (cached at module scope) ─────────────────────
@@ -92,7 +101,7 @@ function bandHalfWidthFor(format: Format): number {
 // ── Main ──────────────────────────────────────────────────────
 
 export function renderGraph(input: RenderGraphInput): RenderGraphOutput {
-  const svg = buildSvg(input)
+  const { svg, dotPositions } = buildSvg(input)
   const resvg = new Resvg(svg, {
     font: {
       loadSystemFonts: false,
@@ -101,10 +110,10 @@ export function renderGraph(input: RenderGraphInput): RenderGraphOutput {
     },
   })
   const png = resvg.render().asPng()
-  return { svg, png }
+  return { svg, png, dotPositions }
 }
 
-function buildSvg(input: RenderGraphInput): string {
+function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosition[] } {
   const { totalRuntime, criticsScore, width, height, format, highlightBeatIndex } = input
   const points = prependNeutralAnchor(input.dataPoints)
   const margins = marginsFor(format)
@@ -182,6 +191,7 @@ function buildSvg(input: RenderGraphInput): string {
     return idx === highlightBeatIndex ? 1 : 0.4
   }
 
+  const dotPositions: DotPosition[] = []
   for (let i = 0; i < points.length; i++) {
     const p = points[i]
     const cx = sX(p.t)
@@ -190,6 +200,14 @@ function buildSvg(input: RenderGraphInput): string {
     const fill = DOT_FILL[colorKey]
     const baseOp = baseOpacityFor(i)
     const haloOp = 0.3 * baseOp
+
+    dotPositions.push({
+      x: cx,
+      y: cy,
+      score: p.s,
+      color: colorKey,
+      timestamp: p.t,
+    })
 
     if (highlighted && i === highlightBeatIndex) {
       body.push(
@@ -224,12 +242,13 @@ function buildSvg(input: RenderGraphInput): string {
     )
   }
 
-  return (
+  const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
     `<defs>${defs.join('')}</defs>` +
     body.join('') +
     `</svg>`
-  )
+
+  return { svg, dotPositions }
 }
 
 function fmt(n: number): string {
