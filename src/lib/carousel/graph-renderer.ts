@@ -93,7 +93,7 @@ function dotRadiusFor(format: Format): number {
 }
 
 function bandHalfWidthFor(format: Format): number {
-  return format === '4x5' ? 70 : 90
+  return format === '4x5' ? 40 : 55
 }
 
 // ── Main ──────────────────────────────────────────────────────

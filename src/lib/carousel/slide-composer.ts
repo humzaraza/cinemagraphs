@@ -135,7 +135,7 @@ function specFor(format: '4x5' | '9x16'): FormatSpec {
       bodySize: 24,
       beatLabelSize: 28,
       pillSize: 18,
-      miniGraph: { w: 600, h: 140 },
+      miniGraph: { w: 800, h: 160 },
     }
   }
   const canvasW = 1080
@@ -158,7 +158,7 @@ function specFor(format: '4x5' | '9x16'): FormatSpec {
     bodySize: 30,
     beatLabelSize: 36,
     pillSize: 22,
-    miniGraph: { w: 700, h: 160 },
+    miniGraph: { w: 900, h: 180 },
   }
 }
 
