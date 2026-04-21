@@ -2,15 +2,22 @@
 // hardcoded data and save PNGs so a human can eyeball the output. Background
 // images use the synthetic placeholder (no TMDB call — that's C5).
 //
-// Run: npx tsx scripts/verify-slide-composer.mjs
+// Run: npm run verify:slide-composer
+//  or: npx tsx scripts/verify-slide-composer.ts
 
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 
-import { composeSlide } from '../src/lib/carousel/slide-composer.ts'
+import {
+  composeSlide,
+  type ComposeSlideInput,
+  type FilmData,
+  type MiddleSlideContent,
+} from '../src/lib/carousel/slide-composer'
+import type { DataPoint } from '../src/lib/carousel/graph-renderer'
 
-const PHM_DATA = [
+const PHM_DATA: DataPoint[] = [
   { t: 5, s: 7.8 },
   { t: 15, s: 7.2 },
   { t: 25, s: 6.8 },
@@ -29,7 +36,7 @@ const PHM_DATA = [
   { t: 154, s: 7.4 },
 ]
 
-const PHM_FILM = {
+const PHM_FILM: FilmData = {
   title: 'Project Hail Mary',
   year: 2026,
   runtime: '2h 37m',
@@ -42,7 +49,7 @@ const PHM_FILM = {
 // Per-slide middle content pulled from docs/carousel/carousel-structure-ig-4x5.html.
 // highlightBeatIndex is computed against the post-anchor point order
 // (renderGraph prepends a neutral anchor at index 0, so PHM index N becomes N+1).
-const MIDDLE = {
+const MIDDLE: Record<2 | 3 | 4 | 5 | 6 | 7, MiddleSlideContent> = {
   2: {
     pillLabel: 'THE OPENING · 0M-5M',
     headline: 'Straight into the mystery.',
@@ -90,37 +97,46 @@ const MIDDLE = {
 const OUT_DIR = resolve(process.cwd(), 'slide-composer-output')
 mkdirSync(OUT_DIR, { recursive: true })
 
-const formats = ['4x5', '9x16']
-const slideNumbers = [1, 2, 3, 4, 5, 6, 7, 8]
+const formats = ['4x5', '9x16'] as const
+const slideNumbers = [1, 2, 3, 4, 5, 6, 7, 8] as const
 
-const results = []
-for (const format of formats) {
-  for (const slideNumber of slideNumbers) {
-    const t0 = performance.now()
-    const input = {
-      film: PHM_FILM,
-      slideNumber,
-      format,
+type Result = { label: string; path: string; ms: number; bytes: number }
+
+async function main(): Promise<void> {
+  const results: Result[] = []
+  for (const format of formats) {
+    for (const slideNumber of slideNumbers) {
+      const t0 = performance.now()
+      const input: ComposeSlideInput = {
+        film: PHM_FILM,
+        slideNumber,
+        format,
+      }
+      if (slideNumber >= 2 && slideNumber <= 7) {
+        input.middleContent = MIDDLE[slideNumber as 2 | 3 | 4 | 5 | 6 | 7]
+      }
+      const png = await composeSlide(input)
+      const ms = +(performance.now() - t0).toFixed(1)
+      const label = `slide-${String(slideNumber).padStart(2, '0')}_${format}`
+      const outPath = join(OUT_DIR, `${label}.png`)
+      writeFileSync(outPath, png)
+      results.push({ label, path: outPath, ms, bytes: png.length })
+      console.log(
+        `  ${label.padEnd(20)}  ${ms.toString().padStart(7)}ms  ${(png.length / 1024).toFixed(1).padStart(7)} KB  ${outPath}`,
+      )
     }
-    if (slideNumber >= 2 && slideNumber <= 7) {
-      input.middleContent = MIDDLE[slideNumber]
-    }
-    const png = await composeSlide(input)
-    const ms = +(performance.now() - t0).toFixed(1)
-    const label = `slide-${String(slideNumber).padStart(2, '0')}_${format}`
-    const outPath = join(OUT_DIR, `${label}.png`)
-    writeFileSync(outPath, png)
-    results.push({ label, path: outPath, ms, bytes: png.length })
-    console.log(
-      `  ${label.padEnd(20)}  ${ms.toString().padStart(7)}ms  ${(png.length / 1024).toFixed(1).padStart(7)} KB  ${outPath}`,
-    )
   }
+
+  const totalMs = results.reduce((acc, r) => acc + r.ms, 0).toFixed(1)
+
+  console.log('\n=== SUMMARY ===')
+  for (const r of results) {
+    console.log(`${r.label.padEnd(20)}  ${r.ms.toString().padStart(7)}ms  ${r.path}`)
+  }
+  console.log(`\n${results.length} PNGs written in ${totalMs}ms total.`)
 }
 
-const totalMs = results.reduce((acc, r) => acc + r.ms, 0).toFixed(1)
-
-console.log('\n=== SUMMARY ===')
-for (const r of results) {
-  console.log(`${r.label.padEnd(20)}  ${r.ms.toString().padStart(7)}ms  ${r.path}`)
-}
-console.log(`\n${results.length} PNGs written in ${totalMs}ms total.`)
+main().catch((err: unknown) => {
+  console.error(err)
+  process.exit(1)
+})

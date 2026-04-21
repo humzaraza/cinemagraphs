@@ -1,7 +1,8 @@
 // Phase C2-AI verification: call the real Anthropic API with PHM-shaped data
 // and print the generated body copy, characteristics, token usage, and cost.
 //
-// Run: npx tsx scripts/verify-body-copy-generator.mjs
+// Run: npm run verify:body-copy-generator
+//  or: npx tsx scripts/verify-body-copy-generator.ts
 
 import dotenv from 'dotenv'
 import { performance } from 'node:perf_hooks'
@@ -13,11 +14,12 @@ dotenv.config()
 import {
   BODY_COPY_MODEL,
   generateBodyCopy,
-} from '../src/lib/carousel/body-copy-generator.ts'
+  type GenerateBodyCopyInput,
+  type SlideBeatContext,
+} from '../src/lib/carousel/body-copy-generator'
+import type { DataPoint } from '../src/lib/carousel/graph-renderer'
 
-// ── Same PHM data the slide-composer verification script uses ────────────
-
-const PHM_DATA = [
+const PHM_DATA: DataPoint[] = [
   { t: 5, s: 7.8 },
   { t: 15, s: 7.2 },
   { t: 25, s: 6.8 },
@@ -36,7 +38,7 @@ const PHM_DATA = [
   { t: 154, s: 7.4 },
 ]
 
-const PHM_SLIDES = [
+const PHM_SLIDES: SlideBeatContext[] = [
   { slideNumber: 2, pillLabel: 'THE OPENING · 0M-5M', beatTimestamp: 5, beatScore: 7.8, beatColor: 'gold' },
   { slideNumber: 3, pillLabel: 'THE SETUP · 15M-55M', beatTimestamp: 55, beatScore: 8.1, beatColor: 'teal' },
   { slideNumber: 4, pillLabel: 'THE DROP · 1H 15M', beatTimestamp: 75, beatScore: 5.8, beatColor: 'red' },
@@ -45,7 +47,7 @@ const PHM_SLIDES = [
   { slideNumber: 7, pillLabel: 'THE ENDING · 2H 34M', beatTimestamp: 154, beatScore: 7.4, beatColor: 'gold' },
 ]
 
-const INPUT = {
+const INPUT: GenerateBodyCopyInput = {
   filmTitle: 'Project Hail Mary',
   filmYear: 2026,
   runtimeMinutes: 157,
@@ -59,7 +61,7 @@ const INPUT = {
 const PRICE_INPUT = 3.0
 const PRICE_OUTPUT = 15.0
 
-function approxCostUsd(totalTokens) {
+function approxCostUsd(totalTokens: number): number {
   // We don't have a split here; assume a 5:1 input/output ratio for a rough estimate.
   const inputShare = 5 / 6
   const outputShare = 1 / 6
@@ -70,29 +72,36 @@ function approxCostUsd(totalTokens) {
   )
 }
 
-if (!process.env.ANTHROPIC_API_KEY && !process.env.CINEMA_ANTHROPIC_KEY) {
-  console.error('ANTHROPIC_API_KEY (or CINEMA_ANTHROPIC_KEY) not set in env.')
+async function main(): Promise<void> {
+  if (!process.env.ANTHROPIC_API_KEY && !process.env.CINEMA_ANTHROPIC_KEY) {
+    console.error('ANTHROPIC_API_KEY (or CINEMA_ANTHROPIC_KEY) not set in env.')
+    process.exit(1)
+  }
+
+  const t0 = performance.now()
+  const result = await generateBodyCopy(INPUT)
+  const elapsedMs = +(performance.now() - t0).toFixed(1)
+
+  console.log(`\nModel:            ${result.modelUsed}`)
+  console.log(`Expected model:   ${BODY_COPY_MODEL}`)
+  console.log(`Total tokens:     ${result.totalTokens}`)
+  console.log(`Approx cost USD:  $${approxCostUsd(result.totalTokens).toFixed(5)}`)
+  console.log(`Elapsed:          ${elapsedMs}ms`)
+
+  console.log('\n=== CHARACTERISTICS ===')
+  console.log(JSON.stringify(result.characteristics, null, 2))
+
+  console.log('\n=== GENERATED BODY COPY ===')
+  for (const slide of PHM_SLIDES) {
+    const copy = result.bodyCopy[slide.slideNumber]
+    console.log(`\n--- Slide ${slide.slideNumber} (${slide.pillLabel}, beat t=${slide.beatTimestamp} s=${slide.beatScore}) ---`)
+    console.log(copy)
+  }
+
+  console.log('\n=== DONE ===')
+}
+
+main().catch((err: unknown) => {
+  console.error(err)
   process.exit(1)
-}
-
-const t0 = performance.now()
-const result = await generateBodyCopy(INPUT)
-const elapsedMs = +(performance.now() - t0).toFixed(1)
-
-console.log(`\nModel:            ${result.modelUsed}`)
-console.log(`Expected model:   ${BODY_COPY_MODEL}`)
-console.log(`Total tokens:     ${result.totalTokens}`)
-console.log(`Approx cost USD:  $${approxCostUsd(result.totalTokens).toFixed(5)}`)
-console.log(`Elapsed:          ${elapsedMs}ms`)
-
-console.log('\n=== CHARACTERISTICS ===')
-console.log(JSON.stringify(result.characteristics, null, 2))
-
-console.log('\n=== GENERATED BODY COPY ===')
-for (const slide of PHM_SLIDES) {
-  const copy = result.bodyCopy[slide.slideNumber]
-  console.log(`\n--- Slide ${slide.slideNumber} (${slide.pillLabel}, beat t=${slide.beatTimestamp} s=${slide.beatScore}) ---`)
-  console.log(copy)
-}
-
-console.log('\n=== DONE ===')
+})

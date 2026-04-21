@@ -9,7 +9,10 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "verify:graph-renderer": "tsx scripts/verify-graph-renderer.ts",
+    "verify:slide-composer": "tsx scripts/verify-slide-composer.ts",
+    "verify:body-copy-generator": "tsx scripts/verify-body-copy-generator.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
