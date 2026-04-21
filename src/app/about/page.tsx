@@ -52,16 +52,20 @@ const faqs = [
     a: 'The teal line shows up once enough Cinemagraphs users have submitted manual reviews for a film. It takes at least 5 user reviews before the community data is blended in.',
   },
   {
+    q: 'Why is a scene I loved rated low?',
+    a: "Scores reflect how audiences felt during a scene, not whether the scene is well-made. A heartbreaking scene in a great drama often scores low because what you're feeling is grief or dread, even though the scene itself is masterful. This is why great films often have the biggest peaks right after the biggest dips. The emotional contrast is the point. A low score on a powerful scene usually means the scene did its job of making you feel something difficult.",
+  },
+  {
     q: 'Can I contribute my own review?',
     a: 'Yes! Sign in and visit any film page. You can leave a written review with story beat ratings to contribute to the community sentiment line.',
   },
   {
     q: 'How often is data updated?',
-    a: 'External reviews are refreshed automatically when new data is detected. Sentiment graphs are regenerated when review counts grow by 10% or more since the last analysis.',
+    a: 'External reviews are refreshed automatically as new data is detected. Sentiment graphs for newly released films and films still gathering reviews are refreshed often. Older, well-established films are refreshed at least once a month so the data stays current.',
   },
   {
     q: 'I have feedback or found a bug. How do I get in touch?',
-    a: 'USE_EMAIL_LINK',
+    a: 'USE_EMAIL_AND_TWITTER_LINKS',
   },
 ]
 
@@ -328,11 +332,20 @@ export default function AboutPage() {
           {faqs.map((faq) => (
             <div key={faq.q} className="border-b border-cinema-border pb-6 last:border-0">
               <h3 className="text-sm md:text-base font-semibold text-cinema-cream mb-2">{faq.q}</h3>
-              {faq.a === 'USE_EMAIL_LINK' ? (
+              {faq.a === 'USE_EMAIL_AND_TWITTER_LINKS' ? (
                 <p className="text-sm text-cinema-muted leading-relaxed">
-                  We would love to hear from you! Use the feedback widget on any page, or email us directly at{' '}
+                  We would love to hear from you! Use the feedback widget on any page, email us at{' '}
                   <a href="mailto:cinemagraphs.corp@gmail.com" className="text-cinema-gold hover:underline">
                     cinemagraphs.corp@gmail.com
+                  </a>
+                  , or reach out on X at{' '}
+                  <a
+                    href="https://x.com/cinemagraphsco"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-cinema-gold hover:underline"
+                  >
+                    @cinemagraphsco
                   </a>
                   .
                 </p>

@@ -107,9 +107,18 @@ export default function FeedbackWidget() {
               {/* Support note */}
               {type === 'support' && (
                 <p className="text-sm text-cinema-muted">
-                  You can also email us directly at{' '}
+                  You can also email us at{' '}
                   <a href="mailto:cinemagraphs.corp@gmail.com" className="text-cinema-gold hover:underline">
                     cinemagraphs.corp@gmail.com
+                  </a>
+                  {' '}or reach out on X at{' '}
+                  <a
+                    href="https://x.com/cinemagraphsco"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-cinema-gold hover:underline"
+                  >
+                    @cinemagraphsco
                   </a>
                 </p>
               )}
