@@ -658,12 +658,12 @@ function composeMiddleSlide(
   const dot = dotPositions[content.highlightBeatIndex]
   const plotMidY = spec.graphZone.h / 2
   const inUpperHalf = dot.y < plotMidY
-  const labelX = spec.graphZone.x + dot.x + 12
-  const labelY = spec.graphZone.y + dot.y + (inUpperHalf ? -16 : 26)
+  const labelX = spec.graphZone.x + dot.x
+  const labelY = spec.graphZone.y + dot.y + (inUpperHalf ? -32 : 40)
   const labelColor = DOT_COLOR_HEX[dot.color]
   const labelSize = spec.beatLabelSize
   body.push(
-    `<text x="${fmt(labelX)}" y="${fmt(labelY)}" fill="${labelColor}" font-family="DM Sans" font-size="${labelSize}" font-weight="500" text-anchor="start">${dot.score.toFixed(1)}</text>`,
+    `<text x="${fmt(labelX)}" y="${fmt(labelY)}" fill="${labelColor}" font-family="DM Sans" font-size="${labelSize}" font-weight="500" text-anchor="middle">${dot.score.toFixed(1)}</text>`,
   )
 
   // Body copy (plain monochrome in C1).
