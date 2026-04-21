@@ -92,10 +92,6 @@ function dotRadiusFor(format: Format): number {
   return format === '4x5' ? 5 : 7
 }
 
-function bandHalfWidthFor(format: Format): number {
-  return format === '4x5' ? 40 : 55
-}
-
 // ── Main ──────────────────────────────────────────────────────
 
 export function renderGraph(input: RenderGraphInput): RenderGraphOutput {
@@ -148,7 +144,7 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
     highlightBeatIndex < points.length
   const hlPoint = highlighted ? points[highlightBeatIndex!] : null
   const hlX = hlPoint ? sX(hlPoint.t) : 0
-  const bandHalf = bandHalfWidthFor(format)
+  const hlY = hlPoint ? sY(hlPoint.s) : 0
 
   // ── <defs> ────────────────────────────────────────────────
   const defs: string[] = []
@@ -165,10 +161,16 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
         `<feGaussianBlur stdDeviation="8"/>` +
         `</filter>`,
     )
+    const maskRadius = format === '4x5' ? 90 : 120
     defs.push(
-      `<clipPath id="hlRegion">` +
-        `<rect x="${fmt(hlX - bandHalf)}" y="0" width="${fmt(bandHalf * 2)}" height="${height}"/>` +
-        `</clipPath>`,
+      `<mask id="hlMask-${format}">` +
+        `<radialGradient id="hlGrad-${format}" cx="${fmt(hlX)}" cy="${fmt(hlY)}" r="${maskRadius}" gradientUnits="userSpaceOnUse">` +
+          `<stop offset="0%" stop-color="white" stop-opacity="1"/>` +
+          `<stop offset="60%" stop-color="white" stop-opacity="1"/>` +
+          `<stop offset="100%" stop-color="white" stop-opacity="0"/>` +
+          `</radialGradient>` +
+        `<rect x="0" y="0" width="${width}" height="${height}" fill="url(#hlGrad-${format})"/>` +
+        `</mask>`,
     )
   }
 
@@ -181,7 +183,7 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
   const body: string[] = []
   if (highlighted) {
     body.push(`<g opacity="0.22">${curveBody}</g>`)
-    body.push(`<g clip-path="url(#hlRegion)">${curveBody}</g>`)
+    body.push(`<g mask="url(#hlMask-${format})">${curveBody}</g>`)
   } else {
     body.push(curveBody)
   }

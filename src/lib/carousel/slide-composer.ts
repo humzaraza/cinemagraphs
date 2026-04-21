@@ -656,8 +656,10 @@ function composeMiddleSlide(
 
   // Inline beat label — anchored off the highlighted dot position.
   const dot = dotPositions[content.highlightBeatIndex]
+  const plotMidY = spec.graphZone.h / 2
+  const inUpperHalf = dot.y < plotMidY
   const labelX = spec.graphZone.x + dot.x + 12
-  const labelY = spec.graphZone.y + dot.y - 8
+  const labelY = spec.graphZone.y + dot.y + (inUpperHalf ? -16 : 26)
   const labelColor = DOT_COLOR_HEX[dot.color]
   const labelSize = spec.beatLabelSize
   body.push(
