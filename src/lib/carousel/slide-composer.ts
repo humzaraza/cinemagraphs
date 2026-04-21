@@ -110,6 +110,8 @@ type FormatSpec = {
   counterSize: number
   bodySize: number
   beatLabelSize: number
+  pillSize: number
+  miniGraph: { w: number; h: number }
 }
 
 function specFor(format: '4x5' | '9x16'): FormatSpec {
@@ -132,6 +134,8 @@ function specFor(format: '4x5' | '9x16'): FormatSpec {
       counterSize: 14,
       bodySize: 24,
       beatLabelSize: 28,
+      pillSize: 18,
+      miniGraph: { w: 600, h: 140 },
     }
   }
   const canvasW = 1080
@@ -153,6 +157,8 @@ function specFor(format: '4x5' | '9x16'): FormatSpec {
     counterSize: 16,
     bodySize: 30,
     beatLabelSize: 36,
+    pillSize: 22,
+    miniGraph: { w: 700, h: 160 },
   }
 }
 
@@ -193,6 +199,130 @@ function wrapText(
     }
   }
   if (line) lines.push(line)
+  return lines
+}
+
+// ── Body copy color tokens ────────────────────────────────────
+// Body copy may contain {{color:value}} markers produced by the LLM,
+// e.g. "The score hits {{teal:9.5}}." The renderer parses these into
+// colored segments and emits <tspan>s so the inline number picks up
+// the dot color, tying the copy visually to the graph.
+
+export type BodyCopyColor = 'red' | 'gold' | 'teal'
+export type BodyCopySegment = { text: string; color: BodyCopyColor | null }
+
+export class BodyCopyParseError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'BodyCopyParseError'
+  }
+}
+
+export function parseBodyCopyTokens(text: string): BodyCopySegment[] {
+  const segments: BodyCopySegment[] = []
+  let buffer = ''
+  let i = 0
+  while (i < text.length) {
+    if (text[i] === '{' && text[i + 1] === '{') {
+      const end = text.indexOf('}}', i + 2)
+      if (end === -1) {
+        throw new BodyCopyParseError(
+          `Unterminated color marker in body copy at index ${i}: "${text}"`,
+        )
+      }
+      const inner = text.slice(i + 2, end)
+      const colonIdx = inner.indexOf(':')
+      if (colonIdx === -1) {
+        throw new BodyCopyParseError(
+          `Missing colon in color marker: "${text.slice(i, end + 2)}"`,
+        )
+      }
+      const rawColor = inner.slice(0, colonIdx)
+      const value = inner.slice(colonIdx + 1)
+      if (rawColor !== 'red' && rawColor !== 'gold' && rawColor !== 'teal') {
+        throw new BodyCopyParseError(
+          `Invalid color "${rawColor}" in marker: "${text.slice(i, end + 2)}" (allowed: red, gold, teal)`,
+        )
+      }
+      const color = rawColor as BodyCopyColor
+      if (value.length === 0) {
+        throw new BodyCopyParseError(
+          `Empty value in color marker: "${text.slice(i, end + 2)}"`,
+        )
+      }
+      if (buffer.length > 0) {
+        segments.push({ text: buffer, color: null })
+        buffer = ''
+      }
+      segments.push({ text: value, color })
+      i = end + 2
+    } else {
+      buffer += text[i]
+      i++
+    }
+  }
+  if (buffer.length > 0) {
+    segments.push({ text: buffer, color: null })
+  }
+  return segments
+}
+
+type ColorRun = { text: string; color: BodyCopyColor | null }
+type ColoredWord = { runs: ColorRun[]; textLength: number }
+
+function segmentsToColoredWords(segments: BodyCopySegment[]): ColoredWord[] {
+  const words: ColoredWord[] = []
+  let currentRuns: ColorRun[] = []
+  let currentTextLen = 0
+  const flushWord = () => {
+    if (currentRuns.length > 0) {
+      words.push({ runs: currentRuns, textLength: currentTextLen })
+      currentRuns = []
+      currentTextLen = 0
+    }
+  }
+  for (const seg of segments) {
+    for (const ch of seg.text) {
+      if (/\s/.test(ch)) {
+        flushWord()
+      } else {
+        const last = currentRuns[currentRuns.length - 1]
+        if (last && last.color === seg.color) {
+          last.text += ch
+        } else {
+          currentRuns.push({ text: ch, color: seg.color })
+        }
+        currentTextLen += 1
+      }
+    }
+  }
+  flushWord()
+  return words
+}
+
+function wrapColoredWords(
+  words: ColoredWord[],
+  maxWidthPx: number,
+  fontSize: number,
+  charFactor: number,
+): ColoredWord[][] {
+  if (words.length === 0) return []
+  const lines: ColoredWord[][] = []
+  let line: ColoredWord[] = []
+  let lineChars = 0
+  const maxChars = maxWidthPx / (fontSize * charFactor)
+  for (const w of words) {
+    const gap = line.length > 0 ? 1 : 0
+    if (lineChars + gap + w.textLength <= maxChars) {
+      line.push(w)
+      lineChars += gap + w.textLength
+    } else {
+      if (line.length > 0) lines.push(line)
+      line = [w]
+      lineChars = w.textLength
+    }
+  }
+  if (line.length > 0) lines.push(line)
   return lines
 }
 
@@ -323,8 +453,8 @@ function counterText(slideNumber: number, spec: FormatSpec): string {
   )
 }
 
-function pillText(label: string, x: number, yBaseline: number): string {
-  const size = 14
+function pillText(label: string, x: number, yBaseline: number, spec: FormatSpec): string {
+  const size = spec.pillSize
   const ls = size * 0.15
   return (
     `<text x="${x}" y="${fmt(yBaseline)}" fill="${COLORS.gold}" font-family="DM Sans" font-size="${size}" font-weight="500" letter-spacing="${fmt(ls)}" text-anchor="start">${escapeXml(label.toUpperCase())}</text>`
@@ -352,22 +482,57 @@ function headlineTspans(
   return { svg, lines: safeLines.length, fontSize: size, lineHeight }
 }
 
-// Body copy — plain monochrome in C1. Wraps to fit, right anchor at bodyBottom.
-// TODO C2: parse {{color:text}} tokens for inline scoring colors.
+// Body copy — supports inline {{color:value}} markers. Values wrapped in a
+// color marker render with the matching dot color; surrounding text uses
+// the muted cream default. See parseBodyCopyTokens for syntax.
 function bodyCopy(text: string, spec: FormatSpec): string {
   const xLeft = 60
   const xRight = spec.canvasW - 60
   const maxWidth = xRight - xLeft
   const fontSize = spec.bodySize
   const lineHeight = fontSize * 1.5
-  const lines = wrapText(text, maxWidth, fontSize, CHAR_FACTOR_SANS)
-  const safeLines = lines.length > 0 ? lines : ['']
-  // Last line baseline sits a small descent above bodyBottom.
+
+  const segments = parseBodyCopyTokens(text)
+  const words = segmentsToColoredWords(segments)
+  const wrapped = wrapColoredWords(words, maxWidth, fontSize, CHAR_FACTOR_SANS)
+  const lines = wrapped.length > 0 ? wrapped : [[]]
+
   const lastBaseline = spec.canvasH - spec.bodyBottom - fontSize * 0.2
-  const firstBaseline = lastBaseline - (safeLines.length - 1) * lineHeight
-  const parts = safeLines.map((ln, i) =>
-    `<tspan x="${xLeft}" dy="${i === 0 ? 0 : fmt(lineHeight)}">${escapeXml(ln)}</tspan>`,
-  )
+  const firstBaseline = lastBaseline - (lines.length - 1) * lineHeight
+
+  const colorHex: Record<BodyCopyColor, string> = {
+    red: COLORS.red,
+    gold: COLORS.gold,
+    teal: COLORS.teal,
+  }
+
+  const parts: string[] = []
+  lines.forEach((line, lineIdx) => {
+    if (line.length === 0) {
+      parts.push(
+        `<tspan x="${xLeft}" dy="${lineIdx === 0 ? '0' : fmt(lineHeight)}"></tspan>`,
+      )
+      return
+    }
+    line.forEach((word, wordIdx) => {
+      word.runs.forEach((run, runIdx) => {
+        const attrs: string[] = []
+        let runText = run.text
+        if (wordIdx === 0 && runIdx === 0) {
+          attrs.push(`x="${xLeft}"`)
+          attrs.push(`dy="${lineIdx === 0 ? '0' : fmt(lineHeight)}"`)
+        } else if (wordIdx > 0 && runIdx === 0) {
+          runText = ' ' + runText
+        }
+        if (run.color) {
+          attrs.push(`fill="${colorHex[run.color]}"`)
+        }
+        const attrStr = attrs.length > 0 ? ' ' + attrs.join(' ') : ''
+        parts.push(`<tspan${attrStr}>${escapeXml(runText)}</tspan>`)
+      })
+    })
+  })
+
   return (
     `<text x="${xLeft}" y="${fmt(firstBaseline)}" fill="${COLORS.creamMuted}" font-family="DM Sans" font-size="${fontSize}" font-weight="400">` +
     parts.join('') +
@@ -383,7 +548,7 @@ function composeHookSlide(film: FilmData, spec: FormatSpec): BuiltSvg {
 
   // Pill.
   const pillBaseline = spec.topTextY + 14
-  body.push(pillText('BEAT BY BEAT', 60, pillBaseline))
+  body.push(pillText('BEAT BY BEAT', 60, pillBaseline, spec))
 
   // Film title — Playfair 88, max-width 88%, can wrap.
   const titleSize = 88
@@ -449,7 +614,7 @@ function composeMiddleSlide(
 
   // Pill + headline.
   const pillBaseline = spec.topTextY + 14
-  body.push(pillText(content.pillLabel, 60, pillBaseline))
+  body.push(pillText(content.pillLabel, 60, pillBaseline, spec))
 
   const headlineMaxWidth = (spec.canvasW - 120) * 0.7
   const headlineFirstBaseline = pillBaseline + 16 + 56
@@ -510,13 +675,17 @@ function composeMiddleSlide(
 
 // ── Slide 8: takeaway ─────────────────────────────────────────
 
-function composeTakeawaySlide(film: FilmData, spec: FormatSpec): BuiltSvg {
+function composeTakeawaySlide(
+  film: FilmData,
+  spec: FormatSpec,
+  format: '4x5' | '9x16',
+): BuiltSvg {
   const defs: string[] = []
   const body: string[] = []
 
   // Stack items with their heights and margin-bottoms.
-  const miniW = 240
-  const miniH = 80
+  const miniW = spec.miniGraph.w
+  const miniH = spec.miniGraph.h
   const items: { kind: string; height: number; marginBottom: number }[] = [
     { kind: 'number', height: 140, marginBottom: 24 },
     { kind: 'italic', height: 48, marginBottom: 32 }, // 40 * 1.2
@@ -562,7 +731,7 @@ function composeTakeawaySlide(film: FilmData, spec: FormatSpec): BuiltSvg {
         criticsScore: film.criticsScore,
         width: miniW,
         height: miniH,
-        format: '4x5',
+        format,
         highlightBeatIndex: undefined,
         minimal: true,
       })
@@ -626,7 +795,7 @@ export async function composeSlide(input: ComposeSlideInput): Promise<Buffer> {
   if (slideNumber === 1) {
     content = composeHookSlide(film, spec)
   } else if (slideNumber === 8) {
-    content = composeTakeawaySlide(film, spec)
+    content = composeTakeawaySlide(film, spec, format)
   } else {
     content = composeMiddleSlide(film, slideNumber, middleContent!, spec, format)
   }

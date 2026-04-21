@@ -204,6 +204,25 @@ Use these as shape guides for cadence, not as templates to fill in. Mix and matc
 - Rhythm C: setup detail. Score arrival. Tie back to a previous beat.
 - Rhythm D: framing statement. Two short sentences of consequence. Land on the number.
 
+## Format markers for score values
+
+Every time you cite a score, wrap the numeric value in a color marker so the copy visually ties to its dot. The color must match the dot color for that score:
+
+- Scores below 6.0 use red: {{red:5.8}}
+- Scores from 6.0 up to (but not including) 8.0 use gold: {{gold:7.4}}
+- Scores from 8.0 upward use teal: {{teal:9.5}}
+
+Examples:
+- "The score hits {{teal:9.5}}."
+- "{{red:5.8}} is the lowest point in the film."
+- "A jump from {{red:5.8}} to {{teal:8.7}} across ten minutes."
+
+Markers wrap only the numeric value itself, never the surrounding words or punctuation. Do not nest markers. Do not use markers on anything other than score values (not on timestamps, not on runtimes, not on years).
+
+## Time format
+
+Use numerals for every time reference. Write "1h 15m", "25 minutes", "0m-5m". Do not spell out numbers ("one hour fifteen minutes", "twenty-five minutes"). This keeps the body copy visually consistent with the pill labels above each slide, which are also in numerals.
+
 ## Output format
 
 Return ONLY a single JSON object, no markdown fences, no preamble, no trailing text. Schema:

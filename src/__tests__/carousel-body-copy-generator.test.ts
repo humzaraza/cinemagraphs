@@ -146,6 +146,21 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('Ryland')
     expect(prompt).toContain('5.8')
   })
+
+  it('specifies the FORMAT MARKERS rule with {{color:value}} syntax and all three color thresholds', () => {
+    expect(prompt).toMatch(/format markers/i)
+    expect(prompt).toContain('{{red:')
+    expect(prompt).toContain('{{gold:')
+    expect(prompt).toContain('{{teal:')
+    // Thresholds must be present so the LLM knows which color to pick.
+    expect(prompt).toMatch(/below 6\.0/)
+    expect(prompt).toMatch(/8\.0/)
+  })
+
+  it('specifies the TIME FORMAT rule requiring numerals for time references', () => {
+    expect(prompt).toMatch(/time format/i)
+    expect(prompt).toMatch(/numeral/i)
+  })
 })
 
 describe('buildUserPrompt', () => {

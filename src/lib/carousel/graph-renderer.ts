@@ -175,8 +175,8 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
   // ── body ──────────────────────────────────────────────────
   const curveBody =
     `<path d="${areaD}" fill="url(#areaGrad)"/>` +
-    `<path d="${lineD}" stroke="${GLOW_LINE}" stroke-width="8" stroke-linecap="round" fill="none"/>` +
-    `<path d="${lineD}" stroke="${MAIN_LINE}" stroke-width="2.5" fill="none"/>`
+    `<path d="${lineD}" stroke="${GLOW_LINE}" stroke-width="9" stroke-linecap="round" fill="none"/>` +
+    `<path d="${lineD}" stroke="${MAIN_LINE}" stroke-width="4" fill="none"/>`
 
   const body: string[] = []
   if (highlighted) {
@@ -225,8 +225,26 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
   // ── score text ────────────────────────────────────────────
   if (!minimal) {
     const valueText = criticsScore.toFixed(1)
+    // Collision detection: if any curve point falls within the default score
+    // bounding box, move to the opposite corner. If both collide, fall back
+    // to the default (keeps behavior stable rather than failing closed).
+    type Box = { xMin: number; xMax: number; yMin: number; yMax: number }
+    const defaultBox: Box = format === '4x5'
+      ? { xMin: width - 180, xMax: width - 20, yMin: 10, yMax: 90 }
+      : { xMin: 20, xMax: 280, yMin: 20, yMax: 120 }
+    const oppositeBox: Box = format === '4x5'
+      ? { xMin: 20, xMax: 180, yMin: 10, yMax: 90 }
+      : { xMin: width - 280, xMax: width - 20, yMin: 20, yMax: 120 }
+    const collides = (box: Box) =>
+      points.some((p) => {
+        const px = sX(p.t)
+        const py = sY(p.s)
+        return px >= box.xMin && px <= box.xMax && py >= box.yMin && py <= box.yMax
+      })
+    const useOpposite = collides(defaultBox) && !collides(oppositeBox)
+
     if (format === '4x5') {
-      const x = width - 60
+      const x = useOpposite ? 100 : width - 60
       body.push(
         `<text x="${x}" y="20" fill="${LABEL_COLOR}" font-family="DM Sans" font-size="13" font-weight="400" text-anchor="middle">Critics</text>`,
       )
@@ -234,12 +252,13 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
         `<text x="${x}" y="56" fill="${VALUE_COLOR}" font-family="DM Sans" font-size="38" font-weight="500" text-anchor="middle">${valueText}</text>`,
       )
     } else {
-      const x = 54
+      const x = useOpposite ? width - 54 : 54
+      const anchor = useOpposite ? 'end' : 'start'
       body.push(
-        `<text x="${x}" y="40" fill="${LABEL_COLOR}" font-family="DM Sans" font-size="18" font-weight="400" text-anchor="start">Critics</text>`,
+        `<text x="${x}" y="40" fill="${LABEL_COLOR}" font-family="DM Sans" font-size="18" font-weight="400" text-anchor="${anchor}">Critics</text>`,
       )
       body.push(
-        `<text x="${x}" y="92" fill="${VALUE_COLOR}" font-family="DM Sans" font-size="56" font-weight="500" text-anchor="start">${valueText}</text>`,
+        `<text x="${x}" y="92" fill="${VALUE_COLOR}" font-family="DM Sans" font-size="56" font-weight="500" text-anchor="${anchor}">${valueText}</text>`,
       )
     }
   }

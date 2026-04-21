@@ -220,6 +220,10 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Render 8 slides ──────────────────────────────────────────
+  // TODO C5: replace the single backdrop with per-slide TMDB stills. Each of
+  // the 8 slides should pull a distinct, contextually-relevant image from
+  // TMDB (opening still for slide 2, drop still for slide 4, peak still
+  // for slide 6, etc.) rather than reusing the same blurred backdrop.
   const backdrops = await getMovieBackdropUrls(film.tmdbId)
   const backgroundImage = backdrops.length > 0 ? backdrops[0] : undefined
 
