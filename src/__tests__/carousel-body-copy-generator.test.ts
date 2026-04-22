@@ -19,9 +19,13 @@ import {
   buildUserPrompt,
   computeCharacteristics,
   generateBodyCopy,
+  generateBodyCopyForSlide,
   parseBodyCopyResponse,
+  parseSingleSlideResponse,
+  type GenerateBodyCopyForSlideInput,
   type GenerateBodyCopyInput,
   type GraphCharacteristics,
+  type PreviousSlideContext,
   type SlideBeatContext,
 } from '@/lib/carousel/body-copy-generator'
 import type { DataPoint } from '@/lib/carousel/graph-renderer'
@@ -540,5 +544,368 @@ describe('parseBodyCopyResponse — forgiving JSON extraction', () => {
     const e = caught as BodyCopyGenerationError
     expect(e.rawResponse).toBe(raw)
     expect(e.message).toContain(raw)
+  })
+})
+
+// ── Single-slide regenerate flow ──────────────────────────────
+
+describe("buildSystemPrompt('single')", () => {
+  const full = buildSystemPrompt('full')
+  const single = buildSystemPrompt('single')
+
+  it("matches buildSystemPrompt() (default) byte-for-byte when called with 'full'", () => {
+    expect(full).toBe(buildSystemPrompt())
+  })
+
+  it('mentions that only one slide is being regenerated and others are reference-only', () => {
+    expect(single).toContain('ONE slide')
+    expect(single).toContain('previous_slides_context')
+    expect(single).toMatch(/voice.?\/.?pattern reference only/i)
+    expect(single).toMatch(/do NOT regenerate or output anything/i)
+  })
+
+  it("emits a single-object output schema (no slide_N keys) when mode is 'single'", () => {
+    expect(single).not.toContain('"slide_2"')
+    expect(single).not.toContain('"slide_7"')
+    expect(single).toContain('{ "pill": "..."')
+    expect(single).toContain('Do not wrap in a "slide_N" key')
+  })
+
+  it('drops the 6-slide coordination rules in single mode', () => {
+    // Full mode hard-codes these; single mode must remove them since the
+    // model is only producing ONE slide.
+    expect(full).toContain('Vary sentence structures across the six slides')
+    expect(single).not.toContain('Vary sentence structures across the six slides')
+    expect(full).toContain('For slides 4, 5, 6 in particular')
+    expect(single).not.toContain('For slides 4, 5, 6 in particular')
+    expect(full).toContain('Mix and match across the six slides')
+    expect(single).not.toContain('Mix and match across the six slides')
+  })
+
+  it('keeps the per-slide rules (voice, pill, headline, color markers, time format)', () => {
+    // Every per-slide rule still applies in single mode.
+    expect(single).toContain('Sentence case always')
+    expect(single).toContain('No em dashes')
+    expect(single).toMatch(/format markers/i)
+    expect(single).toContain('{{red:')
+    expect(single).toContain('{{gold:')
+    expect(single).toContain('{{teal:')
+    expect(single).toMatch(/time format/i)
+    expect(single).toMatch(/3 to 6 words/i)
+    expect(single).toContain('Where the story starts')
+  })
+})
+
+const PHM_PREVIOUS_SLIDES: PreviousSlideContext[] = [
+  {
+    slideNumber: 2,
+    beatTimestamp: 5,
+    beatScore: 7.8,
+    beatColor: 'gold',
+    originalRole: 'opening',
+    storyBeatName: 'Ryland wakes up alone on the Hail Mary',
+    copy: {
+      pill: 'Ryland wakes alone',
+      headline: 'Already inside the mystery.',
+      body: 'The score hits {{gold:7.8}} almost immediately. Audiences are locked in before minute 5.',
+    },
+  },
+  {
+    slideNumber: 3,
+    beatTimestamp: 55,
+    beatScore: 8.1,
+    beatColor: 'teal',
+    originalRole: 'setup',
+    storyBeatName: 'Eva Stratt reveals the suicide mission to Tau Ceti',
+    copy: {
+      pill: 'Stratt reveals the mission',
+      headline: 'Stakes become clear.',
+      body: 'A slow build through the first hour. The score hovers around {{teal:8.1}}.',
+    },
+  },
+  {
+    slideNumber: 5,
+    beatTimestamp: 85,
+    beatScore: 8.7,
+    beatColor: 'teal',
+    originalRole: 'recovery',
+    storyBeatName: "Rocky's spacecraft appears at Tau Ceti",
+    copy: {
+      pill: 'Rocky at Tau Ceti',
+      headline: 'Hope arrives with company.',
+      body: 'A 2.9 point jump in ten minutes. The score climbs to {{teal:8.7}}.',
+    },
+  },
+  {
+    slideNumber: 6,
+    beatTimestamp: 115,
+    beatScore: 9.5,
+    beatColor: 'teal',
+    originalRole: 'peak',
+    storyBeatName: 'Rocky breaks his spacesuit to save unconscious Grace',
+    copy: {
+      pill: 'Rocky saves Grace',
+      headline: 'Sacrifice without hesitation.',
+      body: 'The score hits {{teal:9.5}}. You do not get this high without the {{red:5.8}} that came before it.',
+    },
+  },
+  {
+    slideNumber: 7,
+    beatTimestamp: 154,
+    beatScore: 7.4,
+    beatColor: 'gold',
+    originalRole: 'ending',
+    storyBeatName: 'Grace teaches alien children on Erid',
+    copy: {
+      pill: 'Grace teaches children',
+      headline: 'A quieter resolution.',
+      body: 'The ending drops to {{gold:7.4}}. A deliberate, bittersweet landing.',
+    },
+  },
+]
+
+// Regenerating slide 4 — the drop. Mirrors the PHM fixture's slide 4 beat.
+const PHM_TARGET_SLIDE: SlideBeatContext = {
+  slideNumber: 4,
+  pillLabel: 'Grace forced onto ship',
+  beatTimestamp: 75,
+  beatScore: 5.8,
+  beatColor: 'red',
+  originalRole: 'drop',
+  storyBeatName: 'Grace is drugged and forcibly loaded onto Hail Mary',
+}
+
+const PHM_REGEN_INPUT: GenerateBodyCopyForSlideInput = {
+  filmTitle: 'Project Hail Mary',
+  filmYear: 2026,
+  runtimeMinutes: 157,
+  criticsScore: 8.3,
+  dataPoints: PHM_DATA,
+  slide: PHM_TARGET_SLIDE,
+  previousSlides: PHM_PREVIOUS_SLIDES,
+}
+
+describe('buildUserPrompt (single-slide dispatch)', () => {
+  const chars: GraphCharacteristics = computeCharacteristics(PHM_DATA)
+  const user = buildUserPrompt(PHM_REGEN_INPUT, chars)
+
+  it('serializes film metadata, data points, and characteristics', () => {
+    expect(user).toContain('Project Hail Mary')
+    expect(user).toContain('"runtimeMinutes": 157')
+    expect(user).toContain('"dropSeverity": "moderate"')
+  })
+
+  it('includes the target slide under a distinct "Slide to regenerate" header', () => {
+    expect(user).toContain('Slide to regenerate')
+    expect(user).toContain('"slideNumber": 4')
+    expect(user).toContain('"originalRole": "drop"')
+    expect(user).toContain(PHM_TARGET_SLIDE.storyBeatName)
+  })
+
+  it('computes scoreDelta against the immediately preceding slide by slideNumber', () => {
+    // Slide 4 (5.8) - slide 3 (8.1) = -2.3
+    expect(user).toMatch(/"scoreDelta":\s*-2\.3/)
+  })
+
+  it('includes each previous slide with its full existing copy as READ-ONLY context', () => {
+    expect(user).toContain('Previous slides context')
+    expect(user).toContain('READ-ONLY')
+    for (const p of PHM_PREVIOUS_SLIDES) {
+      expect(user).toContain(p.copy.pill)
+      expect(user).toContain(p.copy.headline)
+      expect(user).toContain(p.storyBeatName)
+    }
+  })
+
+  it('does NOT include the target slide inside previous_slides_context', () => {
+    // The target slide's storyBeatName should appear exactly once (under the
+    // "Slide to regenerate" block), not duplicated into the reference section.
+    const matches = user.match(
+      new RegExp(PHM_TARGET_SLIDE.storyBeatName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+    )
+    expect(matches?.length ?? 0).toBe(1)
+  })
+
+  it('instructs the model to output ONLY the single slide', () => {
+    expect(user).toMatch(/output ONLY the requested slide/i)
+    expect(user).toMatch(/do NOT output entries for the previous_slides_context/i)
+  })
+})
+
+function mockSingleSlideResponse(copy: { pill: string; headline: string; body: string }) {
+  return {
+    content: [{ type: 'text', text: JSON.stringify(copy) }],
+    usage: {
+      input_tokens: 800,
+      output_tokens: 150,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+    },
+  }
+}
+
+describe('generateBodyCopyForSlide (mocked)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns a single SlideCopy with characteristics, model, and token usage', async () => {
+    mockMessagesCreate.mockResolvedValueOnce(
+      mockSingleSlideResponse({
+        pill: 'Grace forced onto ship',
+        headline: 'No consent, no way back.',
+        body: 'At 1h 15m the score bottoms out at {{red:5.8}}. The only red dot in the film.',
+      }),
+    )
+
+    const out = await generateBodyCopyForSlide(PHM_REGEN_INPUT)
+    expect(out.slideCopy.pill).toBe('Grace forced onto ship')
+    expect(out.slideCopy.headline).toBe('No consent, no way back.')
+    expect(out.slideCopy.body).toContain('5.8')
+    expect(out.characteristics.peakHeight).toBe(9.5)
+    expect(out.modelUsed).toMatch(/sonnet/i)
+    expect(out.totalTokens).toBe(950)
+  })
+
+  it('sends the single-slide variant of the system prompt with cache_control', async () => {
+    mockMessagesCreate.mockResolvedValueOnce(
+      mockSingleSlideResponse({
+        pill: 'ok',
+        headline: 'ok.',
+        body: 'ok body {{red:5.8}}.',
+      }),
+    )
+    await generateBodyCopyForSlide(PHM_REGEN_INPUT)
+
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(1)
+    const args = mockMessagesCreate.mock.calls[0][0] as {
+      system: Array<{ type: string; text: string; cache_control?: { type: string } }>
+      messages: Array<{ role: string; content: string }>
+    }
+    expect(args.system[0].cache_control?.type).toBe('ephemeral')
+    // Single-slide schema marker — full mode uses "slide_2", "slide_3", etc.
+    expect(args.system[0].text).toContain('Do not wrap in a "slide_N" key')
+    expect(args.system[0].text).not.toContain('"slide_2"')
+  })
+
+  it('tolerates an arbitrary target beat (does NOT require slideNumber 2..7 ordering)', async () => {
+    // The full generator rejects out-of-order/too-few slide arrays; the
+    // single-slide path should accept any MiddleSlideNumber as the target.
+    mockMessagesCreate.mockResolvedValueOnce(
+      mockSingleSlideResponse({
+        pill: 'Rocky saves Grace',
+        headline: 'Sacrifice without hesitation.',
+        body: 'The score hits {{teal:9.5}}.',
+      }),
+    )
+    const input: GenerateBodyCopyForSlideInput = {
+      ...PHM_REGEN_INPUT,
+      slide: { ...PHM_TARGET_SLIDE, slideNumber: 6, beatTimestamp: 115, beatScore: 9.5, beatColor: 'teal' },
+    }
+    const out = await generateBodyCopyForSlide(input)
+    expect(out.slideCopy.pill).toBe('Rocky saves Grace')
+  })
+
+  it('throws BodyCopyGenerationError when the returned pill contains an em dash', async () => {
+    mockMessagesCreate.mockResolvedValueOnce(
+      mockSingleSlideResponse({
+        pill: 'Stratt \u2014 the mission',
+        headline: 'Stakes become clear.',
+        body: 'The score hovers around {{teal:8.1}}.',
+      }),
+    )
+    await expect(generateBodyCopyForSlide(PHM_REGEN_INPUT)).rejects.toThrow(
+      /pill contains forbidden dash/,
+    )
+  })
+
+  it('throws BodyCopyGenerationError when the body contains an en dash', async () => {
+    mockMessagesCreate.mockResolvedValueOnce(
+      mockSingleSlideResponse({
+        pill: 'Grace forced onto ship',
+        headline: 'No consent, no way back.',
+        body: 'A jump 5.8 \u2013 8.7 across ten minutes.',
+      }),
+    )
+    await expect(generateBodyCopyForSlide(PHM_REGEN_INPUT)).rejects.toThrow(
+      /forbidden dash character/,
+    )
+  })
+
+  it('throws BodyCopyGenerationError when a required field is missing', async () => {
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify({ pill: 'only pill', body: 'only body {{red:5.8}}.' }) }],
+      usage: { input_tokens: 100, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+    })
+    await expect(generateBodyCopyForSlide(PHM_REGEN_INPUT)).rejects.toThrow(/headline/)
+  })
+
+  it('truncates a pill exceeding 36 chars at the nearest word boundary with ellipsis', async () => {
+    mockMessagesCreate.mockResolvedValueOnce(
+      mockSingleSlideResponse({
+        pill: 'Juror 8 challenges the train noise claim',
+        headline: 'Doubt takes hold.',
+        body: 'The score drops to {{red:5.8}}.',
+      }),
+    )
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const out = await generateBodyCopyForSlide(PHM_REGEN_INPUT)
+      expect(out.slideCopy.pill).toBe('Juror 8 challenges the train...')
+      expect(out.slideCopy.pill.length).toBeLessThanOrEqual(36)
+      const warnMsg = warnSpy.mock.calls[0]?.[0] as string
+      expect(warnMsg).toContain('slide_4')
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+})
+
+describe('parseSingleSlideResponse', () => {
+  it('parses a flat { pill, headline, body } object', () => {
+    const raw = JSON.stringify({
+      pill: 'Grace forced onto ship',
+      headline: 'No consent, no way back.',
+      body: 'At 1h 15m the score bottoms out at {{red:5.8}}.',
+    })
+    const parsed = parseSingleSlideResponse(raw, 4)
+    expect(parsed.pill).toBe('Grace forced onto ship')
+    expect(parsed.headline).toBe('No consent, no way back.')
+    expect(parsed.body).toContain('5.8')
+  })
+
+  it('tolerates a wrapper like { "slide_4": { ... } }', () => {
+    const raw = JSON.stringify({
+      slide_4: {
+        pill: 'Grace forced onto ship',
+        headline: 'No consent, no way back.',
+        body: 'At 1h 15m the score bottoms out at {{red:5.8}}.',
+      },
+    })
+    const parsed = parseSingleSlideResponse(raw, 4)
+    expect(parsed.pill).toBe('Grace forced onto ship')
+  })
+
+  it('parses JSON wrapped in a ```json code fence', () => {
+    const inner = {
+      pill: 'ok',
+      headline: 'ok.',
+      body: 'ok body {{red:5.8}}.',
+    }
+    const raw = '```json\n' + JSON.stringify(inner) + '\n```'
+    const parsed = parseSingleSlideResponse(raw, 4)
+    expect(parsed.body).toContain('5.8')
+  })
+
+  it('throws BodyCopyGenerationError with offendingSlide set when pill is empty', () => {
+    const raw = JSON.stringify({ pill: '   ', headline: 'ok.', body: 'ok body {{red:5.8}}.' })
+    let caught: unknown
+    try {
+      parseSingleSlideResponse(raw, 4)
+    } catch (err) {
+      caught = err
+    }
+    expect(caught).toBeInstanceOf(BodyCopyGenerationError)
+    expect((caught as BodyCopyGenerationError).offendingSlide).toBe(4)
   })
 })

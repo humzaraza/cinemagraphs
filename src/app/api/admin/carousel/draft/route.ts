@@ -185,6 +185,8 @@ export async function POST(request: NextRequest) {
   let effectiveSlotSelections: SlotSelectionDTO[]
   let aiSlotSelectionsOut: SlotSelectionDTO[]
 
+  let aiBodyCopyOut: Record<MiddleSlideNumber, SlideCopy>
+
   if (existing && !force) {
     slideCopy = existing.bodyCopyJson as unknown as Record<MiddleSlideNumber, SlideCopy>
     characteristics = existing.characteristicsJson
@@ -210,12 +212,25 @@ export async function POST(request: NextRequest) {
         data: { aiSlotSelectionsJson: existing.slotSelectionsJson as unknown as object },
       })
     }
+    // Backfill aiBodyCopyJson for rows that predate the column. Use the
+    // current bodyCopy as the baseline — it's the best approximation of the
+    // original AI output we have for pre-migration rows.
+    if (existing.aiBodyCopyJson === null) {
+      await prisma.carouselDraft.update({
+        where: { id: existing.id },
+        data: { aiBodyCopyJson: existing.bodyCopyJson as unknown as object },
+      })
+    }
     effectiveSlotSelections = (Array.isArray(existing.slotSelectionsJson)
       ? existing.slotSelectionsJson
       : []) as unknown as SlotSelectionDTO[]
     aiSlotSelectionsOut = (Array.isArray(existing.aiSlotSelectionsJson)
       ? existing.aiSlotSelectionsJson
       : effectiveSlotSelections) as unknown as SlotSelectionDTO[]
+    aiBodyCopyOut = (existing.aiBodyCopyJson ?? existing.bodyCopyJson) as unknown as Record<
+      MiddleSlideNumber,
+      SlideCopy
+    >
   } else {
     const slideContexts: SlideBeatContext[] = middleWithBeats.map((s) => ({
       slideNumber: s.position as MiddleSlideNumber,
@@ -254,6 +269,7 @@ export async function POST(request: NextRequest) {
     }))
     effectiveSlotSelections = slotSelections
     aiSlotSelectionsOut = slotSelections
+    aiBodyCopyOut = slideCopy
 
     // Resolve backdrop URL on fresh generation and cache on the draft row so
     // subsequent PATCH / revert / cached POST don't re-hit TMDB.
@@ -403,6 +419,9 @@ export async function POST(request: NextRequest) {
     // admin page uses this to hydrate editable textareas without having to
     // parse back out of the rendered PNGs.
     bodyCopy: slideCopy,
+    // Frozen AI baseline body copy for slides 2-7. Used by Revert to decide
+    // whether the current copy differs from the original AI output.
+    aiBodyCopy: aiBodyCopyOut,
     // Persisted slot selections (current state — reflects beat overrides).
     slotSelections: effectiveSlotSelections,
     // Algorithm baseline, frozen at draft generation. Used by Reset.

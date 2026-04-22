@@ -63,6 +63,7 @@ interface DraftResponse {
   generatedAt: string
   generatedAtModel: string
   bodyCopy: Record<string, SlideCopy>
+  aiBodyCopy: Record<string, SlideCopy>
   slotSelections: SlotSelection[]
   aiSlotSelections: SlotSelection[]
   availableBeats: AvailableBeat[]
@@ -148,12 +149,16 @@ export default function CarouselSharePage() {
   const [availableBeats, setAvailableBeats] = useState<AvailableBeat[]>([])
   // Per-slot save status for beat changes (separate from text-edit pip).
   const [beatEdits, setBeatEdits] = useState<Record<number, BeatEditState>>({})
+  // Per-slot save status for regenerate (separate pip from beat + text edit).
+  const [regenerateEdits, setRegenerateEdits] = useState<Record<number, BeatEditState>>({})
   const [helpDismissed, setHelpDismissed] = useState(true)
 
   const debouncersRef = useRef<Record<number, Debouncer>>({})
   const successTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
   // Separate fade-out timers for the beat-pip; same SUCCESS_FADE_MS as text.
   const beatSuccessTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
+  // Fade-out timers for the regenerate pip (distinct from beat and text timers).
+  const regenerateSuccessTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
   // Mirror of slideEdits for reading inside async callbacks without stale
   // closures. The debouncer's timer callback fires outside of React's render
   // cycle and needs the latest text, not the text captured at trigger time.
@@ -221,6 +226,8 @@ export default function CarouselSharePage() {
     successTimersRef.current = {}
     for (const t of Object.values(beatSuccessTimersRef.current)) clearTimeout(t)
     beatSuccessTimersRef.current = {}
+    for (const t of Object.values(regenerateSuccessTimersRef.current)) clearTimeout(t)
+    regenerateSuccessTimersRef.current = {}
   }, [])
 
   useEffect(() => () => clearAllTimers(), [clearAllTimers])
@@ -239,6 +246,7 @@ export default function CarouselSharePage() {
       setAiSlotSelections([])
       setAvailableBeats([])
       setBeatEdits({})
+      setRegenerateEdits({})
       const t0 = performance.now()
       try {
         const res = await fetch('/api/admin/carousel/draft', {
@@ -276,22 +284,18 @@ export default function CarouselSharePage() {
         }
         setSlideEdits(edits)
         setSlidePngs(pngs)
-        // TODO(C4.1 revert bug): setAiBodyCopy uses the current bodyCopy on
-        // every load — including a load that happens after the user has saved
-        // edits. Means Revert compares "current vs current" once it has been
-        // re-loaded post-save, so the button appears disabled even though the
-        // server still has the AI baseline in aiBodyCopyJson. Fix by surfacing
-        // aiBodyCopy in the POST response (mirroring aiSlotSelections) and
-        // hydrating from that field instead. Tracking separately from C4.2.
-        setAiBodyCopy(json.bodyCopy)
+        setAiBodyCopy(json.aiBodyCopy ?? json.bodyCopy)
         setSlotSelections(json.slotSelections ?? [])
         setAiSlotSelections(json.aiSlotSelections ?? [])
         setAvailableBeats(json.availableBeats ?? [])
         const beatInit: Record<number, BeatEditState> = {}
+        const regenInit: Record<number, BeatEditState> = {}
         for (const n of MIDDLE_SLIDES) {
           beatInit[n] = { status: 'idle', errorMessage: null }
+          regenInit[n] = { status: 'idle', errorMessage: null }
         }
         setBeatEdits(beatInit)
+        setRegenerateEdits(regenInit)
       } catch {
         setError('Failed to load draft')
       } finally {
@@ -744,6 +748,89 @@ export default function CarouselSharePage() {
     [data],
   )
 
+  // Regenerate pulls fresh AI body copy for one slide's CURRENT beat. Uses the
+  // render-then-persist pattern — the server renders with the candidate copy
+  // and only commits bodyCopyJson on success. aiBodyCopyJson is never touched,
+  // so Revert continues to point at the original AI baseline.
+  //
+  // Cancels the text-edit debouncer for this slide — the regenerated copy
+  // supersedes any pending edit. Mirrors the response pill into slideEdits
+  // (via full slide-copy replacement); the pill lives server-side only so it
+  // doesn't need its own state.
+  const onRegenerateClick = useCallback(
+    async (slideNum: number) => {
+      if (!data) return
+      const draftId = data.draftId
+      const d = debouncersRef.current[slideNum]
+      if (d) d.cancel()
+      if (successTimersRef.current[slideNum]) {
+        clearTimeout(successTimersRef.current[slideNum])
+        delete successTimersRef.current[slideNum]
+      }
+      if (regenerateSuccessTimersRef.current[slideNum]) {
+        clearTimeout(regenerateSuccessTimersRef.current[slideNum])
+        delete regenerateSuccessTimersRef.current[slideNum]
+      }
+      setRegenerateEdits((prev) => ({
+        ...prev,
+        [slideNum]: { status: 'saving', errorMessage: null },
+      }))
+      try {
+        const res = await fetch(
+          `/api/admin/carousel/draft/${draftId}/slide/${slideNum}/regenerate`,
+          { method: 'POST' },
+        )
+        const text = await res.text()
+        if (!res.ok) {
+          let message = 'Regenerate failed'
+          try {
+            const j = JSON.parse(text)
+            if (typeof j?.error === 'string') message = j.error
+          } catch { /* ignore */ }
+          setRegenerateEdits((prev) => ({
+            ...prev,
+            [slideNum]: { status: 'error', errorMessage: message },
+          }))
+          return
+        }
+        const json = JSON.parse(text) as {
+          slideNum: number
+          bodyCopy: SlideCopy
+          pngBase64: string
+        }
+        setSlidePngs((prev) => ({ ...prev, [slideNum]: json.pngBase64 }))
+        setSlideEdits((prev) => ({
+          ...prev,
+          [slideNum]: {
+            headline: json.bodyCopy.headline,
+            body: json.bodyCopy.body,
+            status: 'idle',
+            errorMessage: null,
+          },
+        }))
+        setRegenerateEdits((prev) => ({
+          ...prev,
+          [slideNum]: { status: 'success', errorMessage: null },
+        }))
+        const timer = setTimeout(() => {
+          setRegenerateEdits((prev) => {
+            const entry = prev[slideNum]
+            if (!entry || entry.status !== 'success') return prev
+            return { ...prev, [slideNum]: { ...entry, status: 'idle' } }
+          })
+          delete regenerateSuccessTimersRef.current[slideNum]
+        }, SUCCESS_FADE_MS)
+        regenerateSuccessTimersRef.current[slideNum] = timer
+      } catch {
+        setRegenerateEdits((prev) => ({
+          ...prev,
+          [slideNum]: { status: 'error', errorMessage: 'Network error' },
+        }))
+      }
+    },
+    [data],
+  )
+
   if (status === 'loading') {
     return (
       <div className="min-h-screen bg-cinema-dark flex items-center justify-center">
@@ -932,10 +1019,12 @@ export default function CarouselSharePage() {
                         slideNum={s.slideNumber}
                         edit={edit}
                         revertDisabled={revertDisabledMap[s.slideNumber] ?? true}
+                        regenerateState={regenerateEdits[s.slideNumber] ?? { status: 'idle', errorMessage: null }}
                         onHeadlineChange={(v) => onHeadlineChange(s.slideNumber, v)}
                         onBodyChange={(v) => onBodyChange(s.slideNumber, v)}
                         onBlur={() => onFieldBlur(s.slideNumber)}
                         onRevert={() => onRevertClick(s.slideNumber)}
+                        onRegenerate={() => onRegenerateClick(s.slideNumber)}
                       />
                     )}
                   </div>
@@ -953,23 +1042,28 @@ interface SlideEditorProps {
   slideNum: number
   edit: SlideEditState
   revertDisabled: boolean
+  regenerateState: BeatEditState
   onHeadlineChange: (v: string) => void
   onBodyChange: (v: string) => void
   onBlur: () => void
   onRevert: () => void
+  onRegenerate: () => void
 }
 
 function SlideEditor({
   slideNum,
   edit,
   revertDisabled,
+  regenerateState,
   onHeadlineChange,
   onBodyChange,
   onBlur,
   onRevert,
+  onRegenerate,
 }: SlideEditorProps) {
   const headlineCounter = headlineCounterState(edit.headline.length)
   const bodyWarn = bodyExceedsSoftLimit(edit.body)
+  const regenerating = regenerateState.status === 'saving'
 
   return (
     <div className="mt-2 bg-[#1a1a2e] border border-[#333] rounded-lg p-3 flex flex-col gap-3">
@@ -1025,6 +1119,28 @@ function SlideEditor({
           aria-label={`Revert slide ${slideNum} to AI version`}
         >
           Revert to AI version
+        </button>
+      </div>
+
+      {/* Regenerate row: separate from revert, intentionally never disabled */}
+      <div className="flex items-center justify-between pt-2 border-t border-[#2a2a3a]">
+        <div className="flex flex-col gap-0.5">
+          <BeatStatusPip status={regenerateState.status} message={regenerateState.errorMessage} />
+          <span className="text-[11px] text-cinema-muted/70">
+            Regenerate writes new AI body copy for the current beat. Use after changing the beat above.
+          </span>
+        </div>
+        <button
+          onClick={onRegenerate}
+          disabled={regenerating}
+          className={`text-xs px-2.5 py-1 rounded border transition-colors ${
+            regenerating
+              ? 'border-[#333] text-cinema-muted/50 cursor-not-allowed'
+              : 'border-cinema-gold/50 text-cinema-gold hover:bg-cinema-gold/10'
+          }`}
+          aria-label={`Regenerate slide ${slideNum} body copy`}
+        >
+          {regenerating ? 'Regenerating...' : 'Regenerate copy'}
         </button>
       </div>
     </div>

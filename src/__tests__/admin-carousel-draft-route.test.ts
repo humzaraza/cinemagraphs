@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   requireRole: vi.fn(),
   prisma: {
     film: { findUnique: vi.fn() },
-    carouselDraft: { findUnique: vi.fn(), upsert: vi.fn() },
+    carouselDraft: { findUnique: vi.fn(), upsert: vi.fn(), update: vi.fn() },
   },
   generateBodyCopy: vi.fn(),
   composeSlide: vi.fn(),
@@ -289,5 +289,101 @@ describe('POST /api/admin/carousel/draft', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error).toMatch(/format/i)
+  })
+
+  it('fresh path: aiBodyCopy mirrors bodyCopy', async () => {
+    mocks.prisma.film.findUnique.mockResolvedValue(FILM_SHAPE)
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue(null)
+    mocks.prisma.carouselDraft.upsert.mockResolvedValue({
+      id: 'draft-1',
+      filmId: 'film-1',
+      format: '4x5',
+      bodyCopyJson: SLIDE_COPY,
+      slotSelectionsJson: [],
+      characteristicsJson: CHARACTERISTICS,
+      generatedAt: new Date('2026-04-21T11:00:00Z'),
+      generatedAtModel: 'claude-sonnet-4-6',
+    })
+
+    const { POST } = await import('@/app/api/admin/carousel/draft/route')
+    const res = await POST(makeJsonRequest({ filmId: 'film-1', format: '4x5' }))
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.aiBodyCopy).toEqual(SLIDE_COPY)
+    expect(body.aiBodyCopy).toEqual(body.bodyCopy)
+  })
+
+  it('cached path: aiBodyCopy returns the frozen baseline distinct from bodyCopy', async () => {
+    const EDITED_COPY = {
+      2: { pill: 'Edited 2', body: 'edited 2' },
+      3: SLIDE_COPY[3],
+      4: SLIDE_COPY[4],
+      5: SLIDE_COPY[5],
+      6: SLIDE_COPY[6],
+      7: SLIDE_COPY[7],
+    }
+    mocks.prisma.film.findUnique.mockResolvedValue(FILM_SHAPE)
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
+      id: 'draft-1',
+      filmId: 'film-1',
+      format: '4x5',
+      bodyCopyJson: EDITED_COPY,
+      aiBodyCopyJson: SLIDE_COPY,
+      slotSelectionsJson: [],
+      aiSlotSelectionsJson: [],
+      characteristicsJson: CHARACTERISTICS,
+      backdropUrl: 'https://image.tmdb.org/t/p/original/test.jpg',
+      generatedAt: new Date('2026-04-21T10:00:00Z'),
+      generatedAtModel: 'claude-sonnet-4-6',
+    })
+
+    const { POST } = await import('@/app/api/admin/carousel/draft/route')
+    const res = await POST(makeJsonRequest({ filmId: 'film-1', format: '4x5' }))
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.cached).toBe(true)
+    expect(body.bodyCopy[2]).toEqual({ pill: 'Edited 2', body: 'edited 2' })
+    expect(body.aiBodyCopy[2]).toEqual({ pill: 'Ryland wakes alone', body: 'copy 2' })
+    expect(body.aiBodyCopy).not.toEqual(body.bodyCopy)
+  })
+
+  it('cached path: backfills aiBodyCopyJson when null and returns bodyCopy as baseline', async () => {
+    mocks.prisma.film.findUnique.mockResolvedValue(FILM_SHAPE)
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
+      id: 'draft-1',
+      filmId: 'film-1',
+      format: '4x5',
+      bodyCopyJson: SLIDE_COPY,
+      aiBodyCopyJson: null,
+      slotSelectionsJson: [],
+      aiSlotSelectionsJson: [],
+      characteristicsJson: CHARACTERISTICS,
+      backdropUrl: 'https://image.tmdb.org/t/p/original/test.jpg',
+      generatedAt: new Date('2026-04-21T10:00:00Z'),
+      generatedAtModel: 'claude-sonnet-4-6',
+    })
+    mocks.prisma.carouselDraft.update.mockResolvedValue({})
+
+    const { POST } = await import('@/app/api/admin/carousel/draft/route')
+    const res = await POST(makeJsonRequest({ filmId: 'film-1', format: '4x5' }))
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.cached).toBe(true)
+    expect(body.aiBodyCopy).toEqual(SLIDE_COPY)
+
+    // Backfill write was called with the current bodyCopy as the baseline.
+    type UpdateArg = { where: { id: string }; data: { aiBodyCopyJson?: unknown } }
+    const updateCalls = mocks.prisma.carouselDraft.update.mock.calls as unknown as Array<
+      [UpdateArg]
+    >
+    const aiBodyCopyBackfill = updateCalls.find(
+      (call) => call[0].data.aiBodyCopyJson !== undefined,
+    )
+    expect(aiBodyCopyBackfill).toBeDefined()
+    expect(aiBodyCopyBackfill![0].where).toEqual({ id: 'draft-1' })
+    expect(aiBodyCopyBackfill![0].data.aiBodyCopyJson).toEqual(SLIDE_COPY)
   })
 })

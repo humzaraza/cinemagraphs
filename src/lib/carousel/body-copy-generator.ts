@@ -70,6 +70,37 @@ export type GenerateBodyCopyOutput = {
   totalTokens: number
 }
 
+// A previously-written slide passed to the single-slide regenerator as
+// voice/pattern reference. Includes the beat context so the model can see
+// neighbouring beats, and the existing copy so it can match voice without
+// duplicating rhythm.
+export type PreviousSlideContext = {
+  slideNumber: MiddleSlideNumber
+  beatTimestamp: number
+  beatScore: number
+  beatColor: 'red' | 'gold' | 'teal'
+  originalRole: SlideOriginalRole
+  storyBeatName: string
+  copy: SlideCopy
+}
+
+export type GenerateBodyCopyForSlideInput = {
+  filmTitle: string
+  filmYear: number
+  runtimeMinutes: number
+  criticsScore: number
+  dataPoints: DataPoint[]
+  slide: SlideBeatContext
+  previousSlides: PreviousSlideContext[]
+}
+
+export type GenerateBodyCopyForSlideOutput = {
+  slideCopy: SlideCopy
+  characteristics: GraphCharacteristics
+  modelUsed: string
+  totalTokens: number
+}
+
 export class BodyCopyGenerationError extends Error {
   readonly rawResponse: string | undefined
   readonly offendingSlide: number | undefined
@@ -179,8 +210,50 @@ export function computeCharacteristics(dataPoints: DataPoint[]): GraphCharacteri
 
 // ── Prompt construction ───────────────────────────────────────
 
-export function buildSystemPrompt(): string {
-  return `You are a thoughtful film critic writing body copy for Cinemagraphs, a brand that visualizes how audience sentiment shifts across a film's runtime as a graph of scored beats. Each post is a carousel of 8 slides. Slides 2 through 7 each highlight a single beat on the graph. Your job is to write a short pill label, a short serif headline, AND the body copy that sits under the graph on those middle slides.
+export type PromptMode = 'full' | 'single'
+
+export function buildSystemPrompt(mode: PromptMode = 'full'): string {
+  // Mode-specific inserts. In 'full' the produced prompt is string-identical
+  // to the pre-C4 version (existing tests assert on exact content). In
+  // 'single' the 6-slide coordination rules are dropped and the output
+  // schema narrows to one slide — used by the regenerate flow.
+  const singleModeNote =
+    mode === 'single'
+      ? `\n\nYou are regenerating body copy for ONE slide. The other five slides are provided below as previous_slides_context. These are for voice/pattern reference only. Do NOT regenerate or output anything for them. Only output the requested slide.`
+      : ''
+  const hardRuleNoRepeatedOpening =
+    mode === 'full'
+      ? `- Do not begin slide 2 with "[character] wakes up" or any other repeated opening pattern. Vary sentence structures across the six slides. No two slides should open with the same grammatical move.\n`
+      : ''
+  const hardRuleSlides456 =
+    mode === 'full'
+      ? `- For slides 4, 5, 6 in particular, tie the highlighted beat to the surrounding shape of the graph. These slides should feel connected, not isolated.\n`
+      : ''
+  const rhythmMixAcrossSix =
+    mode === 'full'
+      ? ` Mix and match across the six slides; never reuse the same rhythm twice in a row.`
+      : ''
+  const outputFormatBlock =
+    mode === 'full'
+      ? `Return ONLY a single JSON object, no markdown fences, no preamble, no trailing text. Schema:
+
+{
+  "slide_2": { "pill": "...", "headline": "...", "body": "..." },
+  "slide_3": { "pill": "...", "headline": "...", "body": "..." },
+  "slide_4": { "pill": "...", "headline": "...", "body": "..." },
+  "slide_5": { "pill": "...", "headline": "...", "body": "..." },
+  "slide_6": { "pill": "...", "headline": "...", "body": "..." },
+  "slide_7": { "pill": "...", "headline": "...", "body": "..." }
+}
+
+All six keys are required. Each value is an object with exactly three string fields: pill, headline, and body.`
+      : `Return ONLY a single JSON object for the one requested slide, no markdown fences, no preamble, no trailing text. Schema:
+
+{ "pill": "...", "headline": "...", "body": "..." }
+
+Exactly three string fields: pill, headline, and body. Do not wrap in a "slide_N" key. Do not output anything for the previous_slides_context entries.`
+
+  return `You are a thoughtful film critic writing body copy for Cinemagraphs, a brand that visualizes how audience sentiment shifts across a film's runtime as a graph of scored beats. Each post is a carousel of 8 slides. Slides 2 through 7 each highlight a single beat on the graph. Your job is to write a short pill label, a short serif headline, AND the body copy that sits under the graph on those middle slides.${singleModeNote}
 
 ## Voice
 
@@ -249,14 +322,12 @@ Every sentence must either describe a specific scene, state a specific data poin
 - Every slide's body copy MUST reference the highlighted beat's score by exact value (for example "5.8", not "around 6", not "the upper fives").
 - Use concrete numbers from the data where they sharpen the point, but sparingly. The copy is prose, not a readout.
 - Never reference internal classifications by name. Do not write "drop severity is mild", "recovery shape is sharp", "red dot count", "peak is late", or "ending direction is down". These are inputs you receive; they are not for the reader. Translate them into plain observation.
-- Do not begin slide 2 with "[character] wakes up" or any other repeated opening pattern. Vary sentence structures across the six slides. No two slides should open with the same grammatical move.
-- For slides 4, 5, 6 in particular, tie the highlighted beat to the surrounding shape of the graph. These slides should feel connected, not isolated.
-- Do not write slide numbers, pill labels, or headlines in the body copy itself. The chrome is rendered separately.
+${hardRuleNoRepeatedOpening}${hardRuleSlides456}- Do not write slide numbers, pill labels, or headlines in the body copy itself. The chrome is rendered separately.
 - Do not use hedging ("almost", "kinda", "sort of"). Be direct.
 
 ## Rhythm patterns
 
-Use these as shape guides for cadence, not as templates to fill in. Mix and match across the six slides; never reuse the same rhythm twice in a row.
+Use these as shape guides for cadence, not as templates to fill in.${rhythmMixAcrossSix}
 
 - Rhythm A: short observation. Score reference. Implication.
 - Rhythm B: score reference at the start. One concrete detail. What it means.
@@ -330,22 +401,11 @@ Headline constraints:
 
 ## Output format
 
-Return ONLY a single JSON object, no markdown fences, no preamble, no trailing text. Schema:
-
-{
-  "slide_2": { "pill": "...", "headline": "...", "body": "..." },
-  "slide_3": { "pill": "...", "headline": "...", "body": "..." },
-  "slide_4": { "pill": "...", "headline": "...", "body": "..." },
-  "slide_5": { "pill": "...", "headline": "...", "body": "..." },
-  "slide_6": { "pill": "...", "headline": "...", "body": "..." },
-  "slide_7": { "pill": "...", "headline": "...", "body": "..." }
-}
-
-All six keys are required. Each value is an object with exactly three string fields: pill, headline, and body.`
+${outputFormatBlock}`
 }
 
 export function buildUserPrompt(
-  input: GenerateBodyCopyInput,
+  input: GenerateBodyCopyInput | GenerateBodyCopyForSlideInput,
   characteristics: GraphCharacteristics,
 ): string {
   const film = {
@@ -355,6 +415,72 @@ export function buildUserPrompt(
     criticsScore: input.criticsScore,
   }
   const dataPoints = input.dataPoints.map((p) => ({ t: p.t, s: p.s }))
+
+  // Single-slide (regenerate) mode. `scoreDelta` against the immediately
+  // preceding slide's beat (by slideNumber) so the model still sees local
+  // movement context.
+  if ('slide' in input) {
+    const target = input.slide
+    const sortedPrev = [...input.previousSlides].sort(
+      (a, b) => a.slideNumber - b.slideNumber,
+    )
+    const immediatelyBefore = sortedPrev
+      .filter((p) => p.slideNumber < target.slideNumber)
+      .sort((a, b) => b.slideNumber - a.slideNumber)[0]
+    const scoreDelta = immediatelyBefore
+      ? +(target.beatScore - immediatelyBefore.beatScore).toFixed(2)
+      : 0
+
+    const targetPayload = {
+      slideNumber: target.slideNumber,
+      originalRole: target.originalRole,
+      storyBeatName: target.storyBeatName,
+      beatTimestamp: target.beatTimestamp,
+      beatScore: target.beatScore,
+      beatColor: target.beatColor,
+      scoreDelta,
+    }
+
+    const previousSlidesContext = sortedPrev.map((p) => ({
+      slideNumber: p.slideNumber,
+      originalRole: p.originalRole,
+      storyBeatName: p.storyBeatName,
+      beatTimestamp: p.beatTimestamp,
+      beatScore: p.beatScore,
+      beatColor: p.beatColor,
+      pill: p.copy.pill,
+      headline: p.copy.headline,
+      body: p.copy.body,
+    }))
+
+    return `Regenerate pill, headline, and body copy for ONE slide of a Cinemagraphs carousel for the following film. The other slides are included as previous_slides_context for voice/pattern reference only. Do NOT output anything for those; output ONLY the requested slide as described in the system prompt.
+
+Film:
+${JSON.stringify(film, null, 2)}
+
+Graph data points (t in minutes, s is the sentiment score 1.0-10.0):
+${JSON.stringify(dataPoints, null, 2)}
+
+Computed graph characteristics:
+${JSON.stringify(characteristics, null, 2)}
+
+Previous slides context (READ-ONLY voice and pattern reference; these are already written and will not be replaced):
+${JSON.stringify(previousSlidesContext, null, 2)}
+
+Slide to regenerate (scoreDelta is the change from the immediately preceding slide by slideNumber, or 0 if this is slide 2):
+${JSON.stringify(targetPayload, null, 2)}
+
+Remember:
+- The body-copy string must reference this beat's exact score, wrapped in the correct color marker.
+- Derive the pill from the storyBeatName, compressed to 36 characters or fewer (aim for 30-36 when the source has room). Fall back to the generic role label only when storyBeatName is empty.
+- Headline is 3-6 words, sentence case with a period, NOT a restatement of the pill. Avoid the forbidden generic filler phrases in the system prompt.
+- When scoreDelta contradicts the slot's originalRole (e.g., originalRole "drop" with a positive delta, or originalRole "peak" with a negative delta), trust the data and write the headline and body to match what the score is actually doing.
+- No em dashes, no en dashes. Sentence case. Two to three sentences, 30-50 words.
+- Body copy must describe the scene AND the reason the score is what it is. Do not close with a summary-philosophical sentence.
+- Do not invent plot details beyond what is provided above.
+- Output only the single-slide JSON object. Do NOT output entries for the previous_slides_context slides.`
+  }
+
   // scoreDelta = change from the previous chronological slide's beat score.
   // Lets the model cross-check its drop/peak claims against the actual
   // local movement: a slot labeled "drop" with a positive delta means the
@@ -562,6 +688,92 @@ function parseBodyCopyResponse(raw: string): Record<MiddleSlideNumber, SlideCopy
   return out
 }
 
+// Single-slide parser for the regenerate flow. Same rules as
+// parseBodyCopyResponse but the response is a flat { pill, headline, body }
+// object rather than a map keyed by slide_N. Returns a single SlideCopy.
+function parseSingleSlideResponse(raw: string, slideNum: MiddleSlideNumber): SlideCopy {
+  const parsed = tryParseJsonWithFallbacks(raw)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new BodyCopyGenerationError(
+      'Response is not a JSON object',
+      { rawResponse: raw, offendingSlide: slideNum },
+    )
+  }
+
+  // Tolerate a wrapped response (e.g. `{ "slide_4": { ... } }`) — strip the
+  // wrapper if it's the only key and points to an object. The system prompt
+  // explicitly tells the model not to do this, but the parser can recover.
+  let entry = parsed as Record<string, unknown>
+  const keys = Object.keys(entry)
+  if (keys.length === 1) {
+    const only = keys[0]
+    if (SLIDE_KEY_RE.test(only)) {
+      const inner = entry[only]
+      if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+        entry = inner as Record<string, unknown>
+      }
+    }
+  }
+
+  const pill = entry.pill
+  const headline = entry.headline
+  const body = entry.body
+  if (typeof pill !== 'string' || pill.trim() === '') {
+    throw new BodyCopyGenerationError(
+      'Response missing or empty "pill"',
+      { rawResponse: raw, offendingSlide: slideNum },
+    )
+  }
+  if (typeof headline !== 'string' || headline.trim() === '') {
+    throw new BodyCopyGenerationError(
+      'Response missing or empty "headline"',
+      { rawResponse: raw, offendingSlide: slideNum },
+    )
+  }
+  if (typeof body !== 'string' || body.trim() === '') {
+    throw new BodyCopyGenerationError(
+      'Response missing or empty "body"',
+      { rawResponse: raw, offendingSlide: slideNum },
+    )
+  }
+
+  let out: SlideCopy = { pill: pill.trim(), headline: headline.trim(), body }
+
+  if (out.body.includes(EM_DASH) || out.body.includes(EN_DASH)) {
+    throw new BodyCopyGenerationError(
+      'Generated copy contains forbidden dash character',
+      { rawResponse: raw, offendingSlide: slideNum },
+    )
+  }
+  if (out.pill.includes(EM_DASH) || out.pill.includes(EN_DASH)) {
+    throw new BodyCopyGenerationError(
+      'Generated pill contains forbidden dash character',
+      { rawResponse: raw, offendingSlide: slideNum },
+    )
+  }
+  if (out.headline.includes(EM_DASH) || out.headline.includes(EN_DASH)) {
+    throw new BodyCopyGenerationError(
+      'Generated headline contains forbidden dash character',
+      { rawResponse: raw, offendingSlide: slideNum },
+    )
+  }
+  if (out.pill.length > MAX_PILL_LENGTH) {
+    const truncated = truncatePill(out.pill)
+    console.warn(
+      `body-copy-generator: pill for slide_${slideNum} exceeded ${MAX_PILL_LENGTH} chars (got ${out.pill.length}); truncated "${out.pill}" -> "${truncated}"`,
+    )
+    out = { ...out, pill: truncated }
+  }
+  if (out.headline.length > MAX_HEADLINE_LENGTH) {
+    throw new BodyCopyGenerationError(
+      `Generated headline exceeds ${MAX_HEADLINE_LENGTH} characters (got ${out.headline.length}): "${out.headline}"`,
+      { rawResponse: raw, offendingSlide: slideNum },
+    )
+  }
+
+  return out
+}
+
 export async function generateBodyCopy(
   input: GenerateBodyCopyInput,
 ): Promise<GenerateBodyCopyOutput> {
@@ -606,7 +818,53 @@ export async function generateBodyCopy(
   }
 }
 
+// Regenerate body copy for ONE slide. Uses the single-slide prompt mode —
+// previously written slides are passed in for voice/pattern reference but the
+// model only produces a single { pill, headline, body } for the target slide.
+// Does NOT touch the cached AI baseline: callers must persist only bodyCopyJson.
+export async function generateBodyCopyForSlide(
+  input: GenerateBodyCopyForSlideInput,
+): Promise<GenerateBodyCopyForSlideOutput> {
+  const characteristics = computeCharacteristics(input.dataPoints)
+  const system = buildSystemPrompt('single')
+  const user = buildUserPrompt(input, characteristics)
+
+  const message = await getAnthropicClient().messages.create({
+    model: BODY_COPY_MODEL,
+    max_tokens: MAX_TOKENS,
+    temperature: 0.4,
+    system: [
+      {
+        type: 'text',
+        text: system,
+        cache_control: { type: 'ephemeral' },
+      },
+    ],
+    messages: [{ role: 'user', content: user }],
+  })
+
+  const responseText = message.content
+    .filter((block) => block.type === 'text')
+    .map((block) => (block as { type: 'text'; text: string }).text)
+    .join('')
+
+  const slideCopy = parseSingleSlideResponse(responseText, input.slide.slideNumber)
+
+  const totalTokens =
+    (message.usage?.input_tokens ?? 0) +
+    (message.usage?.output_tokens ?? 0) +
+    (message.usage?.cache_creation_input_tokens ?? 0) +
+    (message.usage?.cache_read_input_tokens ?? 0)
+
+  return {
+    slideCopy,
+    characteristics,
+    modelUsed: BODY_COPY_MODEL,
+    totalTokens,
+  }
+}
+
 // Exported for tests to verify the response parser in isolation.
-export { parseBodyCopyResponse }
+export { parseBodyCopyResponse, parseSingleSlideResponse }
 // Re-export for callers that want to build user prompts without invoking the full generator.
 export { SLIDE_KEY_RE }
