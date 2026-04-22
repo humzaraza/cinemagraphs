@@ -1,9 +1,19 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
+import {
+  BODY_SOFT_LIMIT,
+  HEADLINE_MAX,
+  clampHeadline,
+  headlineCounterState,
+  bodyExceedsSoftLimit,
+  slideCopyEqual,
+} from '@/lib/carousel/body-copy-edit'
+import { createDebouncer, type Debouncer } from '@/lib/carousel/debouncer'
+import type { SlideCopy } from '@/lib/carousel/body-copy-generator'
 
 type Format = '4x5' | '9x16'
 
@@ -23,6 +33,7 @@ interface DraftSlide {
 }
 
 interface DraftResponse {
+  draftId: string
   film: {
     id: string
     title: string
@@ -35,7 +46,17 @@ interface DraftResponse {
   cached: boolean
   generatedAt: string
   generatedAtModel: string
+  bodyCopy: Record<string, SlideCopy>
   slides: DraftSlide[]
+}
+
+type SaveStatus = 'idle' | 'saving' | 'success' | 'error'
+
+interface SlideEditState {
+  headline: string
+  body: string
+  status: SaveStatus
+  errorMessage: string | null
 }
 
 const SLIDE_LABELS: Record<number, string> = {
@@ -60,6 +81,17 @@ const FORMAT_OPTIONS: { value: Format; label: string }[] = [
   { value: '9x16', label: '9:16' },
 ]
 
+const MIDDLE_SLIDES = [2, 3, 4, 5, 6, 7] as const
+const DEBOUNCE_MS = 750
+const SUCCESS_FADE_MS = 1000
+const HELP_DISMISSED_KEY = 'carousel-edit-help-dismissed'
+
+function counterClass(state: 'neutral' | 'warn' | 'danger'): string {
+  if (state === 'danger') return 'text-red-400'
+  if (state === 'warn') return 'text-cinema-gold'
+  return 'text-cinema-muted'
+}
+
 export default function CarouselSharePage() {
   const { data: session, status } = useSession()
   const router = useRouter()
@@ -76,11 +108,37 @@ export default function CarouselSharePage() {
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0)
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Per-slide editable state, keyed by slide number.
+  const [slideEdits, setSlideEdits] = useState<Record<number, SlideEditState>>({})
+  // Slide PNGs keyed by slide number for patch-in-place after save.
+  const [slidePngs, setSlidePngs] = useState<Record<number, string>>({})
+  // AI-original copy for the revert comparison. Comes from the persisted
+  // bodyCopy on the POST response (the server mirrors aiBodyCopyJson on fresh
+  // generation and backfilled it for pre-migration rows).
+  const [aiBodyCopy, setAiBodyCopy] = useState<Record<string, SlideCopy>>({})
+  const [helpDismissed, setHelpDismissed] = useState(true)
+
+  const debouncersRef = useRef<Record<number, Debouncer>>({})
+  const successTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
+  // Mirror of slideEdits for reading inside async callbacks without stale
+  // closures. The debouncer's timer callback fires outside of React's render
+  // cycle and needs the latest text, not the text captured at trigger time.
+  const slideEditsRef = useRef<Record<number, SlideEditState>>({})
+
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.role !== 'ADMIN') {
       router.replace('/auth/signin')
     }
   }, [status, session, router])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    setHelpDismissed(window.sessionStorage.getItem(HELP_DISMISSED_KEY) === '1')
+  }, [])
+
+  useEffect(() => {
+    slideEditsRef.current = slideEdits
+  }, [slideEdits])
 
   // Cycle loading messages every 3s while loading.
   useEffect(() => {
@@ -119,12 +177,28 @@ export default function CarouselSharePage() {
     return () => { if (searchTimeout.current) clearTimeout(searchTimeout.current) }
   }, [query, searchFilms])
 
+  // Flush and clear all pending debouncers + success timers. Called on unmount
+  // and before loading a new draft so a pending save doesn't write into the
+  // next film/format's draft.
+  const clearAllTimers = useCallback(() => {
+    for (const d of Object.values(debouncersRef.current)) d.cancel()
+    debouncersRef.current = {}
+    for (const t of Object.values(successTimersRef.current)) clearTimeout(t)
+    successTimersRef.current = {}
+  }, [])
+
+  useEffect(() => () => clearAllTimers(), [clearAllTimers])
+
   const loadDraft = useCallback(
     async (filmId: string, fmt: Format) => {
+      clearAllTimers()
       setLoading(true)
       setError(null)
       setData(null)
       setElapsedMs(null)
+      setSlideEdits({})
+      setSlidePngs({})
+      setAiBodyCopy({})
       const t0 = performance.now()
       try {
         const res = await fetch('/api/admin/carousel/draft', {
@@ -145,13 +219,31 @@ export default function CarouselSharePage() {
         const json = JSON.parse(text) as DraftResponse
         setData(json)
         setElapsedMs(Math.round(performance.now() - t0))
+
+        const edits: Record<number, SlideEditState> = {}
+        const pngs: Record<number, string> = {}
+        for (const slide of json.slides) {
+          pngs[slide.slideNumber] = slide.pngBase64
+        }
+        for (const n of MIDDLE_SLIDES) {
+          const copy = json.bodyCopy[String(n)]
+          edits[n] = {
+            headline: copy?.headline ?? '',
+            body: copy?.body ?? '',
+            status: 'idle',
+            errorMessage: null,
+          }
+        }
+        setSlideEdits(edits)
+        setSlidePngs(pngs)
+        setAiBodyCopy(json.bodyCopy)
       } catch {
         setError('Failed to load draft')
       } finally {
         setLoading(false)
       }
     },
-    [],
+    [clearAllTimers],
   )
 
   function selectFilm(film: FilmResult) {
@@ -168,6 +260,234 @@ export default function CarouselSharePage() {
       loadDraft(selectedFilm.id, next)
     }
   }
+
+  function dismissHelp() {
+    setHelpDismissed(true)
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem(HELP_DISMISSED_KEY, '1')
+    }
+  }
+
+  // Actual save call. Reads the latest edit state for the slide, PATCHes, and
+  // updates PNG + status on success. On failure, keeps the user's text intact
+  // and flips the pip to error with the server's message.
+  const saveSlide = useCallback(
+    async (slideNum: number) => {
+      if (!data) return
+      const draftId = data.draftId
+      const snapshot = slideEditsRef.current[slideNum]
+      if (!snapshot) return
+
+      if (successTimersRef.current[slideNum]) {
+        clearTimeout(successTimersRef.current[slideNum])
+        delete successTimersRef.current[slideNum]
+      }
+
+      setSlideEdits((prev) => {
+        const entry = prev[slideNum]
+        if (!entry) return prev
+        return {
+          ...prev,
+          [slideNum]: { ...entry, status: 'saving', errorMessage: null },
+        }
+      })
+
+      try {
+        const res = await fetch(
+          `/api/admin/carousel/draft/${draftId}/slide/${slideNum}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ headline: snapshot.headline, body: snapshot.body }),
+          },
+        )
+        const text = await res.text()
+        if (!res.ok) {
+          let message = 'Save failed'
+          try {
+            const j = JSON.parse(text)
+            if (typeof j?.error === 'string') message = j.error
+          } catch { /* ignore */ }
+          setSlideEdits((prev) => {
+            const entry = prev[slideNum]
+            if (!entry) return prev
+            return {
+              ...prev,
+              [slideNum]: { ...entry, status: 'error', errorMessage: message },
+            }
+          })
+          return
+        }
+        const json = JSON.parse(text) as {
+          slideNum: number
+          bodyCopy: SlideCopy
+          pngBase64: string
+        }
+        setSlidePngs((prev) => ({ ...prev, [slideNum]: json.pngBase64 }))
+        setSlideEdits((prev) => {
+          const entry = prev[slideNum]
+          if (!entry) return prev
+          return {
+            ...prev,
+            [slideNum]: {
+              // Re-sync with what the server persisted. This is what the
+              // successful PATCH body echoed back; using it means we never
+              // drift from the stored truth after a successful save.
+              headline: json.bodyCopy.headline,
+              body: json.bodyCopy.body,
+              status: 'success',
+              errorMessage: null,
+            },
+          }
+        })
+        const timer = setTimeout(() => {
+          setSlideEdits((prev) => {
+            const entry = prev[slideNum]
+            if (!entry || entry.status !== 'success') return prev
+            return { ...prev, [slideNum]: { ...entry, status: 'idle' } }
+          })
+          delete successTimersRef.current[slideNum]
+        }, SUCCESS_FADE_MS)
+        successTimersRef.current[slideNum] = timer
+      } catch {
+        setSlideEdits((prev) => {
+          const entry = prev[slideNum]
+          if (!entry) return prev
+          return {
+            ...prev,
+            [slideNum]: { ...entry, status: 'error', errorMessage: 'Network error' },
+          }
+        })
+      }
+    },
+    [data],
+  )
+
+  function getDebouncer(slideNum: number): Debouncer {
+    const existing = debouncersRef.current[slideNum]
+    if (existing) return existing
+    const d = createDebouncer(() => { void saveSlide(slideNum) }, DEBOUNCE_MS)
+    debouncersRef.current[slideNum] = d
+    return d
+  }
+
+  function onHeadlineChange(slideNum: number, raw: string) {
+    const clamped = clampHeadline(raw)
+    setSlideEdits((prev) => {
+      const entry = prev[slideNum]
+      if (!entry) return prev
+      return {
+        ...prev,
+        [slideNum]: { ...entry, headline: clamped, status: 'idle', errorMessage: null },
+      }
+    })
+    getDebouncer(slideNum).trigger()
+  }
+
+  function onBodyChange(slideNum: number, raw: string) {
+    setSlideEdits((prev) => {
+      const entry = prev[slideNum]
+      if (!entry) return prev
+      return {
+        ...prev,
+        [slideNum]: { ...entry, body: raw, status: 'idle', errorMessage: null },
+      }
+    })
+    getDebouncer(slideNum).trigger()
+  }
+
+  function onFieldBlur(slideNum: number) {
+    const d = debouncersRef.current[slideNum]
+    if (d && d.isPending()) d.flush()
+  }
+
+  async function onRevertClick(slideNum: number) {
+    if (!data) return
+    const draftId = data.draftId
+    // Cancel any pending auto-save for this slide — the revert supersedes it.
+    const d = debouncersRef.current[slideNum]
+    if (d) d.cancel()
+    if (successTimersRef.current[slideNum]) {
+      clearTimeout(successTimersRef.current[slideNum])
+      delete successTimersRef.current[slideNum]
+    }
+    setSlideEdits((prev) => {
+      const entry = prev[slideNum]
+      if (!entry) return prev
+      return { ...prev, [slideNum]: { ...entry, status: 'saving', errorMessage: null } }
+    })
+    try {
+      const res = await fetch(
+        `/api/admin/carousel/draft/${draftId}/slide/${slideNum}/revert`,
+        { method: 'POST' },
+      )
+      const text = await res.text()
+      if (!res.ok) {
+        let message = 'Revert failed'
+        try {
+          const j = JSON.parse(text)
+          if (typeof j?.error === 'string') message = j.error
+        } catch { /* ignore */ }
+        setSlideEdits((prev) => {
+          const entry = prev[slideNum]
+          if (!entry) return prev
+          return { ...prev, [slideNum]: { ...entry, status: 'error', errorMessage: message } }
+        })
+        return
+      }
+      const json = JSON.parse(text) as {
+        slideNum: number
+        bodyCopy: SlideCopy
+        pngBase64: string
+      }
+      setSlidePngs((prev) => ({ ...prev, [slideNum]: json.pngBase64 }))
+      setSlideEdits((prev) => ({
+        ...prev,
+        [slideNum]: {
+          headline: json.bodyCopy.headline,
+          body: json.bodyCopy.body,
+          status: 'success',
+          errorMessage: null,
+        },
+      }))
+      const timer = setTimeout(() => {
+        setSlideEdits((prev) => {
+          const entry = prev[slideNum]
+          if (!entry || entry.status !== 'success') return prev
+          return { ...prev, [slideNum]: { ...entry, status: 'idle' } }
+        })
+        delete successTimersRef.current[slideNum]
+      }, SUCCESS_FADE_MS)
+      successTimersRef.current[slideNum] = timer
+    } catch {
+      setSlideEdits((prev) => {
+        const entry = prev[slideNum]
+        if (!entry) return prev
+        return { ...prev, [slideNum]: { ...entry, status: 'error', errorMessage: 'Network error' } }
+      })
+    }
+  }
+
+  const revertDisabledMap = useMemo(() => {
+    const out: Record<number, boolean> = {}
+    for (const n of MIDDLE_SLIDES) {
+      const edit = slideEdits[n]
+      const ai = aiBodyCopy[String(n)]
+      if (!edit || !ai) {
+        out[n] = true
+        continue
+      }
+      // Pill isn't editable here; compare against the AI pill so the button
+      // remains disabled when text matches, even if state-drift swapped pills.
+      const current: SlideCopy = {
+        pill: ai.pill,
+        headline: edit.headline,
+        body: edit.body,
+      }
+      out[n] = slideCopyEqual(current, ai)
+    }
+    return out
+  }, [slideEdits, aiBodyCopy])
 
   if (status === 'loading') {
     return (
@@ -188,7 +508,7 @@ export default function CarouselSharePage() {
             Carousel Preview
           </h1>
           <p className="text-sm text-cinema-muted">
-            Read-only preview. Editing comes in next phase.
+            Edit slides 2–7 inline. Changes auto-save.
           </p>
         </div>
 
@@ -299,28 +619,177 @@ export default function CarouselSharePage() {
               </div>
             </div>
 
+            {!helpDismissed && (
+              <div className="bg-cinema-gold/10 border border-cinema-gold/30 rounded-lg px-3 py-2 mb-4 flex items-start gap-2">
+                <span className="text-xs text-cinema-cream/80 flex-1">
+                  Use{' '}
+                  <code className="text-cinema-gold">{'{{color:value}}'}</code> to
+                  tint inline numbers. Colors: <span className="text-red-300">red</span>,{' '}
+                  <span className="text-cinema-gold">gold</span>,{' '}
+                  <span className="text-cinema-teal">teal</span>.
+                </span>
+                <button
+                  onClick={dismissHelp}
+                  className="text-xs text-cinema-muted hover:text-cinema-cream shrink-0"
+                  aria-label="Dismiss help"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+
             <div className="flex flex-col gap-4">
-              {data.slides.map((s) => (
-                <div key={s.slideNumber}>
-                  <div className="text-xs text-cinema-muted mb-1.5">
-                    Slide {s.slideNumber} — {SLIDE_LABELS[s.slideNumber] ?? ''}
+              {data.slides.map((s) => {
+                const pngBase64 = slidePngs[s.slideNumber] ?? s.pngBase64
+                const isMiddle =
+                  s.slideNumber >= 2 && s.slideNumber <= 7
+                const edit = slideEdits[s.slideNumber]
+                return (
+                  <div key={s.slideNumber}>
+                    <div className="text-xs text-cinema-muted mb-1.5">
+                      Slide {s.slideNumber} — {SLIDE_LABELS[s.slideNumber] ?? ''}
+                    </div>
+                    <div className="bg-[#0D0D1A] border border-[#333] rounded-lg overflow-hidden">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`data:image/png;base64,${pngBase64}`}
+                        alt={`Slide ${s.slideNumber}`}
+                        width={s.widthPx}
+                        height={s.heightPx}
+                        className="block w-full h-auto"
+                      />
+                    </div>
+                    {isMiddle && edit && (
+                      <SlideEditor
+                        slideNum={s.slideNumber}
+                        edit={edit}
+                        revertDisabled={revertDisabledMap[s.slideNumber] ?? true}
+                        onHeadlineChange={(v) => onHeadlineChange(s.slideNumber, v)}
+                        onBodyChange={(v) => onBodyChange(s.slideNumber, v)}
+                        onBlur={() => onFieldBlur(s.slideNumber)}
+                        onRevert={() => onRevertClick(s.slideNumber)}
+                      />
+                    )}
                   </div>
-                  <div className="bg-[#0D0D1A] border border-[#333] rounded-lg overflow-hidden">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`data:image/png;base64,${s.pngBase64}`}
-                      alt={`Slide ${s.slideNumber}`}
-                      width={s.widthPx}
-                      height={s.heightPx}
-                      className="block w-full h-auto"
-                    />
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </>
         )}
       </div>
     </div>
+  )
+}
+
+interface SlideEditorProps {
+  slideNum: number
+  edit: SlideEditState
+  revertDisabled: boolean
+  onHeadlineChange: (v: string) => void
+  onBodyChange: (v: string) => void
+  onBlur: () => void
+  onRevert: () => void
+}
+
+function SlideEditor({
+  slideNum,
+  edit,
+  revertDisabled,
+  onHeadlineChange,
+  onBodyChange,
+  onBlur,
+  onRevert,
+}: SlideEditorProps) {
+  const headlineCounter = headlineCounterState(edit.headline.length)
+  const bodyWarn = bodyExceedsSoftLimit(edit.body)
+
+  return (
+    <div className="mt-2 bg-[#1a1a2e] border border-[#333] rounded-lg p-3 flex flex-col gap-3">
+      {/* Headline */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-xs text-cinema-muted">Headline</label>
+          <span className={`text-[11px] ${counterClass(headlineCounter)}`}>
+            {edit.headline.length}/{HEADLINE_MAX}
+          </span>
+        </div>
+        <textarea
+          value={edit.headline}
+          onChange={(e) => onHeadlineChange(e.target.value)}
+          onBlur={onBlur}
+          rows={2}
+          className="w-full bg-[#0D0D1A] border border-[#333] rounded px-2 py-1.5 text-sm text-cinema-cream focus:outline-none focus:border-cinema-gold/50 resize-none"
+          placeholder="Short editorial headline..."
+        />
+      </div>
+
+      {/* Body */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-xs text-cinema-muted">Body</label>
+          {bodyWarn && (
+            <span className="text-[11px] text-cinema-gold">
+              Long body ({edit.body.length}) — may overflow
+            </span>
+          )}
+        </div>
+        <textarea
+          value={edit.body}
+          onChange={(e) => onBodyChange(e.target.value)}
+          onBlur={onBlur}
+          rows={4}
+          className="w-full bg-[#0D0D1A] border border-[#333] rounded px-2 py-1.5 text-sm text-cinema-cream focus:outline-none focus:border-cinema-gold/50 resize-none"
+          placeholder="Body copy..."
+        />
+      </div>
+
+      {/* Footer: status pip + revert */}
+      <div className="flex items-center justify-between">
+        <StatusPip status={edit.status} message={edit.errorMessage} />
+        <button
+          onClick={onRevert}
+          disabled={revertDisabled}
+          className={`text-xs px-2.5 py-1 rounded border transition-colors ${
+            revertDisabled
+              ? 'border-[#333] text-cinema-muted/50 cursor-not-allowed'
+              : 'border-cinema-gold/50 text-cinema-gold hover:bg-cinema-gold/10'
+          }`}
+          aria-label={`Revert slide ${slideNum} to AI version`}
+        >
+          Revert to AI version
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function StatusPip({ status, message }: { status: SaveStatus; message: string | null }) {
+  if (status === 'idle') {
+    return <span className="text-[11px] text-cinema-muted/60">Auto-saves on pause</span>
+  }
+  if (status === 'saving') {
+    return (
+      <span className="flex items-center gap-1.5 text-[11px] text-cinema-gold">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-cinema-gold animate-pulse" />
+        Saving...
+      </span>
+    )
+  }
+  if (status === 'success') {
+    return (
+      <span className="flex items-center gap-1.5 text-[11px] text-cinema-teal">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-cinema-teal" />
+        Saved
+      </span>
+    )
+  }
+  return (
+    <span
+      title={message ?? 'Save failed'}
+      className="flex items-center gap-1.5 text-[11px] text-red-300 cursor-help"
+    >
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400" />
+      {message ?? 'Save failed'}
+    </span>
   )
 }

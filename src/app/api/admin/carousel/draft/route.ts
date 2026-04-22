@@ -166,6 +166,8 @@ export async function POST(request: NextRequest) {
   let generatedAtModel: string
   let generatedAt: Date
   let cached: boolean
+  let draftId: string
+  let backdropUrl: string | null
 
   if (existing && !force) {
     slideCopy = existing.bodyCopyJson as unknown as Record<MiddleSlideNumber, SlideCopy>
@@ -173,6 +175,18 @@ export async function POST(request: NextRequest) {
     generatedAtModel = existing.generatedAtModel
     generatedAt = existing.generatedAt
     cached = true
+    draftId = existing.id
+    backdropUrl = existing.backdropUrl
+    // Lazy-resolve backdropUrl for rows that predate the column. After this
+    // one-time fill, PATCH and revert read from the row without hitting TMDB.
+    if (backdropUrl === null) {
+      const urls = await getMovieBackdropUrls(film.tmdbId)
+      backdropUrl = urls[0] ?? null
+      await prisma.carouselDraft.update({
+        where: { id: existing.id },
+        data: { backdropUrl },
+      })
+    }
   } else {
     const slideContexts: SlideBeatContext[] = middleWithBeats.map((s) => ({
       slideNumber: s.position as MiddleSlideNumber,
@@ -210,31 +224,40 @@ export async function POST(request: NextRequest) {
       duplicateTimestamp: s.duplicateTimestamp ?? false,
     }))
 
+    // Resolve backdrop URL on fresh generation and cache on the draft row so
+    // subsequent PATCH / revert / cached POST don't re-hit TMDB.
+    const freshBackdrops = await getMovieBackdropUrls(film.tmdbId)
+    backdropUrl = freshBackdrops[0] ?? null
+
     const saved = await prisma.carouselDraft.upsert({
       where: { filmId_format: { filmId, format } },
       create: {
         filmId,
         format,
         bodyCopyJson: slideCopy as unknown as object,
+        aiBodyCopyJson: slideCopy as unknown as object,
         slotSelectionsJson: slotSelections as unknown as object,
         characteristicsJson: result.characteristics as unknown as object,
+        backdropUrl,
         generatedAtModel,
       },
       update: {
         bodyCopyJson: slideCopy as unknown as object,
+        aiBodyCopyJson: slideCopy as unknown as object,
         slotSelectionsJson: slotSelections as unknown as object,
         characteristicsJson: result.characteristics as unknown as object,
+        backdropUrl,
         generatedAt: new Date(),
         generatedAtModel,
       },
     })
     generatedAt = saved.generatedAt
     cached = false
+    draftId = saved.id
   }
 
   // ── Render 8 slides ──────────────────────────────────────────
-  const backdrops = await getMovieBackdropUrls(film.tmdbId)
-  const backgroundImage = backdrops.length > 0 ? backdrops[0] : undefined
+  const backgroundImage = backdropUrl ?? undefined
 
   const filmData: FilmData = {
     title: film.title,
@@ -305,6 +328,7 @@ export async function POST(request: NextRequest) {
   void formatTimestamp // re-exported for tests; keep import alive
 
   return Response.json({
+    draftId,
     film: {
       id: film.id,
       title: film.title,
@@ -318,6 +342,10 @@ export async function POST(request: NextRequest) {
     generatedAt: generatedAt.toISOString(),
     generatedAtModel,
     characteristics,
+    // Raw body copy for slides 2-7, keyed by slide number as string. The
+    // admin page uses this to hydrate editable textareas without having to
+    // parse back out of the rendered PNGs.
+    bodyCopy: slideCopy,
     slides: slideResults,
   })
 }
