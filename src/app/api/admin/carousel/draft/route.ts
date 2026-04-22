@@ -24,6 +24,17 @@ export const dynamic = 'force-dynamic'
 
 type Format = '4x5' | '9x16'
 
+type SlotSelectionDTO = {
+  position: number
+  kind: string
+  originalRole: string | null
+  beatTimestamp: number | null
+  beatScore: number | null
+  timestampLabel: string
+  collision: boolean
+  duplicateTimestamp: boolean
+}
+
 const FORMAT_DIMS: Record<Format, { w: number; h: number }> = {
   '4x5': { w: 1080, h: 1350 },
   '9x16': { w: 1080, h: 1920 },
@@ -168,6 +179,11 @@ export async function POST(request: NextRequest) {
   let cached: boolean
   let draftId: string
   let backdropUrl: string | null
+  // Effective slot selections for rendering + response. On cached path this is
+  // the persisted state (so beat overrides survive reload); on fresh path it
+  // mirrors the algorithm's pick. aiSlotSelections is the frozen baseline.
+  let effectiveSlotSelections: SlotSelectionDTO[]
+  let aiSlotSelectionsOut: SlotSelectionDTO[]
 
   if (existing && !force) {
     slideCopy = existing.bodyCopyJson as unknown as Record<MiddleSlideNumber, SlideCopy>
@@ -187,6 +203,19 @@ export async function POST(request: NextRequest) {
         data: { backdropUrl },
       })
     }
+    // Backfill aiSlotSelectionsJson for rows that predate the column.
+    if (existing.aiSlotSelectionsJson === null) {
+      await prisma.carouselDraft.update({
+        where: { id: existing.id },
+        data: { aiSlotSelectionsJson: existing.slotSelectionsJson as unknown as object },
+      })
+    }
+    effectiveSlotSelections = (Array.isArray(existing.slotSelectionsJson)
+      ? existing.slotSelectionsJson
+      : []) as unknown as SlotSelectionDTO[]
+    aiSlotSelectionsOut = (Array.isArray(existing.aiSlotSelectionsJson)
+      ? existing.aiSlotSelectionsJson
+      : effectiveSlotSelections) as unknown as SlotSelectionDTO[]
   } else {
     const slideContexts: SlideBeatContext[] = middleWithBeats.map((s) => ({
       slideNumber: s.position as MiddleSlideNumber,
@@ -213,7 +242,7 @@ export async function POST(request: NextRequest) {
     characteristics = result.characteristics
     generatedAtModel = result.modelUsed
 
-    const slotSelections = slots.map((s) => ({
+    const slotSelections: SlotSelectionDTO[] = slots.map((s) => ({
       position: s.position,
       kind: s.kind,
       originalRole: s.originalRole ?? null,
@@ -223,6 +252,8 @@ export async function POST(request: NextRequest) {
       collision: s.collision,
       duplicateTimestamp: s.duplicateTimestamp ?? false,
     }))
+    effectiveSlotSelections = slotSelections
+    aiSlotSelectionsOut = slotSelections
 
     // Resolve backdrop URL on fresh generation and cache on the draft row so
     // subsequent PATCH / revert / cached POST don't re-hit TMDB.
@@ -237,6 +268,7 @@ export async function POST(request: NextRequest) {
         bodyCopyJson: slideCopy as unknown as object,
         aiBodyCopyJson: slideCopy as unknown as object,
         slotSelectionsJson: slotSelections as unknown as object,
+        aiSlotSelectionsJson: slotSelections as unknown as object,
         characteristicsJson: result.characteristics as unknown as object,
         backdropUrl,
         generatedAtModel,
@@ -245,6 +277,7 @@ export async function POST(request: NextRequest) {
         bodyCopyJson: slideCopy as unknown as object,
         aiBodyCopyJson: slideCopy as unknown as object,
         slotSelectionsJson: slotSelections as unknown as object,
+        aiSlotSelectionsJson: slotSelections as unknown as object,
         characteristicsJson: result.characteristics as unknown as object,
         backdropUrl,
         generatedAt: new Date(),
@@ -278,19 +311,31 @@ export async function POST(request: NextRequest) {
   for (const position of [1, 2, 3, 4, 5, 6, 7, 8] as SlotPosition[]) {
     let middleContent: MiddleSlideContent | undefined
     if (position >= 2 && position <= 7) {
-      const slot = slots.find((s) => s.position === position)!
-      const beat = slot.beat!
-      const beatIndex = beatIndexMap.get(beat.timeMidpoint)
+      const persistedSlot = effectiveSlotSelections.find((s) => s.position === position)
+      const beatTs = persistedSlot?.beatTimestamp
+      // Fallback to fresh slot if persisted entry is somehow missing (e.g. an
+      // older row with empty selectionsJson). This preserves backward compat
+      // with the existing test fixtures that pass `slotSelectionsJson: []`.
+      const freshSlot = slots.find((s) => s.position === position)
+      const resolvedTs = beatTs ?? freshSlot?.beat?.timeMidpoint
+      if (resolvedTs === undefined || resolvedTs === null) {
+        return Response.json(
+          { error: `Internal: could not resolve beat for slot ${position}` },
+          { status: 500 },
+        )
+      }
+      const beatIndex = beatIndexMap.get(resolvedTs)
       if (beatIndex === undefined) {
         return Response.json(
           { error: `Internal: could not locate beat for slot ${position}` },
           { status: 500 },
         )
       }
+      const role = (persistedSlot?.originalRole ?? freshSlot?.originalRole ?? 'fallback') as OriginalRole
+      const tsLabel = persistedSlot?.timestampLabel ?? freshSlot?.timestampLabel ?? formatTimestamp(resolvedTs)
       const slideNum = position as MiddleSlideNumber
       const copy = slideCopy[slideNum]
       const aiPill = copy?.pill ?? ''
-      const role = slot.originalRole ?? 'fallback'
       const pillSource = aiPill.trim() !== '' ? aiPill : ROLE_PILL_FALLBACK[role]
       // Prefer the AI-generated headline; fall back to the generic role
       // headline only if the AI output is missing or empty. The AI writes
@@ -300,7 +345,7 @@ export async function POST(request: NextRequest) {
       const headlineSource =
         aiHeadline.trim() !== '' ? aiHeadline : ROLE_HEADLINE[role]
       middleContent = {
-        pillLabel: renderedPill(pillSource, slot.timestampLabel),
+        pillLabel: renderedPill(pillSource, tsLabel),
         headline: headlineSource,
         bodyCopy: copy?.body ?? '',
         // dotPositions in graph-renderer are post-anchor; the anchor is at
@@ -327,6 +372,18 @@ export async function POST(request: NextRequest) {
 
   void formatTimestamp // re-exported for tests; keep import alive
 
+  // Stripped beat dictionary for the BeatPickerDropdown. Indexes are positions
+  // in the chronologically-sorted beats array (the same one render-middle-slide
+  // and the PATCH endpoint use). Title falls back to label when labelFull is
+  // missing; color matches what the graph dots use.
+  const availableBeats = beats.map((b, i) => ({
+    beatIndex: i,
+    title: (b.labelFull ?? b.label ?? '').trim(),
+    timestamp: formatTimestamp(b.timeMidpoint),
+    score: b.score,
+    color: computeDotColor(b.score),
+  }))
+
   return Response.json({
     draftId,
     film: {
@@ -346,6 +403,12 @@ export async function POST(request: NextRequest) {
     // admin page uses this to hydrate editable textareas without having to
     // parse back out of the rendered PNGs.
     bodyCopy: slideCopy,
+    // Persisted slot selections (current state — reflects beat overrides).
+    slotSelections: effectiveSlotSelections,
+    // Algorithm baseline, frozen at draft generation. Used by Reset.
+    aiSlotSelections: aiSlotSelectionsOut,
+    // Stripped beats for the dropdown UI. Indexed by position in the sorted array.
+    availableBeats,
     slides: slideResults,
   })
 }

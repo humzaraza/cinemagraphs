@@ -14,6 +14,11 @@ import {
 } from '@/lib/carousel/body-copy-edit'
 import { createDebouncer, type Debouncer } from '@/lib/carousel/debouncer'
 import type { SlideCopy } from '@/lib/carousel/body-copy-generator'
+import { conflictsForSlot } from '@/lib/carousel/slot-conflicts'
+import {
+  BeatPickerDropdown,
+  type AvailableBeat,
+} from '@/components/admin/carousel/BeatPickerDropdown'
 
 type Format = '4x5' | '9x16'
 
@@ -32,6 +37,17 @@ interface DraftSlide {
   heightPx: number
 }
 
+interface SlotSelection {
+  position: number
+  kind: string
+  originalRole: string | null
+  beatTimestamp: number | null
+  beatScore: number | null
+  timestampLabel: string
+  collision: boolean
+  duplicateTimestamp: boolean
+}
+
 interface DraftResponse {
   draftId: string
   film: {
@@ -47,6 +63,9 @@ interface DraftResponse {
   generatedAt: string
   generatedAtModel: string
   bodyCopy: Record<string, SlideCopy>
+  slotSelections: SlotSelection[]
+  aiSlotSelections: SlotSelection[]
+  availableBeats: AvailableBeat[]
   slides: DraftSlide[]
 }
 
@@ -55,6 +74,11 @@ type SaveStatus = 'idle' | 'saving' | 'success' | 'error'
 interface SlideEditState {
   headline: string
   body: string
+  status: SaveStatus
+  errorMessage: string | null
+}
+
+interface BeatEditState {
   status: SaveStatus
   errorMessage: string | null
 }
@@ -116,10 +140,20 @@ export default function CarouselSharePage() {
   // bodyCopy on the POST response (the server mirrors aiBodyCopyJson on fresh
   // generation and backfilled it for pre-migration rows).
   const [aiBodyCopy, setAiBodyCopy] = useState<Record<string, SlideCopy>>({})
+  // Per-slot beat selections — current persisted state.
+  const [slotSelections, setSlotSelections] = useState<SlotSelection[]>([])
+  // Algorithm baseline for the Reset-to-AI button.
+  const [aiSlotSelections, setAiSlotSelections] = useState<SlotSelection[]>([])
+  // Available beats for the dropdown — stable per draft load.
+  const [availableBeats, setAvailableBeats] = useState<AvailableBeat[]>([])
+  // Per-slot save status for beat changes (separate from text-edit pip).
+  const [beatEdits, setBeatEdits] = useState<Record<number, BeatEditState>>({})
   const [helpDismissed, setHelpDismissed] = useState(true)
 
   const debouncersRef = useRef<Record<number, Debouncer>>({})
   const successTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
+  // Separate fade-out timers for the beat-pip; same SUCCESS_FADE_MS as text.
+  const beatSuccessTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
   // Mirror of slideEdits for reading inside async callbacks without stale
   // closures. The debouncer's timer callback fires outside of React's render
   // cycle and needs the latest text, not the text captured at trigger time.
@@ -185,6 +219,8 @@ export default function CarouselSharePage() {
     debouncersRef.current = {}
     for (const t of Object.values(successTimersRef.current)) clearTimeout(t)
     successTimersRef.current = {}
+    for (const t of Object.values(beatSuccessTimersRef.current)) clearTimeout(t)
+    beatSuccessTimersRef.current = {}
   }, [])
 
   useEffect(() => () => clearAllTimers(), [clearAllTimers])
@@ -199,6 +235,10 @@ export default function CarouselSharePage() {
       setSlideEdits({})
       setSlidePngs({})
       setAiBodyCopy({})
+      setSlotSelections([])
+      setAiSlotSelections([])
+      setAvailableBeats([])
+      setBeatEdits({})
       const t0 = performance.now()
       try {
         const res = await fetch('/api/admin/carousel/draft', {
@@ -236,7 +276,22 @@ export default function CarouselSharePage() {
         }
         setSlideEdits(edits)
         setSlidePngs(pngs)
+        // TODO(C4.1 revert bug): setAiBodyCopy uses the current bodyCopy on
+        // every load — including a load that happens after the user has saved
+        // edits. Means Revert compares "current vs current" once it has been
+        // re-loaded post-save, so the button appears disabled even though the
+        // server still has the AI baseline in aiBodyCopyJson. Fix by surfacing
+        // aiBodyCopy in the POST response (mirroring aiSlotSelections) and
+        // hydrating from that field instead. Tracking separately from C4.2.
         setAiBodyCopy(json.bodyCopy)
+        setSlotSelections(json.slotSelections ?? [])
+        setAiSlotSelections(json.aiSlotSelections ?? [])
+        setAvailableBeats(json.availableBeats ?? [])
+        const beatInit: Record<number, BeatEditState> = {}
+        for (const n of MIDDLE_SLIDES) {
+          beatInit[n] = { status: 'idle', errorMessage: null }
+        }
+        setBeatEdits(beatInit)
       } catch {
         setError('Failed to load draft')
       } finally {
@@ -489,6 +544,206 @@ export default function CarouselSharePage() {
     return out
   }, [slideEdits, aiBodyCopy])
 
+  // Resolve the beatIndex (position in the sorted availableBeats array) for
+  // the slot's currently-persisted beatTimestamp. Both server fields are
+  // produced from the same sorted beats array via formatTimestamp(), so
+  // matching by the timestampLabel string is exact.
+  const beatIndexForSlot = useCallback(
+    (slotPos: number): number | null => {
+      const slot = slotSelections.find((s) => s.position === slotPos)
+      if (!slot || slot.beatTimestamp === null) return null
+      const beat = availableBeats.find(
+        (b) => b.timestamp === (slot.timestampLabel ?? '').trim(),
+      )
+      return beat ? beat.beatIndex : null
+    },
+    [availableBeats, slotSelections],
+  )
+
+  // Build per-slot conflict map (positions of OTHER middle slots sharing the
+  // same beatTimestamp). Used to render the "Same beat as Slide N" warning.
+  const conflictMap = useMemo(() => {
+    const out: Record<number, number[]> = {}
+    for (const n of MIDDLE_SLIDES) {
+      out[n] = conflictsForSlot(slotSelections, n)
+    }
+    return out
+  }, [slotSelections])
+
+  // Reset is disabled when the slot's current beatTimestamp already matches
+  // the AI baseline (idempotent state).
+  const beatResetDisabledMap = useMemo(() => {
+    const out: Record<number, boolean> = {}
+    for (const n of MIDDLE_SLIDES) {
+      const cur = slotSelections.find((s) => s.position === n)
+      const ai = aiSlotSelections.find((s) => s.position === n)
+      out[n] = !cur || !ai || cur.beatTimestamp === ai.beatTimestamp
+    }
+    return out
+  }, [slotSelections, aiSlotSelections])
+
+  // Dropdown change handler: PATCH the beat, replace the slot's PNG, update
+  // local slotSelections (collision flags too) from the server response.
+  // Pip indicator follows the same gold→teal→fade cycle as the text saves.
+  const onBeatChange = useCallback(
+    async (slideNum: number, beatIndex: number) => {
+      if (!data) return
+      const draftId = data.draftId
+      // Cancel any pending text-save for this slot — they share the same
+      // pip slot but are different requests; finishing them in either order
+      // is fine, but if the user is rapidly clicking dropdown they expect
+      // immediate saving status.
+      if (beatSuccessTimersRef.current[slideNum]) {
+        clearTimeout(beatSuccessTimersRef.current[slideNum])
+        delete beatSuccessTimersRef.current[slideNum]
+      }
+      setBeatEdits((prev) => ({
+        ...prev,
+        [slideNum]: { status: 'saving', errorMessage: null },
+      }))
+      try {
+        const res = await fetch(
+          `/api/admin/carousel/draft/${draftId}/slide/${slideNum}/beat`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ beatIndex }),
+          },
+        )
+        const text = await res.text()
+        if (!res.ok) {
+          let message = 'Beat change failed'
+          try {
+            const j = JSON.parse(text)
+            if (typeof j?.error === 'string') message = j.error
+          } catch { /* ignore */ }
+          setBeatEdits((prev) => ({
+            ...prev,
+            [slideNum]: { status: 'error', errorMessage: message },
+          }))
+          return
+        }
+        const json = JSON.parse(text) as {
+          slideNum: number
+          slotSelection: SlotSelection
+          pngBase64: string | null
+          conflicts: number[]
+          noop: boolean
+        }
+        if (json.pngBase64) {
+          setSlidePngs((prev) => ({ ...prev, [slideNum]: json.pngBase64! }))
+        }
+        // Replace the slot AND recompute collision flags for ALL middle slots
+        // from the new state. The endpoint already persisted these flags;
+        // mirror them locally so the UI updates without a refetch.
+        setSlotSelections((prev) => {
+          const next = prev.map((s) =>
+            s.position === slideNum ? json.slotSelection : s,
+          )
+          // Conflict flags: the response.conflicts list is OTHER positions
+          // sharing the new beat. Mark them collision: true; everything else
+          // collision: false (excluding hook/takeaway).
+          const conflictSet = new Set([slideNum, ...json.conflicts])
+          return next.map((s) => {
+            if (s.position < 2 || s.position > 7) return s
+            const newCollision = json.conflicts.length > 0 && conflictSet.has(s.position)
+            return { ...s, collision: newCollision }
+          })
+        })
+        setBeatEdits((prev) => ({
+          ...prev,
+          [slideNum]: { status: 'success', errorMessage: null },
+        }))
+        const timer = setTimeout(() => {
+          setBeatEdits((prev) => {
+            const entry = prev[slideNum]
+            if (!entry || entry.status !== 'success') return prev
+            return { ...prev, [slideNum]: { ...entry, status: 'idle' } }
+          })
+          delete beatSuccessTimersRef.current[slideNum]
+        }, SUCCESS_FADE_MS)
+        beatSuccessTimersRef.current[slideNum] = timer
+      } catch {
+        setBeatEdits((prev) => ({
+          ...prev,
+          [slideNum]: { status: 'error', errorMessage: 'Network error' },
+        }))
+      }
+    },
+    [data],
+  )
+
+  const onBeatReset = useCallback(
+    async (slideNum: number) => {
+      if (!data) return
+      const draftId = data.draftId
+      if (beatSuccessTimersRef.current[slideNum]) {
+        clearTimeout(beatSuccessTimersRef.current[slideNum])
+        delete beatSuccessTimersRef.current[slideNum]
+      }
+      setBeatEdits((prev) => ({
+        ...prev,
+        [slideNum]: { status: 'saving', errorMessage: null },
+      }))
+      try {
+        const res = await fetch(
+          `/api/admin/carousel/draft/${draftId}/slide/${slideNum}/beat/reset`,
+          { method: 'POST' },
+        )
+        const text = await res.text()
+        if (!res.ok) {
+          let message = 'Reset failed'
+          try {
+            const j = JSON.parse(text)
+            if (typeof j?.error === 'string') message = j.error
+          } catch { /* ignore */ }
+          setBeatEdits((prev) => ({
+            ...prev,
+            [slideNum]: { status: 'error', errorMessage: message },
+          }))
+          return
+        }
+        const json = JSON.parse(text) as {
+          slideNum: number
+          slotSelection: SlotSelection
+          pngBase64: string
+          conflicts: number[]
+        }
+        setSlidePngs((prev) => ({ ...prev, [slideNum]: json.pngBase64 }))
+        setSlotSelections((prev) => {
+          const next = prev.map((s) =>
+            s.position === slideNum ? json.slotSelection : s,
+          )
+          const conflictSet = new Set([slideNum, ...json.conflicts])
+          return next.map((s) => {
+            if (s.position < 2 || s.position > 7) return s
+            const newCollision = json.conflicts.length > 0 && conflictSet.has(s.position)
+            return { ...s, collision: newCollision }
+          })
+        })
+        setBeatEdits((prev) => ({
+          ...prev,
+          [slideNum]: { status: 'success', errorMessage: null },
+        }))
+        const timer = setTimeout(() => {
+          setBeatEdits((prev) => {
+            const entry = prev[slideNum]
+            if (!entry || entry.status !== 'success') return prev
+            return { ...prev, [slideNum]: { ...entry, status: 'idle' } }
+          })
+          delete beatSuccessTimersRef.current[slideNum]
+        }, SUCCESS_FADE_MS)
+        beatSuccessTimersRef.current[slideNum] = timer
+      } catch {
+        setBeatEdits((prev) => ({
+          ...prev,
+          [slideNum]: { status: 'error', errorMessage: 'Network error' },
+        }))
+      }
+    },
+    [data],
+  )
+
   if (status === 'loading') {
     return (
       <div className="min-h-screen bg-cinema-dark flex items-center justify-center">
@@ -659,6 +914,19 @@ export default function CarouselSharePage() {
                         className="block w-full h-auto"
                       />
                     </div>
+                    {isMiddle && (
+                      <BeatPickerSection
+                        slideNum={s.slideNumber}
+                        slotLabel={SLIDE_LABELS[s.slideNumber] ?? ''}
+                        beats={availableBeats}
+                        selectedBeatIndex={beatIndexForSlot(s.slideNumber)}
+                        beatEdit={beatEdits[s.slideNumber] ?? { status: 'idle', errorMessage: null }}
+                        resetDisabled={beatResetDisabledMap[s.slideNumber] ?? true}
+                        conflictPositions={conflictMap[s.slideNumber] ?? []}
+                        onChange={(idx) => onBeatChange(s.slideNumber, idx)}
+                        onReset={() => onBeatReset(s.slideNumber)}
+                      />
+                    )}
                     {isMiddle && edit && (
                       <SlideEditor
                         slideNum={s.slideNumber}
@@ -760,6 +1028,108 @@ function SlideEditor({
         </button>
       </div>
     </div>
+  )
+}
+
+interface BeatPickerSectionProps {
+  slideNum: number
+  slotLabel: string
+  beats: AvailableBeat[]
+  selectedBeatIndex: number | null
+  beatEdit: BeatEditState
+  resetDisabled: boolean
+  conflictPositions: number[]
+  onChange: (beatIndex: number) => void
+  onReset: () => void
+}
+
+function BeatPickerSection({
+  slideNum,
+  slotLabel,
+  beats,
+  selectedBeatIndex,
+  beatEdit,
+  resetDisabled,
+  conflictPositions,
+  onChange,
+  onReset,
+}: BeatPickerSectionProps) {
+  const saving = beatEdit.status === 'saving'
+  const conflictText =
+    conflictPositions.length === 0
+      ? null
+      : conflictPositions.length === 1
+        ? `Same beat as Slide ${conflictPositions[0]}`
+        : `Same beat as Slides ${conflictPositions.join(', ')}`
+
+  return (
+    <div className="mt-2 bg-[#1a1a2e] border border-[#333] rounded-lg p-3 flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-xs text-cinema-muted">Beat</label>
+        {conflictText && (
+          <span
+            className="text-[11px] text-cinema-gold flex items-center gap-1.5"
+            title="Two slides currently point at the same beat — pick a different one to keep the carousel varied."
+          >
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-cinema-gold" />
+            {conflictText}
+          </span>
+        )}
+      </div>
+      <BeatPickerDropdown
+        beats={beats}
+        selectedBeatIndex={selectedBeatIndex}
+        slotLabel={slotLabel}
+        onChange={onChange}
+        disabled={saving}
+      />
+      <div className="flex items-center justify-between">
+        <BeatStatusPip status={beatEdit.status} message={beatEdit.errorMessage} />
+        <button
+          onClick={onReset}
+          disabled={resetDisabled || saving}
+          className={`text-xs px-2.5 py-1 rounded border transition-colors ${
+            resetDisabled || saving
+              ? 'border-[#333] text-cinema-muted/50 cursor-not-allowed'
+              : 'border-cinema-gold/50 text-cinema-gold hover:bg-cinema-gold/10'
+          }`}
+          aria-label={`Reset slide ${slideNum} beat to algorithm's pick`}
+        >
+          Reset to algorithm&apos;s pick
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Variant of StatusPip with no idle text — the beat row doesn't auto-save on a
+// timer, so "Auto-saves on pause" would be misleading.
+function BeatStatusPip({ status, message }: { status: SaveStatus; message: string | null }) {
+  if (status === 'idle') return <span />
+  if (status === 'saving') {
+    return (
+      <span className="flex items-center gap-1.5 text-[11px] text-cinema-gold">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-cinema-gold animate-pulse" />
+        Saving...
+      </span>
+    )
+  }
+  if (status === 'success') {
+    return (
+      <span className="flex items-center gap-1.5 text-[11px] text-cinema-teal">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-cinema-teal" />
+        Saved
+      </span>
+    )
+  }
+  return (
+    <span
+      title={message ?? 'Save failed'}
+      className="flex items-center gap-1.5 text-[11px] text-red-300 cursor-help"
+    >
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400" />
+      {message ?? 'Save failed'}
+    </span>
   )
 }
 

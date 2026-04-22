@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { computeDotColor, type DataPoint } from './graph-renderer'
 import { composeSlide, type FilmData, type MiddleSlideContent } from './slide-composer'
 import type { MiddleSlideNumber, SlideCopy } from './body-copy-generator'
-import type { OriginalRole } from './slot-selection'
+import { formatTimestamp, type OriginalRole } from './slot-selection'
 import type { SentimentDataPoint } from '@/lib/types'
 
 const ROLE_PILL_FALLBACK: Record<OriginalRole, string> = {
@@ -69,6 +69,13 @@ export type RenderMiddleSlideParams = {
   // If provided, overrides the persisted bodyCopyJson[slideNum] for the render.
   // Used by PATCH (candidate edit) and revert (AI version) before persistence.
   slideCopyOverride?: SlideCopy
+  // If provided, overrides which beat the slide highlights. The persisted
+  // slot's role/kind metadata is preserved; only the beat reference (and
+  // therefore timestampLabel + score) changes for the render. Used by the
+  // beat-picker PATCH and reset paths before persistence. beatIndex is
+  // 0-based against the chronologically sorted beats array (the same array
+  // used to resolve slot.beatTimestamp).
+  beatOverride?: { beatIndex: number }
 }
 
 // Re-compose a single middle slide (2-7) for an existing draft row. Reads the
@@ -80,7 +87,7 @@ export type RenderMiddleSlideParams = {
 export async function renderMiddleSlide(
   params: RenderMiddleSlideParams,
 ): Promise<Buffer> {
-  const { draftId, slideNum, slideCopyOverride } = params
+  const { draftId, slideNum, slideCopyOverride, beatOverride } = params
 
   if (!Number.isInteger(slideNum) || slideNum < 2 || slideNum > 7) {
     throw new RenderMiddleSlideError(
@@ -157,12 +164,34 @@ export async function renderMiddleSlide(
     )
   }
 
-  const beatIndex = beats.findIndex((b) => b.timeMidpoint === slot.beatTimestamp)
-  if (beatIndex === -1) {
-    throw new RenderMiddleSlideError(
-      `Could not locate beat at t=${slot.beatTimestamp} in sentiment graph`,
-      'BEAT_NOT_FOUND',
-    )
+  // Resolve which beat to render. Without an override, resolve via the
+  // persisted slot's beatTimestamp. With an override, use beatIndex directly
+  // and synthesize a fresh timestampLabel — the persisted slot is left
+  // untouched (caller decides whether to persist).
+  let beatIndex: number
+  let timestampLabel: string
+  if (beatOverride) {
+    if (
+      !Number.isInteger(beatOverride.beatIndex) ||
+      beatOverride.beatIndex < 0 ||
+      beatOverride.beatIndex >= beats.length
+    ) {
+      throw new RenderMiddleSlideError(
+        `beatOverride.beatIndex ${beatOverride.beatIndex} is out of range (0..${beats.length - 1})`,
+        'INVALID_BEAT_INDEX',
+      )
+    }
+    beatIndex = beatOverride.beatIndex
+    timestampLabel = formatTimestamp(beats[beatIndex].timeMidpoint)
+  } else {
+    beatIndex = beats.findIndex((b) => b.timeMidpoint === slot.beatTimestamp)
+    if (beatIndex === -1) {
+      throw new RenderMiddleSlideError(
+        `Could not locate beat at t=${slot.beatTimestamp} in sentiment graph`,
+        'BEAT_NOT_FOUND',
+      )
+    }
+    timestampLabel = slot.timestampLabel
   }
 
   const bodyCopyJson = (draft.bodyCopyJson ?? {}) as unknown as Record<string, SlideCopy>
@@ -180,7 +209,7 @@ export async function renderMiddleSlide(
     slideCopy.headline.trim() !== '' ? slideCopy.headline : ROLE_HEADLINE[role]
 
   const middleContent: MiddleSlideContent = {
-    pillLabel: renderedPill(pillSource, slot.timestampLabel),
+    pillLabel: renderedPill(pillSource, timestampLabel),
     headline: headlineSource,
     bodyCopy: slideCopy.body ?? '',
     // renderGraph prepends a neutral anchor at index 0, so the beat's position

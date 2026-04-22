@@ -196,17 +196,18 @@ model FilmBeats {
 }
 
 model CarouselDraft {
-  id                  String   @id @default(cuid())
-  filmId              String
-  format              String
-  bodyCopyJson        Json
-  aiBodyCopyJson      Json?
-  slotSelectionsJson  Json
-  characteristicsJson Json
-  backdropUrl         String?
-  generatedAt         DateTime @default(now())
-  generatedAtModel    String
-  film                Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
+  id                    String   @id @default(cuid())
+  filmId                String
+  format                String
+  bodyCopyJson          Json
+  aiBodyCopyJson        Json?
+  slotSelectionsJson    Json
+  aiSlotSelectionsJson  Json?
+  characteristicsJson   Json
+  backdropUrl           String?
+  generatedAt           DateTime @default(now())
+  generatedAtModel      String
+  film                  Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
 
   @@unique([filmId, format])
   @@index([filmId])
