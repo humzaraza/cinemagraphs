@@ -353,12 +353,49 @@ describe('generateBodyCopy (mocked)', () => {
     )
   })
 
-  it('throws BodyCopyGenerationError when a pill exceeds 36 characters', async () => {
+  it('truncates a pill exceeding 36 chars at the nearest word boundary with ellipsis', async () => {
+    // 40-char pill, last space at position 28 (after "train"); truncation
+    // should cut there and append "...", giving a 31-char result.
     const map = validSlideCopyMap()
-    map.slide_2.pill = 'This pill is absolutely longer than the new thirty-six character limit'
+    map.slide_3.pill = 'Juror 8 challenges the train noise claim'
+    expect(map.slide_3.pill.length).toBe(40)
     mockMessagesCreate.mockResolvedValueOnce(mockApiResponse(map))
 
-    await expect(generateBodyCopy(PHM_INPUT)).rejects.toThrow(/exceeds 36 characters/)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const out = await generateBodyCopy(PHM_INPUT)
+      expect(out.slideCopy[3].pill).toBe('Juror 8 challenges the train...')
+      expect(out.slideCopy[3].pill.length).toBeLessThanOrEqual(36)
+      expect(out.slideCopy[3].pill.endsWith('...')).toBe(true)
+      expect(warnSpy).toHaveBeenCalled()
+      const warnMsg = warnSpy.mock.calls[0][0] as string
+      expect(warnMsg).toContain('slide_3')
+      expect(warnMsg).toContain('40')
+      expect(warnMsg).toContain('Juror 8 challenges the train noise claim')
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('truncates a single long word at 33 chars with ellipsis when no space is in range', async () => {
+    // 40-char single word with no internal spaces — the word-boundary search
+    // finds nothing inside positions 0..33, so the truncator hard-cuts at 33
+    // and appends "...", producing a 36-char result.
+    const map = validSlideCopyMap()
+    map.slide_5.pill = 'Antidisestablishmentarianismischallenged'
+    expect(map.slide_5.pill.length).toBe(40)
+    mockMessagesCreate.mockResolvedValueOnce(mockApiResponse(map))
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const out = await generateBodyCopy(PHM_INPUT)
+      expect(out.slideCopy[5].pill).toBe('Antidisestablishmentarianismischa...')
+      expect(out.slideCopy[5].pill.length).toBe(36)
+      expect(out.slideCopy[5].pill.endsWith('...')).toBe(true)
+      expect(warnSpy).toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
   })
 
   it('throws BodyCopyGenerationError when a slide key is missing', async () => {

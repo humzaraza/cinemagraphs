@@ -455,9 +455,29 @@ function tryParseJsonWithFallbacks(raw: string): unknown {
 }
 
 const MAX_PILL_LENGTH = 36
+// Pills that overflow MAX_PILL_LENGTH are truncated rather than rejected — the
+// AI occasionally packs too many words in, and losing the whole generation
+// over that is wasteful. We keep PILL_TRUNCATE_PREFIX chars before the
+// ellipsis so the final string stays at or under MAX_PILL_LENGTH.
+const PILL_TRUNCATE_PREFIX = MAX_PILL_LENGTH - 3 // room for "..."
 // Headline is short editorial framing (3-6 words). 80 chars leaves room for
 // longer words while still catching runaway generations.
 const MAX_HEADLINE_LENGTH = 80
+
+// Shorten a pill to fit within MAX_PILL_LENGTH by cutting at the nearest word
+// boundary and appending "...". If no space lies at or before
+// PILL_TRUNCATE_PREFIX (a single very long word), hard-cut at that position.
+function truncatePill(pill: string): string {
+  if (pill.length <= MAX_PILL_LENGTH) return pill
+  // Include a space at exactly PILL_TRUNCATE_PREFIX by widening the window
+  // by one: lastIndexOf scans the substring, so the slice end is exclusive.
+  const window = pill.slice(0, PILL_TRUNCATE_PREFIX + 1)
+  const lastSpace = window.lastIndexOf(' ')
+  if (lastSpace > 0) {
+    return pill.slice(0, lastSpace) + '...'
+  }
+  return pill.slice(0, PILL_TRUNCATE_PREFIX) + '...'
+}
 
 function parseBodyCopyResponse(raw: string): Record<MiddleSlideNumber, SlideCopy> {
   const parsed = tryParseJsonWithFallbacks(raw)
@@ -525,10 +545,11 @@ function parseBodyCopyResponse(raw: string): Record<MiddleSlideNumber, SlideCopy
       )
     }
     if (pill.length > MAX_PILL_LENGTH) {
-      throw new BodyCopyGenerationError(
-        `Generated pill exceeds ${MAX_PILL_LENGTH} characters (got ${pill.length}): "${pill}"`,
-        { rawResponse: raw, offendingSlide: n },
+      const truncated = truncatePill(pill)
+      console.warn(
+        `body-copy-generator: pill for slide_${n} exceeded ${MAX_PILL_LENGTH} chars (got ${pill.length}); truncated "${pill}" -> "${truncated}"`,
       )
+      out[n] = { ...out[n], pill: truncated }
     }
     if (headline.length > MAX_HEADLINE_LENGTH) {
       throw new BodyCopyGenerationError(
