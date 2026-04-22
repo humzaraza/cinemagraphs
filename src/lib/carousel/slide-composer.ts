@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Resvg } from '@resvg/resvg-js'
 
-import { dotRadiusFor, renderGraph, type DataPoint } from './graph-renderer'
+import { dotRadiusFor, marginsFor, renderGraph, type DataPoint } from './graph-renderer'
+import { makePolylineSampler, type SamplerPoint } from './polyline-sampler'
 
 // ── Public types ──────────────────────────────────────────────
 
@@ -334,53 +335,237 @@ function wrapColoredWords(
 
 // ── Score label positioning ───────────────────────────────────
 // Places the inline beat score next to the highlighted dot so the
-// text never sits on top of the polyline. Offset direction is chosen
-// by the dot's normalized position within the plot area: horizontally
-// to the less-crowded half, vertically pushed when the dot is near
-// the top or bottom edge. Pure + format-agnostic so the same math
-// applies to every aspect ratio.
+// text never sits on top of the polyline. Strategy: try 8 candidate
+// positions arranged around the dot at 45° spacing; for each, sample
+// the rendered polyline inside the candidate's bounding box and pick
+// the position with the most vertical clearance. If nothing clears
+// the threshold at the default offset, expand the offset in 12 px
+// steps up to 60 px and re-evaluate.
+//
+// Candidates that would push the score off the inner plot area are
+// rejected. If every candidate at every offset is out-of-bounds
+// (extremely unlikely in practice), we fall back to the highest
+// clearance position regardless of bounds.
+
+// Estimated character-to-pixel-width ratio for DM Sans 500 digits.
+// Matches what the rest of the file uses for wrap math (0.52-0.55
+// range); we use 0.55 here to be slightly generous so the collision
+// bbox overestimates rather than underestimates width.
+const SCORE_CHAR_FACTOR = 0.55
+
+// SVG baseline offset from the visual bottom of the bounding box,
+// as a fraction of labelSize. Matches typographic cap-height /
+// descender conventions for DM Sans digits ("0"-"9", ".").
+const BASELINE_FROM_BOTTOM = 0.15
+
+// Threshold for "acceptable" clearance: the polyline must stay at
+// least this many pixels outside the label's bounding box for a
+// candidate to be accepted without expanding the offset.
+const CLEARANCE_THRESHOLD = 8
+
+// Offset ladder (added to dotRadius). Smaller offsets are tried
+// first; the loop exits as soon as an offset level has an in-bounds
+// candidate with clearance >= CLEARANCE_THRESHOLD.
+const OFFSET_LADDER = [12, 24, 36, 48, 60] as const
+
+// Number of X samples per candidate bbox used to measure clearance.
+const CLEARANCE_SAMPLES = 8
+
+type CandidateShape = {
+  angleDeg: number
+  anchor: 'start' | 'middle' | 'end'
+  cosA: number
+  sinA: number
+  xShift: -1 | 0 | 1 // bbox center X relative to "nearest point" (dot + R*direction)
+  yShift: -1 | 0 | 1 // bbox center Y relative to "nearest point" (SVG y convention)
+}
+
+const S = Math.SQRT1_2
+const CANDIDATES: CandidateShape[] = [
+  { angleDeg: 0, anchor: 'start', cosA: 1, sinA: 0, xShift: 1, yShift: 0 },
+  { angleDeg: 45, anchor: 'start', cosA: S, sinA: S, xShift: 1, yShift: -1 },
+  { angleDeg: 90, anchor: 'middle', cosA: 0, sinA: 1, xShift: 0, yShift: -1 },
+  { angleDeg: 135, anchor: 'end', cosA: -S, sinA: S, xShift: -1, yShift: -1 },
+  { angleDeg: 180, anchor: 'end', cosA: -1, sinA: 0, xShift: -1, yShift: 0 },
+  { angleDeg: 225, anchor: 'end', cosA: -S, sinA: -S, xShift: -1, yShift: 1 },
+  { angleDeg: 270, anchor: 'middle', cosA: 0, sinA: -1, xShift: 0, yShift: 1 },
+  { angleDeg: 315, anchor: 'start', cosA: S, sinA: -S, xShift: 1, yShift: 1 },
+]
+
+export type Bbox = { xMin: number; xMax: number; yMin: number; yMax: number }
 
 export type ScoreLabelPositionInput = {
   dot: { x: number; y: number }
-  plotArea: { width: number; height: number }
+  // All dot pixel positions in graph-local coordinates, including the
+  // prepended neutral anchor at index 0. Used to reconstruct the
+  // polyline for clearance sampling.
+  dotPositions: SamplerPoint[]
+  // Rectangular area (graph-local coords) the label bbox must stay
+  // inside. Typically the post-margin inner plot area of the graph.
+  innerPlotArea: { x: number; y: number; width: number; height: number }
   dotRadius: number
   labelSize: number
+  // Approximate pixel width of the rendered score text (e.g. "8.7").
+  // Caller pre-computes from character count × labelSize × factor.
+  labelWidth: number
 }
 
 export type ScoreLabelPosition = {
   x: number
   y: number
   anchor: 'start' | 'middle' | 'end'
+  // Gap between the polyline and the nearest bbox edge (positive =
+  // clear; negative = polyline intrudes). Infinity if no sample was
+  // within the dot X range.
+  clearance: number
+  // Which of the 8 candidate angles was chosen, and at what offset
+  // distance (dotRadius + offset). Exposed for test logging so we
+  // can tune the ladder without re-instrumenting the picker.
+  candidateAngleDeg: number
+  offsetDistance: number
+  bbox: Bbox
+}
+
+export function computeLabelWidth(scoreText: string, labelSize: number): number {
+  return scoreText.length * labelSize * SCORE_CHAR_FACTOR
+}
+
+function computeBbox(
+  dot: { x: number; y: number },
+  r: number,
+  w: number,
+  h: number,
+  cand: CandidateShape,
+): Bbox {
+  const nearestX = dot.x + r * cand.cosA
+  const nearestY = dot.y - r * cand.sinA
+  const centerX = nearestX + cand.xShift * (w / 2)
+  const centerY = nearestY + cand.yShift * (h / 2)
+  return {
+    xMin: centerX - w / 2,
+    xMax: centerX + w / 2,
+    yMin: centerY - h / 2,
+    yMax: centerY + h / 2,
+  }
+}
+
+function bboxInBounds(
+  bbox: Bbox,
+  inner: { x: number; y: number; width: number; height: number },
+): boolean {
+  return (
+    bbox.xMin >= inner.x &&
+    bbox.xMax <= inner.x + inner.width &&
+    bbox.yMin >= inner.y &&
+    bbox.yMax <= inner.y + inner.height
+  )
+}
+
+// Clearance = minimum (signed) gap between the polyline and the bbox
+// at any of the sampled X positions. Positive when the polyline is
+// fully clear of the bbox; zero or negative when it crosses.
+function measureClearance(
+  bbox: Bbox,
+  sampler: (x: number) => number | null,
+): number {
+  const centerY = (bbox.yMin + bbox.yMax) / 2
+  const halfH = (bbox.yMax - bbox.yMin) / 2
+  let minDist = Infinity
+  let anyValid = false
+  for (let i = 0; i < CLEARANCE_SAMPLES; i++) {
+    const t = i / (CLEARANCE_SAMPLES - 1)
+    const x = bbox.xMin + t * (bbox.xMax - bbox.xMin)
+    const y = sampler(x)
+    if (y === null) continue
+    anyValid = true
+    const d = Math.abs(y - centerY)
+    if (d < minDist) minDist = d
+  }
+  if (!anyValid) return Infinity
+  return minDist - halfH
+}
+
+function renderPosition(
+  cand: CandidateShape,
+  bbox: Bbox,
+  labelSize: number,
+): { x: number; y: number; anchor: 'start' | 'middle' | 'end' } {
+  const baselineY = bbox.yMax - BASELINE_FROM_BOTTOM * labelSize
+  let x: number
+  if (cand.anchor === 'start') x = bbox.xMin
+  else if (cand.anchor === 'end') x = bbox.xMax
+  else x = (bbox.xMin + bbox.xMax) / 2
+  return { x, y: baselineY, anchor: cand.anchor }
 }
 
 export function computeScoreLabelPosition(
   input: ScoreLabelPositionInput,
 ): ScoreLabelPosition {
-  const { dot, plotArea, dotRadius, labelSize } = input
-  const normX = dot.x / plotArea.width
-  const normY = dot.y / plotArea.height
-  const offset = dotRadius + labelSize * 0.35
+  const { dot, dotPositions, innerPlotArea, dotRadius, labelSize, labelWidth } = input
+  const labelHeight = labelSize
+  const sampler = makePolylineSampler(dotPositions)
 
-  let x: number
-  let anchor: 'start' | 'end'
-  if (normX > 0.5) {
-    x = dot.x - offset
-    anchor = 'end'
-  } else {
-    x = dot.x + offset
-    anchor = 'start'
+  type Eval = {
+    cand: CandidateShape
+    bbox: Bbox
+    inBounds: boolean
+    clearance: number
+    offsetDistance: number
+  }
+  let bestInBounds: Eval | null = null
+  let bestAnywhere: Eval | null = null
+
+  for (const offsetDistance of OFFSET_LADDER) {
+    const r = dotRadius + offsetDistance
+    let bestAtOffset: Eval | null = null
+    for (const cand of CANDIDATES) {
+      const bbox = computeBbox(dot, r, labelWidth, labelHeight, cand)
+      const inBounds = bboxInBounds(bbox, innerPlotArea)
+      const clearance = measureClearance(bbox, sampler)
+      const e: Eval = { cand, bbox, inBounds, clearance, offsetDistance }
+      if (!bestAnywhere || e.clearance > bestAnywhere.clearance) {
+        bestAnywhere = e
+      }
+      if (!inBounds) continue
+      if (!bestAtOffset || e.clearance > bestAtOffset.clearance) {
+        bestAtOffset = e
+      }
+    }
+    if (bestAtOffset) {
+      if (!bestInBounds || bestAtOffset.clearance > bestInBounds.clearance) {
+        bestInBounds = bestAtOffset
+      }
+      if (bestAtOffset.clearance >= CLEARANCE_THRESHOLD) {
+        // Acceptable at this offset level — stop expanding.
+        const pos = renderPosition(bestAtOffset.cand, bestAtOffset.bbox, labelSize)
+        return {
+          ...pos,
+          clearance: bestAtOffset.clearance,
+          candidateAngleDeg: bestAtOffset.cand.angleDeg,
+          offsetDistance: bestAtOffset.offsetDistance,
+          bbox: bestAtOffset.bbox,
+        }
+      }
+    }
   }
 
-  let y: number
-  if (normY < 0.3) {
-    y = dot.y + offset
-  } else if (normY > 0.7) {
-    y = dot.y - offset
-  } else {
-    y = dot.y
+  const chosen = bestInBounds ?? bestAnywhere
+  // bestAnywhere is guaranteed set after the first iteration (one
+  // candidate evaluated), so `chosen` is non-null here; the fallback
+  // is purely defensive.
+  if (!chosen) {
+    throw new Error(
+      'computeScoreLabelPosition: no candidate evaluated (dotPositions empty?)',
+    )
   }
-
-  return { x, y, anchor }
+  const pos = renderPosition(chosen.cand, chosen.bbox, labelSize)
+  return {
+    ...pos,
+    clearance: chosen.clearance,
+    candidateAngleDeg: chosen.cand.angleDeg,
+    offsetDistance: chosen.offsetDistance,
+    bbox: chosen.bbox,
+  }
 }
 
 function detectMime(buf: Buffer): string {
@@ -716,17 +901,26 @@ function composeMiddleSlide(
   const dot = dotPositions[content.highlightBeatIndex]
   const labelColor = DOT_COLOR_HEX[dot.color]
   const labelSize = spec.beatLabelSize
+  const scoreText = dot.score.toFixed(1)
+  const margins = marginsFor(format)
   const pos = computeScoreLabelPosition({
     dot: { x: dot.x, y: dot.y },
-    plotArea: { width: spec.graphZone.w, height: spec.graphZone.h },
+    dotPositions: dotPositions.map((d) => ({ x: d.x, y: d.y })),
+    innerPlotArea: {
+      x: margins.left,
+      y: margins.top,
+      width: spec.graphZone.w - margins.left - margins.right,
+      height: spec.graphZone.h - margins.top - margins.bottom,
+    },
     dotRadius: dotRadiusFor(format),
     labelSize,
+    labelWidth: computeLabelWidth(scoreText, labelSize),
   })
   const labelX = spec.graphZone.x + pos.x
   const labelY = spec.graphZone.y + pos.y
 
   body.push(
-    `<text x="${fmt(labelX)}" y="${fmt(labelY)}" fill="${labelColor}" font-family="DM Sans" font-size="${labelSize}" font-weight="500" text-anchor="${pos.anchor}">${dot.score.toFixed(1)}</text>`,
+    `<text x="${fmt(labelX)}" y="${fmt(labelY)}" fill="${labelColor}" font-family="DM Sans" font-size="${labelSize}" font-weight="500" text-anchor="${pos.anchor}">${scoreText}</text>`,
   )
 
   // Body copy (plain monochrome in C1).

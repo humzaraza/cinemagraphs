@@ -79,9 +79,9 @@ const DOT_OUTLINE = 'rgba(0,0,0,0.6)'
 const LABEL_COLOR = 'rgba(232,228,220,0.5)'
 const VALUE_COLOR = '#C8A951'
 
-type Margins = { left: number; right: number; top: number; bottom: number }
+export type Margins = { left: number; right: number; top: number; bottom: number }
 
-function marginsFor(format: Format): Margins {
+export function marginsFor(format: Format): Margins {
   if (format === '4x5') {
     return { left: 30, right: 30, top: 60, bottom: 30 }
   }
