@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type { DataPoint } from '@/lib/carousel/graph-renderer'
 import {
   BodyCopyParseError,
+  computeScoreLabelPosition,
   composeSlide,
   parseBodyCopyTokens,
   type FilmData,
@@ -240,5 +241,124 @@ describe('composeSlide with color-tokenized body copy', () => {
         ),
       }),
     ).rejects.toThrow(BodyCopyParseError)
+  })
+})
+
+describe('computeScoreLabelPosition', () => {
+  const SQUARE_PLOT = { width: 1000, height: 1000 }
+  const LABEL_SIZE = 30
+  const DOT_RADIUS = 5
+  const OFFSET = DOT_RADIUS + LABEL_SIZE * 0.35 // 15.5
+
+  it('top-right quadrant: label goes LEFT + DOWN', () => {
+    const pos = computeScoreLabelPosition({
+      dot: { x: 750, y: 150 },
+      plotArea: SQUARE_PLOT,
+      dotRadius: DOT_RADIUS,
+      labelSize: LABEL_SIZE,
+    })
+    expect(pos.anchor).toBe('end')
+    expect(pos.x).toBeCloseTo(750 - OFFSET)
+    expect(pos.y).toBeCloseTo(150 + OFFSET)
+  })
+
+  it('bottom-right quadrant: label goes LEFT + UP', () => {
+    const pos = computeScoreLabelPosition({
+      dot: { x: 750, y: 850 },
+      plotArea: SQUARE_PLOT,
+      dotRadius: DOT_RADIUS,
+      labelSize: LABEL_SIZE,
+    })
+    expect(pos.anchor).toBe('end')
+    expect(pos.x).toBeCloseTo(750 - OFFSET)
+    expect(pos.y).toBeCloseTo(850 - OFFSET)
+  })
+
+  it('top-left quadrant: label goes RIGHT + DOWN', () => {
+    const pos = computeScoreLabelPosition({
+      dot: { x: 250, y: 150 },
+      plotArea: SQUARE_PLOT,
+      dotRadius: DOT_RADIUS,
+      labelSize: LABEL_SIZE,
+    })
+    expect(pos.anchor).toBe('start')
+    expect(pos.x).toBeCloseTo(250 + OFFSET)
+    expect(pos.y).toBeCloseTo(150 + OFFSET)
+  })
+
+  it('bottom-left quadrant: label goes RIGHT + UP', () => {
+    const pos = computeScoreLabelPosition({
+      dot: { x: 250, y: 850 },
+      plotArea: SQUARE_PLOT,
+      dotRadius: DOT_RADIUS,
+      labelSize: LABEL_SIZE,
+    })
+    expect(pos.anchor).toBe('start')
+    expect(pos.x).toBeCloseTo(250 + OFFSET)
+    expect(pos.y).toBeCloseTo(850 - OFFSET)
+  })
+
+  it('dead center: label goes RIGHT at same y level', () => {
+    const pos = computeScoreLabelPosition({
+      dot: { x: 500, y: 500 },
+      plotArea: SQUARE_PLOT,
+      dotRadius: DOT_RADIUS,
+      labelSize: LABEL_SIZE,
+    })
+    expect(pos.anchor).toBe('start')
+    expect(pos.x).toBeCloseTo(500 + OFFSET)
+    expect(pos.y).toBe(500)
+  })
+
+  it('x=0.5 exactly falls into the ≤ 0.5 branch: label goes RIGHT', () => {
+    const pos = computeScoreLabelPosition({
+      dot: { x: 500, y: 400 },
+      plotArea: SQUARE_PLOT,
+      dotRadius: DOT_RADIUS,
+      labelSize: LABEL_SIZE,
+    })
+    expect(pos.anchor).toBe('start')
+    expect(pos.x).toBeGreaterThan(500)
+  })
+
+  it('same normalized position yields same logic across formats (4:5 vs 9:16)', () => {
+    // normX = 0.8 (right half), normY = 0.2 (top third).
+    // Expected: anchor='end' and label shifted left (x < dot.x) + down (y > dot.y)
+    // in BOTH formats, even though absolute pixel values differ.
+    const pos4x5 = computeScoreLabelPosition({
+      dot: { x: 0.8 * 960, y: 0.2 * 540 },
+      plotArea: { width: 960, height: 540 },
+      dotRadius: 5,
+      labelSize: 28,
+    })
+    const pos9x16 = computeScoreLabelPosition({
+      dot: { x: 0.8 * 1000, y: 0.2 * 1100 },
+      plotArea: { width: 1000, height: 1100 },
+      dotRadius: 7,
+      labelSize: 36,
+    })
+    expect(pos4x5.anchor).toBe('end')
+    expect(pos9x16.anchor).toBe('end')
+    expect(pos4x5.x).toBeLessThan(0.8 * 960)
+    expect(pos9x16.x).toBeLessThan(0.8 * 1000)
+    expect(pos4x5.y).toBeGreaterThan(0.2 * 540)
+    expect(pos9x16.y).toBeGreaterThan(0.2 * 1100)
+  })
+
+  it('y=0.3 and y=0.7 exactly stay at dot y level (middle band boundaries)', () => {
+    const top = computeScoreLabelPosition({
+      dot: { x: 700, y: 300 },
+      plotArea: SQUARE_PLOT,
+      dotRadius: DOT_RADIUS,
+      labelSize: LABEL_SIZE,
+    })
+    const bottom = computeScoreLabelPosition({
+      dot: { x: 700, y: 700 },
+      plotArea: SQUARE_PLOT,
+      dotRadius: DOT_RADIUS,
+      labelSize: LABEL_SIZE,
+    })
+    expect(top.y).toBe(300)
+    expect(bottom.y).toBe(700)
   })
 })

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Resvg } from '@resvg/resvg-js'
 
-import { renderGraph, type DataPoint } from './graph-renderer'
+import { dotRadiusFor, renderGraph, type DataPoint } from './graph-renderer'
 
 // ── Public types ──────────────────────────────────────────────
 
@@ -330,6 +330,57 @@ function wrapColoredWords(
   }
   if (line.length > 0) lines.push(line)
   return lines
+}
+
+// ── Score label positioning ───────────────────────────────────
+// Places the inline beat score next to the highlighted dot so the
+// text never sits on top of the polyline. Offset direction is chosen
+// by the dot's normalized position within the plot area: horizontally
+// to the less-crowded half, vertically pushed when the dot is near
+// the top or bottom edge. Pure + format-agnostic so the same math
+// applies to every aspect ratio.
+
+export type ScoreLabelPositionInput = {
+  dot: { x: number; y: number }
+  plotArea: { width: number; height: number }
+  dotRadius: number
+  labelSize: number
+}
+
+export type ScoreLabelPosition = {
+  x: number
+  y: number
+  anchor: 'start' | 'middle' | 'end'
+}
+
+export function computeScoreLabelPosition(
+  input: ScoreLabelPositionInput,
+): ScoreLabelPosition {
+  const { dot, plotArea, dotRadius, labelSize } = input
+  const normX = dot.x / plotArea.width
+  const normY = dot.y / plotArea.height
+  const offset = dotRadius + labelSize * 0.35
+
+  let x: number
+  let anchor: 'start' | 'end'
+  if (normX > 0.5) {
+    x = dot.x - offset
+    anchor = 'end'
+  } else {
+    x = dot.x + offset
+    anchor = 'start'
+  }
+
+  let y: number
+  if (normY < 0.3) {
+    y = dot.y + offset
+  } else if (normY > 0.7) {
+    y = dot.y - offset
+  } else {
+    y = dot.y
+  }
+
+  return { x, y, anchor }
 }
 
 function detectMime(buf: Buffer): string {
@@ -662,38 +713,20 @@ function composeMiddleSlide(
     `<image href="${graphDataUrl}" x="${fmt(spec.graphZone.x)}" y="${fmt(spec.graphZone.y)}" width="${fmt(spec.graphZone.w)}" height="${fmt(spec.graphZone.h)}" preserveAspectRatio="xMidYMid meet"/>`,
   )
 
-  // Inline beat label — anchored off the highlighted dot position.
-  // Edge-aware: when the dot sits within 60px of either side of the graph
-  // zone, the label flips inward so its text never runs past the canvas
-  // edge. The dot's glow halo can still extend past the edge; only the
-  // numeric text shifts. Anywhere mid-zone, the label centers on the dot.
   const dot = dotPositions[content.highlightBeatIndex]
-  const plotMidY = spec.graphZone.h / 2
-  const inUpperHalf = dot.y < plotMidY
-  const dotX = spec.graphZone.x + dot.x
-  const labelY = spec.graphZone.y + dot.y + (inUpperHalf ? -32 : 40)
   const labelColor = DOT_COLOR_HEX[dot.color]
   const labelSize = spec.beatLabelSize
-
-  const EDGE_THRESHOLD = 60
-  const EDGE_OFFSET = 40
-  let labelX: number
-  let labelAnchor: 'start' | 'middle' | 'end'
-  if (dot.x > spec.graphZone.w - EDGE_THRESHOLD) {
-    // Close to right edge: push label inward and anchor its right side.
-    labelX = dotX - EDGE_OFFSET
-    labelAnchor = 'end'
-  } else if (dot.x < EDGE_THRESHOLD) {
-    // Close to left edge: push label inward and anchor its left side.
-    labelX = dotX + EDGE_OFFSET
-    labelAnchor = 'start'
-  } else {
-    labelX = dotX
-    labelAnchor = 'middle'
-  }
+  const pos = computeScoreLabelPosition({
+    dot: { x: dot.x, y: dot.y },
+    plotArea: { width: spec.graphZone.w, height: spec.graphZone.h },
+    dotRadius: dotRadiusFor(format),
+    labelSize,
+  })
+  const labelX = spec.graphZone.x + pos.x
+  const labelY = spec.graphZone.y + pos.y
 
   body.push(
-    `<text x="${fmt(labelX)}" y="${fmt(labelY)}" fill="${labelColor}" font-family="DM Sans" font-size="${labelSize}" font-weight="500" text-anchor="${labelAnchor}">${dot.score.toFixed(1)}</text>`,
+    `<text x="${fmt(labelX)}" y="${fmt(labelY)}" fill="${labelColor}" font-family="DM Sans" font-size="${labelSize}" font-weight="500" text-anchor="${pos.anchor}">${dot.score.toFixed(1)}</text>`,
   )
 
   // Body copy (plain monochrome in C1).

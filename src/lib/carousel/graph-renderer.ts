@@ -88,7 +88,7 @@ function marginsFor(format: Format): Margins {
   return { left: 40, right: 40, top: 110, bottom: 40 }
 }
 
-function dotRadiusFor(format: Format): number {
+export function dotRadiusFor(format: Format): number {
   return format === '4x5' ? 5 : 7
 }
 
