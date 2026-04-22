@@ -353,12 +353,12 @@ describe('generateBodyCopy (mocked)', () => {
     )
   })
 
-  it('throws BodyCopyGenerationError when a pill exceeds 30 characters', async () => {
+  it('throws BodyCopyGenerationError when a pill exceeds 36 characters', async () => {
     const map = validSlideCopyMap()
-    map.slide_2.pill = 'This pill is clearly longer than thirty characters'
+    map.slide_2.pill = 'This pill is absolutely longer than the new thirty-six character limit'
     mockMessagesCreate.mockResolvedValueOnce(mockApiResponse(map))
 
-    await expect(generateBodyCopy(PHM_INPUT)).rejects.toThrow(/exceeds 30 characters/)
+    await expect(generateBodyCopy(PHM_INPUT)).rejects.toThrow(/exceeds 36 characters/)
   })
 
   it('throws BodyCopyGenerationError when a slide key is missing', async () => {

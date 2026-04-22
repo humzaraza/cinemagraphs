@@ -287,15 +287,16 @@ Use numerals for every time reference. Write "1h 15m", "25 minutes", "0m-5m". Do
 Each slide also has a short pill label rendered above the headline. Derive the pill from the film's actual story beat for that timestamp (provided as storyBeatName in the user prompt). Do not invent; compress.
 
 Pill constraints:
-- Maximum 30 characters including spaces. The renderer uppercases the pill, so write in sentence case or mixed case.
+- Maximum 36 characters including spaces. The renderer uppercases the pill, so write in sentence case or mixed case.
 - Must be derived from the provided storyBeatName. Strip articles, minor characters, and secondary clauses until the name fits.
 - Describe the beat, not the slot. Do NOT use generic labels like "THE OPENING", "THE SETUP", "THE DROP", "RECOVERY", "THE PEAK", "THE ENDING" unless the storyBeatName is truly absent.
 - No punctuation other than apostrophes inside names. No em dashes, no en dashes, no quotes.
+- Aim for 30-36 characters when the storyBeatName has room. A pill that uses most of the budget is usually more specific than one that compresses too aggressively.
 
-Example transformations:
-- storyBeatName: "Eva Stratt reveals the suicide mission to Tau Ceti" → pill: "Stratt reveals the mission"
-- storyBeatName: "Rocky breaks his spacesuit to save unconscious Grace" → pill: "Rocky saves Grace"
-- storyBeatName: "Grace is drugged and forcibly loaded onto Hail Mary" → pill: "Grace forced onto the ship"
+Example transformations (target 30-36 chars):
+- storyBeatName: "Eva Stratt reveals the suicide mission to Tau Ceti" → pill: "Stratt reveals the suicide mission" (34 chars)
+- storyBeatName: "Rocky breaks his spacesuit to save unconscious Grace" → pill: "Rocky breaks his suit for Grace" (31 chars)
+- storyBeatName: "Grace is drugged and forcibly loaded onto Hail Mary" → pill: "Grace forcibly loaded onto Hail Mary" (36 chars)
 
 If storyBeatName is an empty string for a given slide, use one of these generic labels as a fallback, matched to the slide's originalRole:
 - opening → "The opening"
@@ -389,7 +390,7 @@ ${JSON.stringify(slides, null, 2)}
 
 Remember:
 - Every body-copy string must reference its highlighted beat's exact score, wrapped in the correct color marker.
-- Derive each pill from the storyBeatName, compressed to 30 characters or fewer. Fall back to the generic role label only when storyBeatName is empty.
+- Derive each pill from the storyBeatName, compressed to 36 characters or fewer (aim for 30-36 when the source has room). Fall back to the generic role label only when storyBeatName is empty.
 - Headline is 3-6 words, sentence case with a period, NOT a restatement of the pill. Avoid the forbidden generic filler phrases in the system prompt.
 - When scoreDelta contradicts the slot's originalRole (e.g., originalRole "drop" with a positive delta, or originalRole "peak" with a negative delta), trust the data and write the headline and body to match what the score is actually doing.
 - No em dashes, no en dashes. Sentence case. Two to three sentences each, 30-50 words.
@@ -453,7 +454,7 @@ function tryParseJsonWithFallbacks(raw: string): unknown {
   )
 }
 
-const MAX_PILL_LENGTH = 30
+const MAX_PILL_LENGTH = 36
 // Headline is short editorial framing (3-6 words). 80 chars leaves room for
 // longer words while still catching runaway generations.
 const MAX_HEADLINE_LENGTH = 80
