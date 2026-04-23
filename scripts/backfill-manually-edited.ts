@@ -35,34 +35,55 @@ async function main() {
 
   let modified = 0
   let unchanged = 0
+  let skippedNonObject = 0
 
   for (const draft of drafts) {
     const bodyCopyJson = (draft.bodyCopyJson ?? {}) as unknown as Record<string, SlideCopy>
     const nextBodyCopy: Record<string, SlideCopy> = { ...bodyCopyJson }
     let slotsBackfilled = 0
+    let slotsSkipped = 0
 
     for (const key of SLIDE_KEYS) {
       const entry = nextBodyCopy[key]
-      if (entry && entry.manuallyEdited === undefined) {
+      // Guard: only backfill object-shaped entries. Pre-migration drafts had
+      // SlideCopy as a plain string; spreading a string yields an indexed-char
+      // object which corrupts the data. Leave pre-migration strings alone —
+      // they need a full regenerate or manual recovery, not a flag patch.
+      if (entry && (typeof entry !== 'object' || Array.isArray(entry))) {
+        slotsSkipped++
+        continue
+      }
+      if (
+        entry &&
+        typeof entry === 'object' &&
+        !Array.isArray(entry) &&
+        (entry as { manuallyEdited?: unknown }).manuallyEdited === undefined
+      ) {
         nextBodyCopy[key] = { ...entry, manuallyEdited: false }
         slotsBackfilled++
       }
     }
+
+    skippedNonObject += slotsSkipped
 
     if (slotsBackfilled > 0) {
       await prisma.carouselDraft.update({
         where: { id: draft.id },
         data: { bodyCopyJson: nextBodyCopy as unknown as object },
       })
-      console.log(`${draft.id} ${draft.format}: ${slotsBackfilled} slots backfilled`)
+      const skippedSuffix = slotsSkipped > 0 ? `, ${slotsSkipped} slots skipped (non-object)` : ''
+      console.log(`${draft.id} ${draft.format}: ${slotsBackfilled} slots backfilled${skippedSuffix}`)
       modified++
     } else {
-      console.log(`${draft.id} ${draft.format}: no-op`)
+      const skippedSuffix = slotsSkipped > 0 ? ` (${slotsSkipped} slots skipped, non-object)` : ''
+      console.log(`${draft.id} ${draft.format}: no-op${skippedSuffix}`)
       unchanged++
     }
   }
 
-  console.log(`Backfill complete. ${modified} drafts modified, ${unchanged} unchanged`)
+  console.log(
+    `Backfill complete. ${modified} drafts modified, ${unchanged} unchanged, ${skippedNonObject} slots skipped (non-object, needs manual recovery)`,
+  )
 
   await prisma.$disconnect()
 }
