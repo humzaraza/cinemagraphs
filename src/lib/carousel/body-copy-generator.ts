@@ -50,6 +50,13 @@ export type SlideCopy = {
   // framing in 3-6 words. NOT a restatement of the pill or storyBeatName.
   headline: string
   body: string
+  manuallyEdited?: boolean
+}
+
+// Read helper: treat undefined as false so callers do not need to repeat
+// the nullish check. This is the single source of truth for the flag.
+export function isManuallyEdited(copy: SlideCopy): boolean {
+  return copy.manuallyEdited === true
 }
 
 export type GenerateBodyCopyInput = {

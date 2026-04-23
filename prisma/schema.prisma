@@ -204,6 +204,10 @@ model CarouselDraft {
   slotSelectionsJson    Json
   aiSlotSelectionsJson  Json?
   characteristicsJson   Json
+  mirrorSyncStatus      String?
+  mirrorSyncError       String?    @db.Text
+  mirrorRenderedAt      DateTime?
+  staleBodyCopySlots    Int[]      @default([])
   backdropUrl           String?
   generatedAt           DateTime @default(now())
   generatedAtModel      String
