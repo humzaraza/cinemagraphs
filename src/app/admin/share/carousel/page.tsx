@@ -15,6 +15,8 @@ import {
 import { createDebouncer, type Debouncer } from '@/lib/carousel/debouncer'
 import type { SlideCopy } from '@/lib/carousel/body-copy-generator'
 import { conflictsForSlot } from '@/lib/carousel/slot-conflicts'
+import { buildCarouselZip } from '@/lib/carousel/zip-export-builder'
+import { buildZipFilename } from '@/lib/carousel/zip-export-naming'
 import {
   BeatPickerDropdown,
   type AvailableBeat,
@@ -117,6 +119,19 @@ function counterClass(state: 'neutral' | 'warn' | 'danger'): string {
   return 'text-cinema-muted'
 }
 
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+type ZipDownloadStatus = 'idle' | 'saving' | 'error'
+
 export default function CarouselSharePage() {
   const { data: session, status } = useSession()
   const router = useRouter()
@@ -152,6 +167,13 @@ export default function CarouselSharePage() {
   // Per-slot save status for regenerate (separate pip from beat + text edit).
   const [regenerateEdits, setRegenerateEdits] = useState<Record<number, BeatEditState>>({})
   const [helpDismissed, setHelpDismissed] = useState(true)
+
+  // ZIP-export state. zipFormat tracks `data.format` on draft load but can be
+  // overridden by the admin; the footer's dropdown drives what the ZIP pulls
+  // from independently of the preview above.
+  const [zipFormat, setZipFormat] = useState<Format>(format)
+  const [zipDownloadStatus, setZipDownloadStatus] = useState<ZipDownloadStatus>('idle')
+  const [zipErrorMessage, setZipErrorMessage] = useState<string | null>(null)
 
   const debouncersRef = useRef<Record<number, Debouncer>>({})
   const successTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
@@ -190,6 +212,16 @@ export default function CarouselSharePage() {
     }, 3000)
     return () => clearInterval(id)
   }, [loading])
+
+  // When a new draft lands, reset the ZIP dropdown to match the loaded format
+  // and clear any lingering error pip from a prior attempt.
+  useEffect(() => {
+    if (data?.format) {
+      setZipFormat(data.format)
+      setZipDownloadStatus('idle')
+      setZipErrorMessage(null)
+    }
+  }, [data?.format, data?.draftId])
 
   const searchFilms = useCallback(async (q: string) => {
     if (q.trim().length === 0) {
@@ -831,6 +863,69 @@ export default function CarouselSharePage() {
     [data],
   )
 
+  // Bundle the 8 slide PNGs into a ZIP and trigger a browser download. When
+  // zipFormat matches the currently-loaded data.format, we prefer per-slide
+  // edit-patched PNGs from slidePngs so post-edit state exports correctly.
+  // When it doesn't match, we fetch the other format's draft inline WITHOUT
+  // touching preview state — any edits in progress on the loaded format stay
+  // intact.
+  const onDownloadZip = useCallback(async () => {
+    if (!data) return
+    setZipDownloadStatus('saving')
+    setZipErrorMessage(null)
+    try {
+      let exportSlides: Array<{ slideNumber: number; pngBase64: string }>
+      let exportSlots: Array<{ position: number; kind: string }>
+      if (zipFormat === data.format) {
+        exportSlides = data.slides.map((s) => ({
+          slideNumber: s.slideNumber,
+          pngBase64: slidePngs[s.slideNumber] ?? s.pngBase64,
+        }))
+        exportSlots = slotSelections.map((s) => ({ position: s.position, kind: s.kind }))
+      } else {
+        const res = await fetch('/api/admin/carousel/draft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filmId: data.film.id, format: zipFormat }),
+        })
+        const text = await res.text()
+        if (!res.ok) {
+          let message = 'Failed to load draft for download'
+          try {
+            const j = JSON.parse(text)
+            if (typeof j?.error === 'string') message = j.error
+          } catch { /* ignore */ }
+          throw new Error(message)
+        }
+        const json = JSON.parse(text) as DraftResponse
+        exportSlides = json.slides.map((s) => ({
+          slideNumber: s.slideNumber,
+          pngBase64: s.pngBase64,
+        }))
+        exportSlots = (json.slotSelections ?? []).map((s) => ({
+          position: s.position,
+          kind: s.kind,
+        }))
+      }
+      const blob = await buildCarouselZip({
+        slides: exportSlides,
+        slotSelections: exportSlots,
+        filmTitle: data.film.title,
+        format: zipFormat,
+      })
+      const filename = buildZipFilename({
+        filmTitle: data.film.title,
+        format: zipFormat,
+      })
+      triggerBlobDownload(blob, filename)
+      setZipDownloadStatus('idle')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Download failed'
+      setZipDownloadStatus('error')
+      setZipErrorMessage(message)
+    }
+  }, [data, zipFormat, slidePngs, slotSelections])
+
   if (status === 'loading') {
     return (
       <div className="min-h-screen bg-cinema-dark flex items-center justify-center">
@@ -1030,6 +1125,58 @@ export default function CarouselSharePage() {
                   </div>
                 )
               })}
+            </div>
+
+            {/* ZIP export footer */}
+            <div className="mt-8 flex flex-col items-center gap-1.5">
+              <div className="flex items-center gap-2">
+                <select
+                  aria-label="Export format"
+                  value={zipFormat}
+                  onChange={(e) => {
+                    setZipFormat(e.target.value as Format)
+                    if (zipDownloadStatus === 'error') {
+                      setZipDownloadStatus('idle')
+                      setZipErrorMessage(null)
+                    }
+                  }}
+                  disabled={zipDownloadStatus === 'saving'}
+                  className="text-xs bg-[#1a1a2e] border border-[#333] rounded-lg px-2.5 py-1.5 text-cinema-cream focus:outline-none focus:border-cinema-gold/50 disabled:opacity-50"
+                >
+                  <option value="4x5">4:5 (Instagram)</option>
+                  <option value="9x16">9:16 (TikTok)</option>
+                </select>
+                <button
+                  onClick={onDownloadZip}
+                  disabled={zipDownloadStatus === 'saving'}
+                  className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                    zipDownloadStatus === 'saving'
+                      ? 'border-[#333] text-cinema-muted/50 cursor-not-allowed'
+                      : 'border-cinema-gold/50 text-cinema-gold hover:bg-cinema-gold/10'
+                  }`}
+                  aria-label="Download all 8 slides as a ZIP file"
+                >
+                  {zipDownloadStatus === 'saving' ? 'Preparing...' : 'Download ZIP'}
+                </button>
+                {zipDownloadStatus === 'saving' && (
+                  <span
+                    className="inline-block w-1.5 h-1.5 rounded-full bg-cinema-gold animate-pulse"
+                    aria-hidden
+                  />
+                )}
+                {zipDownloadStatus === 'error' && (
+                  <span
+                    title={zipErrorMessage ?? 'Download failed'}
+                    className="flex items-center gap-1.5 text-[11px] text-red-300 cursor-help"
+                  >
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400" />
+                    {zipErrorMessage ?? 'Download failed'}
+                  </span>
+                )}
+              </div>
+              <span className="text-[11px] text-cinema-muted">
+                Downloads 8 PNGs as a ZIP file ready for Instagram or TikTok upload.
+              </span>
             </div>
           </>
         )}
