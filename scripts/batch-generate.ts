@@ -5,7 +5,7 @@
  * Usage: npx tsx scripts/batch-generate.ts
  * Requires: ws dev dependency for local Neon DB connection.
  */
-import 'dotenv/config'
+import './_load-env'
 import ws from 'ws'
 import { neonConfig } from '@neondatabase/serverless'
 neonConfig.webSocketConstructor = ws as unknown as typeof WebSocket

@@ -1,4 +1,4 @@
-import 'dotenv/config'
+import './_load-env'
 import { PrismaClient } from '../src/generated/prisma/client.js'
 import { PrismaNeon } from '@prisma/adapter-neon'
 import { forceOverwriteSentimentGraph } from '../src/lib/sentiment-beat-lock'

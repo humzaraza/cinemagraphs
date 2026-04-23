@@ -5,7 +5,7 @@
  *
  * Usage: npx tsx scripts/bulk-import-tmdb.ts
  */
-import 'dotenv/config'
+import './_load-env'
 import { PrismaClient } from '../src/generated/prisma/client.js'
 import { PrismaNeon } from '@prisma/adapter-neon'
 

@@ -23,7 +23,7 @@
  *   npx tsx scripts/backfill-wikipedia-beats.ts --force-orphan --yes     # non-interactive
  *   npx tsx scripts/backfill-wikipedia-beats.ts --start-after "Title"    # resume from title
  */
-import 'dotenv/config'
+import './_load-env'
 import readline from 'node:readline/promises'
 import { PrismaClient } from '../src/generated/prisma/client.js'
 import { PrismaNeon } from '@prisma/adapter-neon'

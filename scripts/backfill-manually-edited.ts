@@ -14,13 +14,7 @@
  *
  * Usage: npx tsx scripts/backfill-manually-edited.ts
  */
-// Load .env.local before the prisma module is imported — the Neon adapter
-// reads DATABASE_URL at client-construction time, so env must be in place
-// first. Prisma client is pulled in via dynamic import inside main() for
-// the same reason.
-import { config } from 'dotenv'
-config({ path: '.env.local' })
-
+import './_load-env'
 import ws from 'ws'
 import { neonConfig } from '@neondatabase/serverless'
 neonConfig.webSocketConstructor = ws as unknown as typeof WebSocket
