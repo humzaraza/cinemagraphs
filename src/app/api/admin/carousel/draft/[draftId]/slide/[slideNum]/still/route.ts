@@ -3,8 +3,11 @@ import { Prisma } from '@/generated/prisma/client'
 import { requireRole } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { renderMiddleSlide, RenderMiddleSlideError } from '@/lib/carousel/render-middle-slide'
+import { renderCoverSlide, RenderCoverSlideError } from '@/lib/carousel/render-cover-slide'
+import { renderCloserSlide, RenderCloserSlideError } from '@/lib/carousel/render-closer-slide'
 import { applyMirrorSync, fireAndForgetMirrorRender } from '@/lib/carousel/mirror-sync'
 import type { MiddleSlideNumber } from '@/lib/carousel/body-copy-generator'
+import type { SlotPosition } from '@/lib/carousel/slot-selection'
 
 type Format = '4x5' | '9x16'
 
@@ -16,9 +19,10 @@ function errorJson(error: string, code: string, status: number) {
   return Response.json({ error, code }, { status })
 }
 
-// PATCH a single middle slide's backdrop (still). Renders the slide with the
-// candidate URL first and only persists if render succeeds — same invariant as
-// the body-copy PATCH route.
+// PATCH a single slide's backdrop (still) for any position 1..8. Renders the
+// slide with the candidate URL first and only persists if render succeeds —
+// same invariant as the body-copy PATCH route. Cover (1) and closer (8)
+// dispatch to their own renderers since they have no slot / body copy.
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ draftId: string; slideNum: string }> },
@@ -28,9 +32,9 @@ export async function PATCH(
 
   const { draftId, slideNum: slideNumStr } = await params
   const slideNum = Number.parseInt(slideNumStr, 10)
-  if (!Number.isInteger(slideNum) || slideNum < 2 || slideNum > 7) {
+  if (!Number.isInteger(slideNum) || slideNum < 1 || slideNum > 8) {
     return errorJson(
-      `slideNum must be an integer in 2..7, got "${slideNumStr}"`,
+      `slideNum must be an integer in 1..8, got "${slideNumStr}"`,
       'INVALID_SLIDE',
       400,
     )
@@ -75,14 +79,32 @@ export async function PATCH(
   // untouched so the caller can retry without a half-applied state.
   let pngBuffer: Buffer
   try {
-    pngBuffer = await renderMiddleSlide({
-      draftId,
-      slideNum: slideNum as MiddleSlideNumber,
-      slideBackdropOverride: stillUrl,
-    })
+    if (slideNum === 1) {
+      pngBuffer = await renderCoverSlide({
+        draftId,
+        slideBackdropOverride: stillUrl,
+      })
+    } else if (slideNum === 8) {
+      pngBuffer = await renderCloserSlide({
+        draftId,
+        slideBackdropOverride: stillUrl,
+      })
+    } else {
+      pngBuffer = await renderMiddleSlide({
+        draftId,
+        slideNum: slideNum as MiddleSlideNumber,
+        slideBackdropOverride: stillUrl,
+      })
+    }
   } catch (err) {
     if (err instanceof RenderMiddleSlideError) {
       return errorJson(err.message, err.code, 500)
+    }
+    if (err instanceof RenderCoverSlideError) {
+      return errorJson(err.message, err.code, err.status)
+    }
+    if (err instanceof RenderCloserSlideError) {
+      return errorJson(err.message, err.code, err.status)
     }
     const msg = err instanceof Error ? err.message : 'Unknown composer error'
     return errorJson(msg, 'COMPOSER_FAILED', 500)
@@ -113,14 +135,14 @@ export async function PATCH(
     primaryFormat: draft.format as Format,
     edit: {
       kind: 'still',
-      slideNum: slideNum as MiddleSlideNumber,
+      slideNum: slideNum as SlotPosition,
       stillUrl,
     },
   })
   if (mirrorResult.status === 'synced' && mirrorResult.mirrorDraftId) {
     fireAndForgetMirrorRender({
       mirrorDraftId: mirrorResult.mirrorDraftId,
-      slideNum: slideNum as MiddleSlideNumber,
+      slideNum: slideNum as SlotPosition,
     })
   }
 

@@ -10,14 +10,22 @@ const mocks = vi.hoisted(() => ({
     },
   },
   renderMiddleSlide: vi.fn(),
+  renderCoverSlide: vi.fn(),
+  renderCloserSlide: vi.fn(),
 }))
 
 vi.mock('@/lib/prisma', () => ({ prisma: mocks.prisma }))
 vi.mock('@/lib/carousel/render-middle-slide', () => ({
   renderMiddleSlide: mocks.renderMiddleSlide,
 }))
+vi.mock('@/lib/carousel/render-cover-slide', () => ({
+  renderCoverSlide: mocks.renderCoverSlide,
+}))
+vi.mock('@/lib/carousel/render-closer-slide', () => ({
+  renderCloserSlide: mocks.renderCloserSlide,
+}))
 
-import { applyMirrorSync } from '@/lib/carousel/mirror-sync'
+import { applyMirrorSync, fireAndForgetMirrorRender } from '@/lib/carousel/mirror-sync'
 
 const PRIMARY_ID = 'draft-primary'
 const MIRROR_ID = 'draft-mirror'
@@ -627,5 +635,54 @@ describe('applyMirrorSync — still kind', () => {
       where: { id: PRIMARY_ID },
       data: { mirrorSyncStatus: 'failed', mirrorSyncError: 'still db error' },
     })
+  })
+})
+
+describe('fireAndForgetMirrorRender — dispatch', () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47])
+
+  // The function kicks off a void async IIFE. `vi.waitFor` polls until the
+  // update call fires, which means the selected renderer has resolved.
+  async function waitForRender() {
+    await vi.waitFor(() => {
+      expect(mocks.prisma.carouselDraft.update).toHaveBeenCalled()
+    })
+  }
+
+  beforeEach(() => {
+    mocks.renderMiddleSlide.mockResolvedValue(PNG)
+    mocks.renderCoverSlide.mockResolvedValue(PNG)
+    mocks.renderCloserSlide.mockResolvedValue(PNG)
+    mocks.prisma.carouselDraft.update.mockResolvedValue({})
+  })
+
+  it('slideNum 1 dispatches to renderCoverSlide only', async () => {
+    fireAndForgetMirrorRender({ mirrorDraftId: MIRROR_ID, slideNum: 1 })
+    await waitForRender()
+    expect(mocks.renderCoverSlide).toHaveBeenCalledTimes(1)
+    expect(mocks.renderCoverSlide).toHaveBeenCalledWith({ draftId: MIRROR_ID })
+    expect(mocks.renderMiddleSlide).not.toHaveBeenCalled()
+    expect(mocks.renderCloserSlide).not.toHaveBeenCalled()
+  })
+
+  it('slideNum 4 dispatches to renderMiddleSlide only', async () => {
+    fireAndForgetMirrorRender({ mirrorDraftId: MIRROR_ID, slideNum: 4 })
+    await waitForRender()
+    expect(mocks.renderMiddleSlide).toHaveBeenCalledTimes(1)
+    expect(mocks.renderMiddleSlide).toHaveBeenCalledWith({
+      draftId: MIRROR_ID,
+      slideNum: 4,
+    })
+    expect(mocks.renderCoverSlide).not.toHaveBeenCalled()
+    expect(mocks.renderCloserSlide).not.toHaveBeenCalled()
+  })
+
+  it('slideNum 8 dispatches to renderCloserSlide only', async () => {
+    fireAndForgetMirrorRender({ mirrorDraftId: MIRROR_ID, slideNum: 8 })
+    await waitForRender()
+    expect(mocks.renderCloserSlide).toHaveBeenCalledTimes(1)
+    expect(mocks.renderCloserSlide).toHaveBeenCalledWith({ draftId: MIRROR_ID })
+    expect(mocks.renderMiddleSlide).not.toHaveBeenCalled()
+    expect(mocks.renderCoverSlide).not.toHaveBeenCalled()
   })
 })

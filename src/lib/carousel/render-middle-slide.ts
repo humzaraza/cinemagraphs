@@ -37,7 +37,7 @@ type SlotSelectionJson = {
   duplicateTimestamp?: boolean
 }
 
-function runtimeLabel(minutes: number): string {
+export function runtimeLabel(minutes: number): string {
   if (minutes >= 60) {
     const h = Math.floor(minutes / 60)
     const m = minutes - h * 60
