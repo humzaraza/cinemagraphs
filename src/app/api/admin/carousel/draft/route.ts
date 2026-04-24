@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import type { Prisma } from '@/generated/prisma/client'
 import { requireRole } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { getMovieBackdropUrls } from '@/lib/tmdb'
@@ -10,6 +11,7 @@ import {
 } from '@/lib/carousel/body-copy-generator'
 import { computeDotColor, type DataPoint } from '@/lib/carousel/graph-renderer'
 import { composeSlide, type FilmData, type MiddleSlideContent } from '@/lib/carousel/slide-composer'
+import { resolvePerSlideBackdrop } from '@/lib/carousel/slide-backdrop-resolver'
 import {
   selectBeatSlots,
   formatTimestamp,
@@ -179,6 +181,7 @@ export async function POST(request: NextRequest) {
   let cached: boolean
   let draftId: string
   let backdropUrl: string | null
+  let slideBackdrops: Prisma.JsonValue | null = null
   // Effective slot selections for rendering + response. On cached path this is
   // the persisted state (so beat overrides survive reload); on fresh path it
   // mirrors the algorithm's pick. aiSlotSelections is the frozen baseline.
@@ -195,6 +198,7 @@ export async function POST(request: NextRequest) {
     cached = true
     draftId = existing.id
     backdropUrl = existing.backdropUrl
+    slideBackdrops = existing.slideBackdropsJson
     // Lazy-resolve backdropUrl for rows that predate the column. After this
     // one-time fill, PATCH and revert read from the row without hitting TMDB.
     if (backdropUrl === null) {
@@ -309,8 +313,6 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Render 8 slides ──────────────────────────────────────────
-  const backgroundImage = backdropUrl ?? undefined
-
   const filmData: FilmData = {
     title: film.title,
     year: year ?? new Date().getFullYear(),
@@ -372,6 +374,9 @@ export async function POST(request: NextRequest) {
         highlightBeatIndex: beatIndex + 1,
       }
     }
+
+    const perSlideBackdrop = resolvePerSlideBackdrop(slideBackdrops, position)
+    const backgroundImage = perSlideBackdrop ?? backdropUrl ?? undefined
 
     const png = await composeSlide({
       film: filmData,
