@@ -202,16 +202,27 @@ export default async function AdminPage() {
           },
           {
             id: 'share',
-            label: 'Share Posters',
+            label: 'Social Media Tools',
             content: (
-              <div className="space-y-4">
-                <p className="text-sm text-cinema-muted">Generate ranked film list posters as shareable images.</p>
-                <a
-                  href="/admin/share/list"
-                  className="inline-block px-5 py-2.5 bg-cinema-gold/20 text-cinema-gold border border-cinema-gold/30 rounded-lg text-sm font-medium hover:bg-cinema-gold/30 transition-colors"
-                >
-                  Open Poster Generator
-                </a>
+              <div className="space-y-6">
+                <div>
+                  <p className="text-sm text-cinema-muted">Generate ranked film list posters as shareable images.</p>
+                  <a
+                    href="/admin/share/list"
+                    className="inline-block mt-2 px-5 py-2.5 bg-cinema-gold/20 text-cinema-gold border border-cinema-gold/30 rounded-lg text-sm font-medium hover:bg-cinema-gold/30 transition-colors"
+                  >
+                    Open Poster Generator
+                  </a>
+                </div>
+                <div>
+                  <p className="text-sm text-cinema-muted">Build shareable Instagram carousels with 4:5 and 9:16 slide variants.</p>
+                  <a
+                    href="/admin/share/carousel"
+                    className="inline-block mt-2 px-5 py-2.5 bg-cinema-gold/20 text-cinema-gold border border-cinema-gold/30 rounded-lg text-sm font-medium hover:bg-cinema-gold/30 transition-colors"
+                  >
+                    Open Carousel Editor
+                  </a>
+                </div>
               </div>
             ),
           },
