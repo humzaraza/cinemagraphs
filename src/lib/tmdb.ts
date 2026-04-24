@@ -93,11 +93,15 @@ export async function getMovieImages(
   tmdbId: number,
   options?: { includeImageLanguage?: string }
 ): Promise<TMDBImagesResponse> {
-  const params: Record<string, string> = {}
-  if (options?.includeImageLanguage) {
-    params.include_image_language = options.includeImageLanguage
-  }
-  return tmdbFetch<TMDBImagesResponse>(`/movie/${tmdbId}/images`, params)
+  const lang = options?.includeImageLanguage
+  const key = lang ? KEYS.tmdbImages(tmdbId, lang) : KEYS.tmdbImages(tmdbId)
+  return cachedQuery(key, TTL.TMDB_IMAGES, async () => {
+    const params: Record<string, string> = {}
+    if (lang) {
+      params.include_image_language = lang
+    }
+    return tmdbFetch<TMDBImagesResponse>(`/movie/${tmdbId}/images`, params)
+  })
 }
 
 export async function getMovieBackdropUrls(tmdbId: number, size: string = 'w1280'): Promise<string[]> {
