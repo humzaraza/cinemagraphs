@@ -12,8 +12,18 @@ export const maxDuration = 300
 const TMDB_API_KEY = process.env.TMDB_API_KEY!
 const TMDB_BASE_URL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3'
 
-async function fetchTMDBPage(endpoint: string, page: number): Promise<{ id: number }[]> {
-  const url = `${TMDB_BASE_URL}${endpoint}?page=${page}`
+// TMDB now_playing is region-scoped; sampling both primary English-language
+// markets avoids single-region bleed-in of regional theatrical releases.
+const NOW_PLAYING_REGIONS = ['CA', 'US'] as const
+
+async function fetchTMDBPage(
+  endpoint: string,
+  page: number,
+  region?: string
+): Promise<{ id: number }[]> {
+  const params = new URLSearchParams({ page: String(page) })
+  if (region) params.set('region', region)
+  const url = `${TMDB_BASE_URL}${endpoint}?${params.toString()}`
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${TMDB_API_KEY}` },
   })
@@ -33,12 +43,14 @@ export async function GET(request: Request) {
       return Response.json({ error: 'Unauthorized', code: 'UNAUTHORIZED' }, { status: 401 })
     }
 
-    // Fetch now_playing (pages 1-3) for "In Theaters" tracking
-    const nowPlayingPages = await Promise.all([
-      fetchTMDBPage('/movie/now_playing', 1),
-      fetchTMDBPage('/movie/now_playing', 2),
-      fetchTMDBPage('/movie/now_playing', 3),
-    ])
+    // Fetch now_playing (pages 1-3 × regions CA, US) for "In Theaters" tracking
+    const nowPlayingPages = await Promise.all(
+      NOW_PLAYING_REGIONS.flatMap((region) => [
+        fetchTMDBPage('/movie/now_playing', 1, region),
+        fetchTMDBPage('/movie/now_playing', 2, region),
+        fetchTMDBPage('/movie/now_playing', 3, region),
+      ])
+    )
     const nowPlayingIds = new Set<number>()
     for (const page of nowPlayingPages) {
       for (const movie of page) {
@@ -61,7 +73,14 @@ export async function GET(request: Request) {
       }
     }
 
-    cronLogger.info({ nowPlayingCount: nowPlayingIds.size, totalCandidates: allIds.size }, 'TMDB candidates fetched')
+    cronLogger.info(
+      {
+        nowPlayingCount: nowPlayingIds.size,
+        regions: [...NOW_PLAYING_REGIONS],
+        totalCandidates: allIds.size,
+      },
+      'TMDB candidates fetched'
+    )
 
     // --- Refresh nowPlaying flags (respecting admin overrides) ---
     // Only auto-update films with NO override (nowPlayingOverride is null)
