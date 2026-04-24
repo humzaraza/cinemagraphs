@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import { Prisma } from '@/generated/prisma/client'
 import { RenderMiddleSlideError } from '@/lib/carousel/render-middle-slide'
+import { RenderCoverSlideError } from '@/lib/carousel/render-cover-slide'
+import { RenderCloserSlideError } from '@/lib/carousel/render-closer-slide'
 
 const mocks = vi.hoisted(() => ({
   requireRole: vi.fn(),
@@ -12,6 +14,8 @@ const mocks = vi.hoisted(() => ({
     },
   },
   renderMiddleSlide: vi.fn(),
+  renderCoverSlide: vi.fn(),
+  renderCloserSlide: vi.fn(),
   applyMirrorSync: vi.fn(),
   fireAndForgetMirrorRender: vi.fn(),
 }))
@@ -31,6 +35,26 @@ vi.mock('@/lib/carousel/render-middle-slide', async () => {
   return {
     ...actual,
     renderMiddleSlide: mocks.renderMiddleSlide,
+  }
+})
+
+vi.mock('@/lib/carousel/render-cover-slide', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/lib/carousel/render-cover-slide')
+  >('@/lib/carousel/render-cover-slide')
+  return {
+    ...actual,
+    renderCoverSlide: mocks.renderCoverSlide,
+  }
+})
+
+vi.mock('@/lib/carousel/render-closer-slide', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/lib/carousel/render-closer-slide')
+  >('@/lib/carousel/render-closer-slide')
+  return {
+    ...actual,
+    renderCloserSlide: mocks.renderCloserSlide,
   }
 })
 
@@ -65,7 +89,10 @@ beforeEach(() => {
     authorized: true,
     session: { user: { id: 'u1', role: 'ADMIN' } },
   })
-  mocks.renderMiddleSlide.mockResolvedValue(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47])
+  mocks.renderMiddleSlide.mockResolvedValue(PNG)
+  mocks.renderCoverSlide.mockResolvedValue(PNG)
+  mocks.renderCloserSlide.mockResolvedValue(PNG)
   mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
     id: DRAFT_ID,
     filmId: FILM_ID,
@@ -96,11 +123,11 @@ describe('PATCH /api/admin/carousel/draft/[draftId]/slide/[slideNum]/still', () 
     expect(mocks.renderMiddleSlide).not.toHaveBeenCalled()
   })
 
-  it('returns 400 when slideNum is outside 2..7', async () => {
+  it('returns 400 when slideNum is outside 1..8', async () => {
     const { PATCH } = await import(
       '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/still/route'
     )
-    for (const bad of ['1', '8', '0', 'abc']) {
+    for (const bad of ['0', '9', 'abc']) {
       const res = await PATCH(patchRequest({ stillUrl: VALID_URL }), params(bad))
       expect(res.status).toBe(400)
       const body = await res.json()
@@ -259,5 +286,88 @@ describe('PATCH /api/admin/carousel/draft/[draftId]/slide/[slideNum]/still', () 
     }
     expect(updateArg.data.slideBackdropsJson).toBe(Prisma.DbNull)
     expect(updateArg.data.slideBackdropsJson).not.toEqual({})
+  })
+
+  it('accepts slideNum: 1 and dispatches to renderCoverSlide', async () => {
+    const { PATCH } = await import(
+      '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/still/route'
+    )
+    const res = await PATCH(patchRequest({ stillUrl: VALID_URL }), params(1))
+    expect(res.status).toBe(200)
+
+    expect(mocks.renderCoverSlide).toHaveBeenCalledTimes(1)
+    expect(mocks.renderCoverSlide).toHaveBeenCalledWith({
+      draftId: DRAFT_ID,
+      slideBackdropOverride: VALID_URL,
+    })
+    expect(mocks.renderMiddleSlide).not.toHaveBeenCalled()
+    expect(mocks.renderCloserSlide).not.toHaveBeenCalled()
+
+    // Persists under string key "1" and hands slideNum 1 to mirror-sync.
+    const updateArg = mocks.prisma.carouselDraft.update.mock.calls[0][0] as {
+      data: Record<string, unknown>
+    }
+    expect(updateArg.data.slideBackdropsJson).toEqual({ '1': VALID_URL })
+    expect(mocks.applyMirrorSync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        edit: { kind: 'still', slideNum: 1, stillUrl: VALID_URL },
+      }),
+    )
+  })
+
+  it('accepts slideNum: 8 and dispatches to renderCloserSlide', async () => {
+    const { PATCH } = await import(
+      '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/still/route'
+    )
+    const res = await PATCH(patchRequest({ stillUrl: VALID_URL }), params(8))
+    expect(res.status).toBe(200)
+
+    expect(mocks.renderCloserSlide).toHaveBeenCalledTimes(1)
+    expect(mocks.renderCloserSlide).toHaveBeenCalledWith({
+      draftId: DRAFT_ID,
+      slideBackdropOverride: VALID_URL,
+    })
+    expect(mocks.renderMiddleSlide).not.toHaveBeenCalled()
+    expect(mocks.renderCoverSlide).not.toHaveBeenCalled()
+
+    const updateArg = mocks.prisma.carouselDraft.update.mock.calls[0][0] as {
+      data: Record<string, unknown>
+    }
+    expect(updateArg.data.slideBackdropsJson).toEqual({ '8': VALID_URL })
+    expect(mocks.applyMirrorSync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        edit: { kind: 'still', slideNum: 8, stillUrl: VALID_URL },
+      }),
+    )
+  })
+
+  it('cover render failure surfaces the code/status from RenderCoverSlideError', async () => {
+    mocks.renderCoverSlide.mockRejectedValue(
+      new RenderCoverSlideError('COVER_BANG', 'cover boom', 404),
+    )
+    const { PATCH } = await import(
+      '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/still/route'
+    )
+    const res = await PATCH(patchRequest({ stillUrl: VALID_URL }), params(1))
+    expect(res.status).toBe(404)
+    const body = await res.json()
+    expect(body.code).toBe('COVER_BANG')
+    expect(mocks.prisma.carouselDraft.update).not.toHaveBeenCalled()
+    expect(mocks.applyMirrorSync).not.toHaveBeenCalled()
+  })
+
+  it('closer render failure surfaces the code/status from RenderCloserSlideError', async () => {
+    mocks.renderCloserSlide.mockRejectedValue(
+      new RenderCloserSlideError('CLOSER_BANG', 'closer boom', 500),
+    )
+    const { PATCH } = await import(
+      '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/still/route'
+    )
+    const res = await PATCH(patchRequest({ stillUrl: VALID_URL }), params(8))
+    expect(res.status).toBe(500)
+    const body = await res.json()
+    expect(body.code).toBe('CLOSER_BANG')
+    expect(mocks.prisma.carouselDraft.update).not.toHaveBeenCalled()
+    expect(mocks.applyMirrorSync).not.toHaveBeenCalled()
   })
 })

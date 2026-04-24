@@ -1,12 +1,15 @@
 import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { renderMiddleSlide } from './render-middle-slide'
+import { renderCoverSlide } from './render-cover-slide'
+import { renderCloserSlide } from './render-closer-slide'
 import { buildConflictMap, type SlotForConflictCheck } from './slot-conflicts'
 import {
   isManuallyEdited,
   type MiddleSlideNumber,
   type SlideCopy,
 } from './body-copy-generator'
+import type { SlotPosition } from './slot-selection'
 
 type Format = '4x5' | '9x16'
 
@@ -34,7 +37,7 @@ export type MirrorEditKind =
     }
   | {
       kind: 'still'
-      slideNum: MiddleSlideNumber
+      slideNum: SlotPosition
       stillUrl: string | null
     }
 
@@ -260,14 +263,20 @@ export async function applyMirrorSync(args: {
 // behind updatedAt, so no explicit failure field is needed.
 export function fireAndForgetMirrorRender(args: {
   mirrorDraftId: string
-  slideNum: MiddleSlideNumber
+  slideNum: SlotPosition
 }): void {
   void (async () => {
     try {
-      await renderMiddleSlide({
-        draftId: args.mirrorDraftId,
-        slideNum: args.slideNum,
-      })
+      if (args.slideNum === 1) {
+        await renderCoverSlide({ draftId: args.mirrorDraftId })
+      } else if (args.slideNum === 8) {
+        await renderCloserSlide({ draftId: args.mirrorDraftId })
+      } else {
+        await renderMiddleSlide({
+          draftId: args.mirrorDraftId,
+          slideNum: args.slideNum as MiddleSlideNumber,
+        })
+      }
       await prisma.carouselDraft.update({
         where: { id: args.mirrorDraftId },
         data: { mirrorRenderedAt: new Date() },
