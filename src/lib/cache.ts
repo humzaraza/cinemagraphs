@@ -10,6 +10,7 @@ export const TTL = {
   HOMEPAGE: 3600,       // 1 hour
   TICKER: 1800,         // 30 minutes
   TMDB_NOW_PLAYING: 21600, // 6 hours
+  TMDB_IMAGES: 604800,  // 7 days
   OMDB: 86400,          // 24 hours
   PERSON: 3600,         // 1 hour
 } as const
@@ -21,6 +22,8 @@ export const KEYS = {
   homepage: (section: string) => `homepage:${section}`,
   ticker: () => 'ticker:data',
   tmdbNowPlaying: (region: string) => `tmdb:now_playing:${region}`,
+  tmdbImages: (tmdbId: number, lang?: string) =>
+    lang ? `tmdb:images:${tmdbId}:${lang}` : `tmdb:images:${tmdbId}`,
   omdb: (imdbId: string) => `omdb:${imdbId}`,
   person: (tmdbPersonId: number) => `person:${tmdbPersonId}`,
 } as const
