@@ -10,7 +10,7 @@
  *   npx tsx scripts/cleanup-contaminated-critic-blog.ts           # dry run
  *   npx tsx scripts/cleanup-contaminated-critic-blog.ts --commit  # delete
  */
-import 'dotenv/config'
+import './_load-env'
 import ws from 'ws'
 import { neonConfig } from '@neondatabase/serverless'
 neonConfig.webSocketConstructor = ws as unknown as typeof WebSocket

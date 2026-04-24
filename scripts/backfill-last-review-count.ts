@@ -14,7 +14,7 @@
  *
  * Usage: npx tsx scripts/backfill-last-review-count.ts
  */
-import 'dotenv/config'
+import './_load-env'
 import ws from 'ws'
 import { neonConfig } from '@neondatabase/serverless'
 neonConfig.webSocketConstructor = ws as unknown as typeof WebSocket

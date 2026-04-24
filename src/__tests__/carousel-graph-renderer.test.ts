@@ -133,6 +133,32 @@ describe('renderGraph', () => {
     ).not.toThrow()
   })
 
+  it('keeps the neutral anchor in dotPositions but does not render a visible circle for it', () => {
+    const sample: DataPoint[] = [
+      { t: 20, s: 7.8 },
+      { t: 40, s: 6.8 },
+      { t: 60, s: 8.5 },
+    ]
+    const out = renderGraph({
+      dataPoints: sample,
+      totalRuntime: 90,
+      criticsScore: 7.7,
+      width: 1080,
+      height: 540,
+      format: '4x5',
+    })
+    expect(out.dotPositions.length).toBe(sample.length + 1)
+    expect(out.dotPositions[0].timestamp).toBe(0)
+    expect(out.dotPositions[0].score).toBe(5.0)
+
+    // No <circle> element at the anchor's rendered coordinates.
+    const anchor = out.dotPositions[0]
+    const cx = (+anchor.x.toFixed(3)).toString()
+    const cy = (+anchor.y.toFixed(3)).toString()
+    const anchorCircleRe = new RegExp(`<circle[^>]*cx="${cx}"[^>]*cy="${cy}"`)
+    expect(out.svg).not.toMatch(anchorCircleRe)
+  })
+
   it('exposes dotPositions aligned with the post-anchor point order', () => {
     const phm: DataPoint[] = [
       { t: 5, s: 7.8 },
@@ -184,5 +210,178 @@ describe('renderGraph', () => {
       expect(d.y).toBeGreaterThanOrEqual(0)
       expect(d.y).toBeLessThanOrEqual(height)
     }
+  })
+
+  describe('score overlay collision avoidance', () => {
+    it('moves score to opposite corner (top-left) when 4x5 default top-right box collides with a late peak', () => {
+      // Late peak at t=145, s=9.8 with runtime=157. At width=960 the peak
+      // projects to roughly (861, 75), inside the default box
+      // [780, 940] x [10, 90]. The opposite box [20, 180] x [10, 90] is
+      // clear because all other points project to the bottom half of the plot.
+      const latePeak: DataPoint[] = [
+        { t: 10, s: 5.0 },
+        { t: 50, s: 7.0 },
+        { t: 90, s: 8.0 },
+        { t: 120, s: 8.5 },
+        { t: 145, s: 9.8 },
+      ]
+      const out = renderGraph({
+        dataPoints: latePeak,
+        totalRuntime: 157,
+        criticsScore: 9.0,
+        width: 960,
+        height: 540,
+        format: '4x5',
+      })
+      // Opposite corner rendering: x=100 (top-left).
+      expect(out.svg).toContain('x="100" y="20"')
+      expect(out.svg).toContain('x="100" y="56"')
+      // Default corner (top-right at x=900) must not be used.
+      expect(out.svg).not.toContain('x="900" y="20"')
+    })
+
+    it('keeps score in default corner (top-right) when no curve points collide (4x5)', () => {
+      // All-low data — scores never rise into the top-right box.
+      const flatLow: DataPoint[] = [
+        { t: 20, s: 4.0 },
+        { t: 60, s: 4.5 },
+        { t: 100, s: 4.2 },
+        { t: 140, s: 4.3 },
+      ]
+      const out = renderGraph({
+        dataPoints: flatLow,
+        totalRuntime: 157,
+        criticsScore: 4.0,
+        width: 960,
+        height: 540,
+        format: '4x5',
+      })
+      // Default corner: x = width - 60 = 900.
+      expect(out.svg).toContain('x="900" y="20"')
+      expect(out.svg).toContain('x="900" y="56"')
+      // Opposite corner (x=100) must not be used.
+      expect(out.svg).not.toContain('x="100" y="20"')
+    })
+
+    it('keeps score in default corner (top-left) for 9x16 when no curve points collide', () => {
+      const phm: DataPoint[] = [
+        { t: 5, s: 7.8 },
+        { t: 55, s: 8.1 },
+        { t: 115, s: 9.5 },
+        { t: 154, s: 7.4 },
+      ]
+      const out = renderGraph({
+        dataPoints: phm,
+        totalRuntime: 157,
+        criticsScore: 8.3,
+        width: 1080,
+        height: 1152,
+        format: '9x16',
+      })
+      // Default 9x16: x=54 with text-anchor="start".
+      expect(out.svg).toContain('x="54" y="40"')
+      expect(out.svg).toContain('text-anchor="start"')
+      // Opposite 9x16: x=width-54=1026 with text-anchor="end" — must not appear.
+      expect(out.svg).not.toContain('x="1026" y="40"')
+    })
+  })
+
+  describe('main-line stroke widths', () => {
+    it('renders the main curve stroke at 4px and the glow stroke at 9px', () => {
+      const out = renderGraph({
+        dataPoints: SAMPLE,
+        totalRuntime: 60,
+        criticsScore: 8.1,
+        width: 960,
+        height: 540,
+        format: '4x5',
+      })
+      expect(out.svg).toContain('stroke-width="9"')
+      expect(out.svg).toContain('stroke-width="4"')
+      expect(out.svg).not.toContain('stroke-width="2.5"')
+      expect(out.svg).not.toContain('stroke-width="8"')
+    })
+  })
+
+  describe('minimal mode', () => {
+    it('returns a non-empty PNG buffer at 240x80 without crashing', () => {
+      const out = renderGraph({
+        dataPoints: SAMPLE,
+        totalRuntime: 60,
+        criticsScore: 8.1,
+        width: 240,
+        height: 80,
+        format: '4x5',
+        minimal: true,
+      })
+      expect(Buffer.isBuffer(out.png)).toBe(true)
+      expect(out.png.length).toBeGreaterThan(0)
+    })
+
+    it('produces SVG without "Critics" label or score value when minimal: true', () => {
+      const out = renderGraph({
+        dataPoints: SAMPLE,
+        totalRuntime: 60,
+        criticsScore: 8.3,
+        width: 240,
+        height: 80,
+        format: '4x5',
+        minimal: true,
+      })
+      expect(out.svg).not.toContain('Critics')
+      expect(out.svg).not.toContain('8.3')
+    })
+
+    it('still contains "Critics" and score when minimal is false', () => {
+      const out = renderGraph({
+        dataPoints: SAMPLE,
+        totalRuntime: 60,
+        criticsScore: 8.3,
+        width: 1080,
+        height: 540,
+        format: '4x5',
+        minimal: false,
+      })
+      expect(out.svg).toContain('Critics')
+      expect(out.svg).toContain('8.3')
+    })
+
+    it('still contains "Critics" and score when minimal is undefined', () => {
+      const out = renderGraph({
+        dataPoints: SAMPLE,
+        totalRuntime: 60,
+        criticsScore: 8.3,
+        width: 1080,
+        height: 540,
+        format: '4x5',
+      })
+      expect(out.svg).toContain('Critics')
+      expect(out.svg).toContain('8.3')
+    })
+
+    it('returns dotPositions in minimal mode aligned with the post-anchor point order', () => {
+      const width = 240
+      const height = 80
+      const out = renderGraph({
+        dataPoints: SAMPLE,
+        totalRuntime: 60,
+        criticsScore: 8.1,
+        width,
+        height,
+        format: '4x5',
+        minimal: true,
+      })
+      expect(out.dotPositions.length).toBe(SAMPLE.length + 1)
+      expect(out.dotPositions[0].timestamp).toBe(0)
+      expect(out.dotPositions[0].score).toBe(5.0)
+      for (const d of out.dotPositions) {
+        expect(Number.isFinite(d.x)).toBe(true)
+        expect(Number.isFinite(d.y)).toBe(true)
+        expect(d.x).toBeGreaterThanOrEqual(0)
+        expect(d.x).toBeLessThanOrEqual(width)
+        expect(d.y).toBeGreaterThanOrEqual(0)
+        expect(d.y).toBeLessThanOrEqual(height)
+      }
+    })
   })
 })

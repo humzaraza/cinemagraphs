@@ -1,15 +1,21 @@
 // Phase B verification: render the four target graphs against PHM-shaped data
 // and save PNGs so a human can eyeball the output.
 //
-// Run: npx tsx scripts/verify-graph-renderer.mjs
+// Run: npm run verify:graph-renderer
+//  or: npx tsx scripts/verify-graph-renderer.ts
 
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 
-import { renderGraph } from '../src/lib/carousel/graph-renderer.ts'
+import {
+  renderGraph,
+  type DataPoint,
+  type DotPosition,
+  type Format,
+} from '../src/lib/carousel/graph-renderer'
 
-const PHM_DATA = [
+const PHM_DATA: DataPoint[] = [
   { t: 5, s: 7.8 },
   { t: 15, s: 7.2 },
   { t: 25, s: 6.8 },
@@ -35,7 +41,15 @@ const PEAK_INDEX = 12
 const OUT_DIR = resolve(process.cwd(), 'graph-renderer-output')
 mkdirSync(OUT_DIR, { recursive: true })
 
-const cases = [
+type Case = {
+  label: string
+  width: number
+  height: number
+  format: Format
+  highlightBeatIndex: number | undefined
+}
+
+const cases: Case[] = [
   {
     label: '4x5_default',
     width: 1080,
@@ -66,8 +80,10 @@ const cases = [
   },
 ]
 
-const results = []
-let highlightDotPositions = null
+type Result = { label: string; path: string; ms: number; bytes: number }
+
+const results: Result[] = []
+let highlightDotPositions: DotPosition[] | null = null
 for (const c of cases) {
   const t0 = performance.now()
   const { png, dotPositions } = renderGraph({
@@ -90,7 +106,7 @@ for (const c of cases) {
 }
 
 if (highlightDotPositions) {
-  const fmtPos = (d) =>
+  const fmtPos = (d: DotPosition): string =>
     `{ x: ${d.x.toFixed(2).padStart(7)}, y: ${d.y.toFixed(2).padStart(6)}, score: ${d.score.toFixed(1)}, color: ${String(d.color).padEnd(4)}, timestamp: ${String(d.timestamp).padStart(3)} }`
   const n = highlightDotPositions.length
   console.log('\n--- 4x5_highlight dotPositions (first 3, last 3) ---')

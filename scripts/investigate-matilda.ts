@@ -8,7 +8,7 @@
  *
  * Usage: npx tsx scripts/investigate-matilda.ts
  */
-import 'dotenv/config'
+import './_load-env'
 import ws from 'ws'
 import { neonConfig } from '@neondatabase/serverless'
 neonConfig.webSocketConstructor = ws as unknown as typeof WebSocket

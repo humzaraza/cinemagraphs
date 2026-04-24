@@ -34,7 +34,7 @@ describe('formatTimestamp', () => {
 
 describe('selectBeatSlots', () => {
   describe('a) V-shape', () => {
-    it('picks low at index 3 for slot 4 and peak at index 8 for slot 6; slot 5 recovers by >= 1.0', () => {
+    it('narrative and chronological order coincide: slots 2-7 stay in opening-setup-drop-recovery-peak-ending order', () => {
       const runtime = 100
       const total = 10
       const scores = [7.0, 7.2, 6.8, 4.5, 5.0, 6.0, 7.5, 8.8, 9.5, 8.0]
@@ -52,7 +52,7 @@ describe('selectBeatSlots', () => {
   })
 
   describe('b) Sustained climb', () => {
-    it('slot 4 → index 0, slot 6 → index 9, slot 7 → index 9 with collisions on 6 and 7', () => {
+    it('chronologically assigns the 6 dedup-resolved picks to slots 2-7', () => {
       const runtime = 100
       const total = 10
       // Monotonic 5.5 → 8.5: step = 3.0 / 9
@@ -61,16 +61,35 @@ describe('selectBeatSlots', () => {
       const beats = scores.map((s, i) => mkBeat(i, runtime, total, s))
       const slots = selectBeatSlots(beats, runtime)
 
-      expect(slots[3].beat).toBe(beats[0])
-      expect(slots[5].beat).toBe(beats[9])
+      // Narrative picks: opening=beats[0] (t=5), setup=beats[3] (t=35),
+      // drop→beats[1] after dedup (t=15), recovery→beats[4] after dedup (t=45),
+      // peak=beats[9] (t=95), ending→beats[8] after dedup (t=85).
+      // Chronological assignment to slots 2-7: 5, 15, 35, 45, 85, 95.
+      expect(slots[1].beat).toBe(beats[0])
+      expect(slots[2].beat).toBe(beats[1])
+      expect(slots[3].beat).toBe(beats[3])
+      expect(slots[4].beat).toBe(beats[4])
+      expect(slots[5].beat).toBe(beats[8])
       expect(slots[6].beat).toBe(beats[9])
-      expect(slots[5].collision).toBe(true)
-      expect(slots[6].collision).toBe(true)
+
+      // Each slot's kind reflects the role that picked it, not its slot order.
+      expect(slots[1].kind).toBe('opening')
+      expect(slots[2].kind).toBe('drop')
+      expect(slots[3].kind).toBe('setup')
+      expect(slots[4].kind).toBe('recovery')
+      expect(slots[5].kind).toBe('ending')
+      expect(slots[6].kind).toBe('peak')
+
+      // No collisions or duplicate flags.
+      for (let i = 1; i <= 6; i++) {
+        expect(slots[i].collision).toBe(false)
+        expect(slots[i].duplicateTimestamp).toBeFalsy()
+      }
     })
   })
 
   describe('c) Flat arc', () => {
-    it('returns all 8 slots with valid beats or nulls and does not crash', () => {
+    it('returns all 8 slots with every middle slot filled chronologically', () => {
       const runtime = 100
       const total = 10
       const scores = [6.4, 6.8, 7.0, 6.5, 7.1, 7.2, 6.9, 6.7, 7.0, 6.6]
@@ -81,54 +100,70 @@ describe('selectBeatSlots', () => {
       expect(slots[0].beat).toBeNull() // hook
       expect(slots[7].beat).toBeNull() // takeaway
       for (let i = 1; i <= 6; i++) {
-        // Either a valid beat reference from the input, or null (slot 5 edge case only)
-        if (slots[i].beat !== null) {
-          expect(beats).toContain(slots[i].beat)
-        }
+        expect(slots[i].beat).not.toBeNull()
+        expect(beats).toContain(slots[i].beat)
       }
-      // Log picks for manual review per spec
-      const picks = slots.map((s) => ({
-        pos: s.position,
-        kind: s.kind,
-        score: s.beat?.score ?? null,
-        label: s.beat?.label ?? null,
-        collision: s.collision,
-      }))
-      console.log('[flat-arc picks]', JSON.stringify(picks, null, 2))
+      // Middle slots are chronologically ordered by time.
+      const times = slots.slice(1, 7).map((s) => s.beat!.timeMidpoint)
+      for (let i = 1; i < times.length; i++) {
+        expect(times[i]).toBeGreaterThan(times[i - 1])
+      }
     })
   })
 
   describe('d) Peak at end', () => {
-    it('flags collision on slots 6 and 7 when peak == beats[last]', () => {
+    it('chronologically orders opening-drop-setup-recovery-ending-peak after dedup', () => {
       const runtime = 100
       const total = 10
       const scores = [6.0, 6.2, 6.4, 6.5, 6.7, 6.9, 7.1, 7.3, 7.6, 8.0]
       const beats = scores.map((s, i) => mkBeat(i, runtime, total, s))
       const slots = selectBeatSlots(beats, runtime)
 
-      expect(slots[5].beat).toBe(beats[9])
+      // Narrative picks → opening=beats[0], setup=beats[3], drop→beats[0] then
+      // deduped to beats[1]. Recovery is computed against the pre-dedup drop
+      // (s=6.0), so the first post-drop rise ≥1.0 is beats[6] (s=7.1), not
+      // beats[7]. Peak=beats[9], ending=beats[9] dedupes to beats[8].
+      // Chronological: 5, 15, 35, 65, 85, 95.
+      expect(slots[1].beat).toBe(beats[0])
+      expect(slots[2].beat).toBe(beats[1])
+      expect(slots[3].beat).toBe(beats[3])
+      expect(slots[4].beat).toBe(beats[6])
+      expect(slots[5].beat).toBe(beats[8])
       expect(slots[6].beat).toBe(beats[9])
-      expect(slots[5].collision).toBe(true)
-      expect(slots[6].collision).toBe(true)
+      for (let i = 1; i <= 6; i++) {
+        expect(slots[i].collision).toBe(false)
+      }
     })
   })
 
   describe('e) Low at end', () => {
-    it('slot 5 beat is null and collision is true when low == beats[last]', () => {
+    it('recovery falls back to window when drop is the last beat; chronological order preserved', () => {
       const runtime = 100
       const total = 10
       const scores = [7.0, 7.2, 7.5, 7.8, 7.4, 7.6, 7.2, 6.8, 6.5, 4.5]
       const beats = scores.map((s, i) => mkBeat(i, runtime, total, s))
       const slots = selectBeatSlots(beats, runtime)
 
-      expect(slots[3].beat).toBe(beats[9])
-      expect(slots[4].beat).toBeNull()
-      expect(slots[4].collision).toBe(true)
+      // Narrative picks → opening=beats[0], setup=beats[3], drop=beats[9],
+      // recovery=null (no post-drop beats) → fallback-by-window (50-70) → beats[6],
+      // peak=beats[3] collides with setup → dedup to beats[5],
+      // ending=beats[9] collides with drop → dedup walk back to beats[8].
+      // Chronological: 5, 35, 55, 65, 85, 95.
+      expect(slots[1].beat).toBe(beats[0])
+      expect(slots[2].beat).toBe(beats[3])
+      expect(slots[3].beat).toBe(beats[5])
+      expect(slots[4].beat).toBe(beats[6])
+      expect(slots[4].kind).toBe('fallback')
+      expect(slots[5].beat).toBe(beats[8])
+      expect(slots[6].beat).toBe(beats[9])
+      for (let i = 1; i <= 6; i++) {
+        expect(slots[i].collision).toBe(false)
+      }
     })
   })
 
   describe('f) Short film (3 beats)', () => {
-    it('returns all 8 slots and correctly flags collisions', () => {
+    it('fills slots 2-4 chronologically and duplicates the last beat for 5-7', () => {
       const runtime = 60
       const total = 3
       const scores = [6.0, 7.5, 5.0]
@@ -139,21 +174,232 @@ describe('selectBeatSlots', () => {
       expect(slots[0].beat).toBeNull()
       expect(slots[7].beat).toBeNull()
 
-      // Slot 2 (opening) = beats[0]
+      // Three distinct beats chronologically: beats[0] (t=10), beats[1] (t=30), beats[2] (t=50).
       expect(slots[1].beat).toBe(beats[0])
-      // Slot 4 (drop) = lowest score = beats[2]
+      expect(slots[2].beat).toBe(beats[1])
       expect(slots[3].beat).toBe(beats[2])
-      // Slot 5 (recovery) — drop is last beat → beat null, collision true
-      expect(slots[4].beat).toBeNull()
-      expect(slots[4].collision).toBe(true)
-      // Slot 6 (peak) = beats[1]
-      expect(slots[5].beat).toBe(beats[1])
-      // Slot 7 (ending) = beats[2]
-      expect(slots[6].beat).toBe(beats[2])
 
-      // Slot 4 and 7 both use beats[2] — both should be flagged
+      // Remaining slots duplicate the last assigned beat, flagged.
+      expect(slots[4].beat).toBe(beats[2])
+      expect(slots[5].beat).toBe(beats[2])
+      expect(slots[6].beat).toBe(beats[2])
+      expect(slots[4].duplicateTimestamp).toBe(true)
+      expect(slots[5].duplicateTimestamp).toBe(true)
+      expect(slots[6].duplicateTimestamp).toBe(true)
+
+      // Slots sharing t=50 all flag collision.
       expect(slots[3].collision).toBe(true)
+      expect(slots[4].collision).toBe(true)
+      expect(slots[5].collision).toBe(true)
       expect(slots[6].collision).toBe(true)
+    })
+  })
+})
+
+describe('selectBeatSlots — dedup pass', () => {
+  describe('Standard PHM-like arc with distinct beats', () => {
+    it('produces no duplicate timestamps and no flags', () => {
+      const runtime = 100
+      const total = 10
+      // V-shape with a clear peak — mirrors PHM's overall silhouette.
+      const scores = [7.0, 7.2, 6.8, 4.5, 5.0, 6.0, 7.5, 8.8, 9.5, 8.0]
+      const beats = scores.map((s, i) => mkBeat(i, runtime, total, s))
+      const slots = selectBeatSlots(beats, runtime)
+
+      const middleTs = slots
+        .filter((s) => s.position >= 2 && s.position <= 7 && s.beat)
+        .map((s) => s.beat!.timeMidpoint)
+      expect(new Set(middleTs).size).toBe(middleTs.length) // all distinct
+
+      for (let i = 1; i <= 6; i++) {
+        expect(slots[i].duplicateTimestamp).toBeFalsy()
+        expect(slots[i].collision).toBe(false)
+      }
+    })
+  })
+
+  describe('Setup and recovery pick the same beat naturally', () => {
+    it('dedup shifts recovery; chronological order places drop→setup→recovery in slots 3-5', () => {
+      const runtime = 100
+      const total = 10
+      // Early drop at index 1 (4.0) followed by a strong spike at index 2 (7.5),
+      // which is both the highest score in the first 40% (setup target) AND
+      // the first post-drop rise ≥ 1.0 (recovery target) — guaranteed collision.
+      const scores = [7.0, 4.0, 7.5, 6.0, 5.5, 8.0, 8.5, 9.0, 9.5, 8.8]
+      const beats = scores.map((s, i) => mkBeat(i, runtime, total, s))
+      const slots = selectBeatSlots(beats, runtime)
+
+      // Chronological: opening (5), drop (15), setup (25), recovery (35), peak (85), ending (95).
+      expect(slots[1].beat).toBe(beats[0])
+      expect(slots[2].beat).toBe(beats[1])
+      expect(slots[3].beat).toBe(beats[2]) // setup retains
+      expect(slots[4].beat).toBe(beats[3]) // recovery shifts from beats[2]
+      expect(slots[5].beat).toBe(beats[8])
+      expect(slots[6].beat).toBe(beats[9])
+      for (let i = 1; i <= 6; i++) {
+        expect(slots[i].duplicateTimestamp).toBeFalsy()
+        expect(slots[i].collision).toBe(false)
+      }
+    })
+  })
+
+  describe('Arc with only 4 distinct beats and 6 middle slots', () => {
+    it('some slots are flagged duplicateTimestamp and the pipeline does not crash', () => {
+      const beats: Beat[] = [
+        { timeStart: 0, timeEnd: 15, timeMidpoint: 7, score: 6.5, label: 'b0', labelFull: 'b0', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 15, timeEnd: 30, timeMidpoint: 22, score: 8.0, label: 'b1', labelFull: 'b1', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 30, timeEnd: 50, timeMidpoint: 40, score: 5.0, label: 'b2', labelFull: 'b2', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 50, timeEnd: 80, timeMidpoint: 65, score: 7.5, label: 'b3', labelFull: 'b3', confidence: 'medium', reviewEvidence: '' },
+      ]
+      const runtime = 80
+
+      // Must not throw.
+      const slots = selectBeatSlots(beats, runtime)
+      expect(slots).toHaveLength(8)
+
+      // With only 4 beats feeding 6 middle slots, at least one slot must be
+      // flagged duplicateTimestamp.
+      const flagged = slots.filter((s) => s.duplicateTimestamp === true)
+      expect(flagged.length).toBeGreaterThan(0)
+
+      // Every middle slot has a usable (non-null) beat — duplicate fill preserves
+      // the beat reference rather than returning null.
+      for (let i = 1; i <= 6; i++) {
+        expect(slots[i].beat).not.toBeNull()
+      }
+    })
+  })
+})
+
+describe('selectBeatSlots — chronological reassignment', () => {
+  describe('Kill Bill Vol. 1-like arc (sustained high, no clear drop)', () => {
+    it('fills all 6 middle slots without crashing and orders them chronologically', () => {
+      const runtime = 111
+      const total = 10
+      // All scores in [8, 9.5] — no red/gold dots, no single obvious drop.
+      const scores = [8.3, 8.7, 9.0, 8.8, 9.2, 8.9, 9.4, 9.1, 8.8, 9.0]
+      const beats = scores.map((s, i) => mkBeat(i, runtime, total, s))
+      const slots = selectBeatSlots(beats, runtime)
+
+      expect(slots).toHaveLength(8)
+      for (let i = 1; i <= 6; i++) {
+        expect(slots[i].beat).not.toBeNull()
+      }
+      const times = slots.slice(1, 7).map((s) => s.beat!.timeMidpoint)
+      for (let i = 1; i < times.length; i++) {
+        expect(times[i]).toBeGreaterThan(times[i - 1])
+      }
+    })
+  })
+
+  describe('12 Angry Men-like arc (no early beats, tight cluster)', () => {
+    it('assigns chronologically even when every beat lives after t=runtime*0.3', () => {
+      const beats: Beat[] = [
+        { timeStart: 25, timeEnd: 35, timeMidpoint: 30, score: 7.5, label: 'a', labelFull: 'a', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 35, timeEnd: 45, timeMidpoint: 40, score: 7.8, label: 'b', labelFull: 'b', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 50, timeEnd: 60, timeMidpoint: 55, score: 8.2, label: 'c', labelFull: 'c', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 60, timeEnd: 70, timeMidpoint: 65, score: 6.5, label: 'd', labelFull: 'd', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 70, timeEnd: 80, timeMidpoint: 75, score: 8.5, label: 'e', labelFull: 'e', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 80, timeEnd: 95, timeMidpoint: 88, score: 9.0, label: 'f', labelFull: 'f', confidence: 'medium', reviewEvidence: '' },
+      ]
+      const runtime = 96
+      const slots = selectBeatSlots(beats, runtime)
+
+      for (let i = 1; i <= 6; i++) {
+        expect(slots[i].beat).not.toBeNull()
+      }
+      const times = slots.slice(1, 7).map((s) => s.beat!.timeMidpoint)
+      for (let i = 1; i < times.length; i++) {
+        expect(times[i]).toBeGreaterThanOrEqual(times[i - 1])
+      }
+      // Every slot is filled by one of the 6 input beats (no duplicates).
+      const unique = new Set(times)
+      expect(unique.size).toBe(6)
+    })
+  })
+
+  describe('Narrative picks out of chronological order get reordered', () => {
+    it('when peak precedes drop in time, peak lands in an earlier slot than drop', () => {
+      const runtime = 100
+      const total = 10
+      // Early mini-peak at index 2 (9.5, t=25), then deep drop at index 8 (4.0, t=85).
+      const scores = [5.0, 6.0, 9.5, 7.0, 7.5, 7.8, 7.5, 7.0, 4.0, 6.0]
+      const beats = scores.map((s, i) => mkBeat(i, runtime, total, s))
+      const slots = selectBeatSlots(beats, runtime)
+
+      const peakSlot = slots.find((s) => s.originalRole === 'peak')
+      const dropSlot = slots.find((s) => s.originalRole === 'drop')
+      expect(peakSlot).toBeDefined()
+      expect(dropSlot).toBeDefined()
+      expect(peakSlot!.beat!.timeMidpoint).toBeLessThan(dropSlot!.beat!.timeMidpoint)
+      expect(peakSlot!.position).toBeLessThan(dropSlot!.position)
+    })
+  })
+})
+
+describe('selectBeatSlots — spacing fix for clustered picks', () => {
+  describe('Kill Bill-like clustering: drop and recovery land 5 minutes apart', () => {
+    it('swaps in a better-spread unused beat so no consecutive picks sit <10 min apart, preserving originalRole on the slot whose beat changes', () => {
+      // Handcrafted beat array where the narrative drop (t=75, s=4.5) and
+      // recovery (t=80, s=7.0) sit 5 min apart — the scenario that triggers
+      // the spacing fix. Unused beats at t=20 and t=60 are available as
+      // better-spread alternatives; the spacing pass should pick one.
+      const beats: Beat[] = [
+        { timeStart: 0, timeEnd: 10, timeMidpoint: 5, score: 6.5, label: 'b0', labelFull: 'b0', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 15, timeEnd: 25, timeMidpoint: 20, score: 8.0, label: 'b1', labelFull: 'b1', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 30, timeEnd: 50, timeMidpoint: 40, score: 8.2, label: 'b2', labelFull: 'b2', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 55, timeEnd: 65, timeMidpoint: 60, score: 7.0, label: 'b3', labelFull: 'b3', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 70, timeEnd: 80, timeMidpoint: 75, score: 4.5, label: 'b4', labelFull: 'b4', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 75, timeEnd: 85, timeMidpoint: 80, score: 7.0, label: 'b5', labelFull: 'b5', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 80, timeEnd: 90, timeMidpoint: 85, score: 8.5, label: 'b6', labelFull: 'b6', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 85, timeEnd: 95, timeMidpoint: 90, score: 9.5, label: 'b7', labelFull: 'b7', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 90, timeEnd: 100, timeMidpoint: 95, score: 9.0, label: 'b8', labelFull: 'b8', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 95, timeEnd: 105, timeMidpoint: 100, score: 8.2, label: 'b9', labelFull: 'b9', confidence: 'medium', reviewEvidence: '' },
+        { timeStart: 100, timeEnd: 111, timeMidpoint: 108, score: 7.5, label: 'b10', labelFull: 'b10', confidence: 'medium', reviewEvidence: '' },
+      ]
+      const runtime = 111
+      const slots = selectBeatSlots(beats, runtime)
+
+      // After the spacing fix, no two consecutive middle slots should be
+      // less than 10 minutes apart.
+      const times = slots.slice(1, 7).map((s) => s.beat!.timeMidpoint)
+      for (let i = 1; i < times.length; i++) {
+        expect(times[i] - times[i - 1]).toBeGreaterThanOrEqual(10)
+      }
+
+      // The 6 picks should span at least 40% of the runtime.
+      const span = times[times.length - 1] - times[0]
+      expect(span).toBeGreaterThanOrEqual(Math.round(runtime * 0.4))
+
+      // Every slot that received a beat still carries an originalRole, even
+      // though the spacing pass may have swapped in a different beat than
+      // the narrative role originally picked.
+      for (let i = 1; i <= 6; i++) {
+        expect(slots[i].originalRole).toBeDefined()
+        expect(slots[i].originalRole).not.toBe(undefined)
+      }
+
+      // One of slots 2-7 must now hold an earlier beat that the original
+      // narrative picks missed — specifically t=20 (beats[1]) or t=60
+      // (beats[3]). Without the spacing fix, neither would appear.
+      const allTimes = slots.slice(1, 7).map((s) => s.beat!.timeMidpoint)
+      const pulledInEarly = allTimes.some((t) => t === 20 || t === 60)
+      expect(pulledInEarly).toBe(true)
+    })
+  })
+
+  describe('Already well-spread picks are left alone', () => {
+    it('does not swap when all consecutive gaps are already ≥10 min', () => {
+      const runtime = 100
+      const total = 10
+      const scores = [7.0, 7.2, 6.8, 4.5, 5.0, 6.0, 7.5, 8.8, 9.5, 8.0]
+      const beats = scores.map((s, i) => mkBeat(i, runtime, total, s))
+      const slots = selectBeatSlots(beats, runtime)
+
+      // Original V-shape assertion (unchanged by spacing pass): drop at
+      // beats[3], peak at beats[8]. No swap fires because every gap is ≥10.
+      expect(slots[3].beat).toBe(beats[3])
+      expect(slots[5].beat).toBe(beats[8])
     })
   })
 })

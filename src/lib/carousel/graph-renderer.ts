@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
+import { join } from 'node:path'
 import { Resvg } from '@resvg/resvg-js'
 import { area as d3Area, curveMonotoneX, line as d3Line } from 'd3-shape'
 
@@ -14,6 +14,7 @@ export type RenderGraphInput = {
   height: number
   format: Format
   highlightBeatIndex?: number
+  minimal?: boolean
 }
 
 export type DotPosition = {
@@ -33,13 +34,10 @@ export type RenderGraphOutput = {
 // ── Font loading (cached at module scope) ─────────────────────
 // @fontsource/dm-sans only ships WOFF/WOFF2, which resvg-js 2.6.2 does not load.
 // Using @expo-google-fonts/dm-sans which ships TTFs compatible with resvg.
-const requireFn = createRequire(import.meta.url)
-const DM_SANS_400_PATH = requireFn.resolve(
-  '@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf',
-)
-const DM_SANS_500_PATH = requireFn.resolve(
-  '@expo-google-fonts/dm-sans/500Medium/DMSans_500Medium.ttf',
-)
+// Paths are built from process.cwd() so Turbopack doesn't try to bundle the TTF as a module.
+const NODE_MODULES = join(process.cwd(), 'node_modules')
+const DM_SANS_400_PATH = join(NODE_MODULES, '@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf')
+const DM_SANS_500_PATH = join(NODE_MODULES, '@expo-google-fonts/dm-sans/500Medium/DMSans_500Medium.ttf')
 // Touch files at load so a missing font surfaces before first render.
 readFileSync(DM_SANS_400_PATH)
 readFileSync(DM_SANS_500_PATH)
@@ -81,21 +79,17 @@ const DOT_OUTLINE = 'rgba(0,0,0,0.6)'
 const LABEL_COLOR = 'rgba(232,228,220,0.5)'
 const VALUE_COLOR = '#C8A951'
 
-type Margins = { left: number; right: number; top: number; bottom: number }
+export type Margins = { left: number; right: number; top: number; bottom: number }
 
-function marginsFor(format: Format): Margins {
+export function marginsFor(format: Format): Margins {
   if (format === '4x5') {
     return { left: 30, right: 30, top: 60, bottom: 30 }
   }
   return { left: 40, right: 40, top: 110, bottom: 40 }
 }
 
-function dotRadiusFor(format: Format): number {
+export function dotRadiusFor(format: Format): number {
   return format === '4x5' ? 5 : 7
-}
-
-function bandHalfWidthFor(format: Format): number {
-  return format === '4x5' ? 70 : 90
 }
 
 // ── Main ──────────────────────────────────────────────────────
@@ -114,9 +108,11 @@ export function renderGraph(input: RenderGraphInput): RenderGraphOutput {
 }
 
 function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosition[] } {
-  const { totalRuntime, criticsScore, width, height, format, highlightBeatIndex } = input
+  const { totalRuntime, criticsScore, width, height, format, highlightBeatIndex, minimal } = input
   const points = prependNeutralAnchor(input.dataPoints)
-  const margins = marginsFor(format)
+  const margins = minimal
+    ? { left: 4, right: 4, top: 4, bottom: 4 }
+    : marginsFor(format)
   const dotRadius = dotRadiusFor(format)
 
   const plotW = width - margins.left - margins.right
@@ -148,7 +144,7 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
     highlightBeatIndex < points.length
   const hlPoint = highlighted ? points[highlightBeatIndex!] : null
   const hlX = hlPoint ? sX(hlPoint.t) : 0
-  const bandHalf = bandHalfWidthFor(format)
+  const hlY = hlPoint ? sY(hlPoint.s) : 0
 
   // ── <defs> ────────────────────────────────────────────────
   const defs: string[] = []
@@ -165,23 +161,29 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
         `<feGaussianBlur stdDeviation="8"/>` +
         `</filter>`,
     )
+    const maskRadius = format === '4x5' ? 90 : 120
     defs.push(
-      `<clipPath id="hlRegion">` +
-        `<rect x="${fmt(hlX - bandHalf)}" y="0" width="${fmt(bandHalf * 2)}" height="${height}"/>` +
-        `</clipPath>`,
+      `<mask id="hlMask-${format}">` +
+        `<radialGradient id="hlGrad-${format}" cx="${fmt(hlX)}" cy="${fmt(hlY)}" r="${maskRadius}" gradientUnits="userSpaceOnUse">` +
+          `<stop offset="0%" stop-color="white" stop-opacity="1"/>` +
+          `<stop offset="60%" stop-color="white" stop-opacity="1"/>` +
+          `<stop offset="100%" stop-color="white" stop-opacity="0"/>` +
+          `</radialGradient>` +
+        `<rect x="0" y="0" width="${width}" height="${height}" fill="url(#hlGrad-${format})"/>` +
+        `</mask>`,
     )
   }
 
   // ── body ──────────────────────────────────────────────────
   const curveBody =
     `<path d="${areaD}" fill="url(#areaGrad)"/>` +
-    `<path d="${lineD}" stroke="${GLOW_LINE}" stroke-width="8" stroke-linecap="round" fill="none"/>` +
-    `<path d="${lineD}" stroke="${MAIN_LINE}" stroke-width="2.5" fill="none"/>`
+    `<path d="${lineD}" stroke="${GLOW_LINE}" stroke-width="9" stroke-linecap="round" fill="none"/>` +
+    `<path d="${lineD}" stroke="${MAIN_LINE}" stroke-width="4" fill="none"/>`
 
   const body: string[] = []
   if (highlighted) {
     body.push(`<g opacity="0.22">${curveBody}</g>`)
-    body.push(`<g clip-path="url(#hlRegion)">${curveBody}</g>`)
+    body.push(`<g mask="url(#hlMask-${format})">${curveBody}</g>`)
   } else {
     body.push(curveBody)
   }
@@ -209,6 +211,11 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
       timestamp: p.t,
     })
 
+    // Index 0 is the prepended neutral anchor at (t=0, s=5.0) used only for
+    // curve smoothing. Keep it in dotPositions so downstream indexing stays
+    // stable, but skip rendering a visible circle for it.
+    if (i === 0) continue
+
     if (highlighted && i === highlightBeatIndex) {
       body.push(
         `<circle cx="${fmt(cx)}" cy="${fmt(cy)}" r="${dotRadius + 8}" fill="${fill}" opacity="0.6" filter="url(#peakGlow)"/>`,
@@ -223,23 +230,44 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
   }
 
   // ── score text ────────────────────────────────────────────
-  const valueText = criticsScore.toFixed(1)
-  if (format === '4x5') {
-    const x = width - 60
-    body.push(
-      `<text x="${x}" y="20" fill="${LABEL_COLOR}" font-family="DM Sans" font-size="13" font-weight="400" text-anchor="middle">Critics</text>`,
-    )
-    body.push(
-      `<text x="${x}" y="56" fill="${VALUE_COLOR}" font-family="DM Sans" font-size="38" font-weight="500" text-anchor="middle">${valueText}</text>`,
-    )
-  } else {
-    const x = 54
-    body.push(
-      `<text x="${x}" y="40" fill="${LABEL_COLOR}" font-family="DM Sans" font-size="18" font-weight="400" text-anchor="start">Critics</text>`,
-    )
-    body.push(
-      `<text x="${x}" y="92" fill="${VALUE_COLOR}" font-family="DM Sans" font-size="56" font-weight="500" text-anchor="start">${valueText}</text>`,
-    )
+  if (!minimal) {
+    const valueText = criticsScore.toFixed(1)
+    // Collision detection: if any curve point falls within the default score
+    // bounding box, move to the opposite corner. If both collide, fall back
+    // to the default (keeps behavior stable rather than failing closed).
+    type Box = { xMin: number; xMax: number; yMin: number; yMax: number }
+    const defaultBox: Box = format === '4x5'
+      ? { xMin: width - 180, xMax: width - 20, yMin: 10, yMax: 90 }
+      : { xMin: 20, xMax: 280, yMin: 20, yMax: 120 }
+    const oppositeBox: Box = format === '4x5'
+      ? { xMin: 20, xMax: 180, yMin: 10, yMax: 90 }
+      : { xMin: width - 280, xMax: width - 20, yMin: 20, yMax: 120 }
+    const collides = (box: Box) =>
+      points.some((p) => {
+        const px = sX(p.t)
+        const py = sY(p.s)
+        return px >= box.xMin && px <= box.xMax && py >= box.yMin && py <= box.yMax
+      })
+    const useOpposite = collides(defaultBox) && !collides(oppositeBox)
+
+    if (format === '4x5') {
+      const x = useOpposite ? 100 : width - 60
+      body.push(
+        `<text x="${x}" y="20" fill="${LABEL_COLOR}" font-family="DM Sans" font-size="13" font-weight="400" text-anchor="middle">Critics</text>`,
+      )
+      body.push(
+        `<text x="${x}" y="56" fill="${VALUE_COLOR}" font-family="DM Sans" font-size="38" font-weight="500" text-anchor="middle">${valueText}</text>`,
+      )
+    } else {
+      const x = useOpposite ? width - 54 : 54
+      const anchor = useOpposite ? 'end' : 'start'
+      body.push(
+        `<text x="${x}" y="40" fill="${LABEL_COLOR}" font-family="DM Sans" font-size="18" font-weight="400" text-anchor="${anchor}">Critics</text>`,
+      )
+      body.push(
+        `<text x="${x}" y="92" fill="${VALUE_COLOR}" font-family="DM Sans" font-size="56" font-weight="500" text-anchor="${anchor}">${valueText}</text>`,
+      )
+    }
   }
 
   const svg =

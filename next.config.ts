@@ -4,7 +4,13 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: ".",
   },
-  serverExternalPackages: ["sharp"],
+  serverExternalPackages: [
+    "sharp",
+    "@resvg/resvg-js",
+    "@expo-google-fonts/dm-sans",
+    "@expo-google-fonts/playfair-display",
+    "@expo-google-fonts/libre-baskerville",
+  ],
   images: {
     remotePatterns: [
       {
