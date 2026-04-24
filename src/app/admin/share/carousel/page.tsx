@@ -21,6 +21,7 @@ import {
   BeatPickerDropdown,
   type AvailableBeat,
 } from '@/components/admin/carousel/BeatPickerDropdown'
+import { StillsPicker } from '@/components/admin/carousel/StillsPicker'
 
 type Format = '4x5' | '9x16'
 
@@ -69,6 +70,7 @@ interface DraftResponse {
   slotSelections: SlotSelection[]
   aiSlotSelections: SlotSelection[]
   availableBeats: AvailableBeat[]
+  slideBackdrops: Record<string, string> | null
   slides: DraftSlide[]
 }
 
@@ -166,6 +168,11 @@ export default function CarouselSharePage() {
   const [beatEdits, setBeatEdits] = useState<Record<number, BeatEditState>>({})
   // Per-slot save status for regenerate (separate pip from beat + text edit).
   const [regenerateEdits, setRegenerateEdits] = useState<Record<number, BeatEditState>>({})
+  // Stills picker: which slide's drawer is open, per-slot save status, and the
+  // currently-applied custom still URL per slide (null / missing = using default).
+  const [stillsPickerOpenFor, setStillsPickerOpenFor] = useState<number | null>(null)
+  const [slideStillEdits, setSlideStillEdits] = useState<Record<number, BeatEditState>>({})
+  const [slideStills, setSlideStills] = useState<Record<number, string | null>>({})
   const [helpDismissed, setHelpDismissed] = useState(true)
 
   // ZIP-export state. zipFormat tracks `data.format` on draft load but can be
@@ -279,6 +286,9 @@ export default function CarouselSharePage() {
       setAvailableBeats([])
       setBeatEdits({})
       setRegenerateEdits({})
+      setStillsPickerOpenFor(null)
+      setSlideStillEdits({})
+      setSlideStills({})
       const t0 = performance.now()
       try {
         const res = await fetch('/api/admin/carousel/draft', {
@@ -328,6 +338,14 @@ export default function CarouselSharePage() {
         }
         setBeatEdits(beatInit)
         setRegenerateEdits(regenInit)
+        const stillsSeed: Record<number, string | null> = {}
+        if (json.slideBackdrops) {
+          for (const [k, v] of Object.entries(json.slideBackdrops)) {
+            stillsSeed[Number(k)] = v
+          }
+        }
+        setSlideStills(stillsSeed)
+        setSlideStillEdits({})
       } catch {
         setError('Failed to load draft')
       } finally {
@@ -1086,7 +1104,7 @@ export default function CarouselSharePage() {
                     <div className="text-xs text-cinema-muted mb-1.5">
                       Slide {s.slideNumber} — {SLIDE_LABELS[s.slideNumber] ?? ''}
                     </div>
-                    <div className="bg-[#0D0D1A] border border-[#333] rounded-lg overflow-hidden">
+                    <div className="relative bg-[#0D0D1A] border border-[#333] rounded-lg overflow-hidden">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={`data:image/png;base64,${pngBase64}`}
@@ -1095,6 +1113,14 @@ export default function CarouselSharePage() {
                         height={s.heightPx}
                         className="block w-full h-auto"
                       />
+                      <button
+                        type="button"
+                        onClick={() => setStillsPickerOpenFor(s.slideNumber)}
+                        aria-label={`Pick still for slide ${s.slideNumber}`}
+                        className="absolute top-2 right-2 bg-black/70 backdrop-blur-sm border border-cinema-gold/50 text-cinema-gold rounded-full px-3 py-1 text-xs hover:bg-black/80"
+                      >
+                        {slideStills[s.slideNumber] ? 'Change still' : 'Pick still'}
+                      </button>
                     </div>
                     {isMiddle && (
                       <BeatPickerSection
@@ -1178,6 +1204,65 @@ export default function CarouselSharePage() {
                 Downloads 8 PNGs as a ZIP file ready for Instagram or TikTok upload.
               </span>
             </div>
+
+            {stillsPickerOpenFor !== null && data && (
+              <StillsPicker
+                isOpen={stillsPickerOpenFor !== null}
+                filmId={data.film.id}
+                filmTitle={data.film.title}
+                slideNumber={stillsPickerOpenFor}
+                slideLabel={SLIDE_LABELS[stillsPickerOpenFor] ?? ''}
+                currentStillUrl={slideStills[stillsPickerOpenFor] ?? null}
+                onClose={() => setStillsPickerOpenFor(null)}
+                onApply={async (stillUrl) => {
+                  const slideNum = stillsPickerOpenFor
+                  setSlideStillEdits((prev) => ({
+                    ...prev,
+                    [slideNum]: { status: 'saving', errorMessage: null },
+                  }))
+                  try {
+                    const res = await fetch(
+                      `/api/admin/carousel/draft/${data.draftId}/slide/${slideNum}/still`,
+                      {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ stillUrl }),
+                      },
+                    )
+                    if (!res.ok) {
+                      const err = await res
+                        .json()
+                        .catch(() => ({ error: 'Request failed' }))
+                      throw new Error(err.error || 'Request failed')
+                    }
+                    const body = (await res.json()) as {
+                      slideNum: number
+                      stillUrl: string | null
+                      pngBase64: string
+                    }
+                    setSlidePngs((prev) => ({
+                      ...prev,
+                      [slideNum]: body.pngBase64,
+                    }))
+                    setSlideStills((prev) => ({
+                      ...prev,
+                      [slideNum]: stillUrl,
+                    }))
+                    setSlideStillEdits((prev) => ({
+                      ...prev,
+                      [slideNum]: { status: 'success', errorMessage: null },
+                    }))
+                    setStillsPickerOpenFor(null)
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : String(err)
+                    setSlideStillEdits((prev) => ({
+                      ...prev,
+                      [slideNum]: { status: 'error', errorMessage: msg },
+                    }))
+                  }
+                }}
+              />
+            )}
           </>
         )}
       </div>
