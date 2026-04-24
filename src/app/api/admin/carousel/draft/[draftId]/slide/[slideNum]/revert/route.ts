@@ -35,7 +35,12 @@ export async function POST(
 
   const draft = await prisma.carouselDraft.findUnique({
     where: { id: draftId },
-    select: { id: true, bodyCopyJson: true, aiBodyCopyJson: true },
+    select: {
+      id: true,
+      bodyCopyJson: true,
+      aiBodyCopyJson: true,
+      staleBodyCopySlots: true,
+    },
   })
   if (!draft) {
     return errorJson('Draft not found', 'DRAFT_NOT_FOUND', 404)
@@ -51,16 +56,18 @@ export async function POST(
     )
   }
 
+  const restored: SlideCopy = { ...aiCopy, manuallyEdited: false }
+
   const bodyCopyJson = (draft.bodyCopyJson ?? {}) as unknown as Record<string, SlideCopy>
   const currentCopy = bodyCopyJson[String(slideNum)]
-  const alreadyMatches = currentCopy && slideCopyEqual(currentCopy, aiCopy)
+  const alreadyMatches = currentCopy && slideCopyEqual(currentCopy, restored)
 
   let pngBuffer: Buffer
   try {
     pngBuffer = await renderMiddleSlide({
       draftId,
       slideNum: slideNum as MiddleSlideNumber,
-      slideCopyOverride: aiCopy,
+      slideCopyOverride: restored,
     })
   } catch (err) {
     if (err instanceof RenderMiddleSlideError) {
@@ -72,16 +79,25 @@ export async function POST(
 
   // Skip the DB write when nothing actually changed.
   if (!alreadyMatches) {
-    const nextBodyCopy = { ...bodyCopyJson, [String(slideNum)]: aiCopy }
+    const nextBodyCopy = { ...bodyCopyJson, [String(slideNum)]: restored }
+    const existingStale = draft.staleBodyCopySlots ?? []
+    const nextStale = existingStale.filter((n) => n !== slideNum)
+    const updateData: {
+      bodyCopyJson: object
+      staleBodyCopySlots?: number[]
+    } = { bodyCopyJson: nextBodyCopy as unknown as object }
+    if (nextStale.length !== existingStale.length) {
+      updateData.staleBodyCopySlots = nextStale
+    }
     await prisma.carouselDraft.update({
       where: { id: draftId },
-      data: { bodyCopyJson: nextBodyCopy as unknown as object },
+      data: updateData,
     })
   }
 
   return Response.json({
     slideNum,
-    bodyCopy: aiCopy,
+    bodyCopy: restored,
     pngBase64: pngBuffer.toString('base64'),
   })
 }

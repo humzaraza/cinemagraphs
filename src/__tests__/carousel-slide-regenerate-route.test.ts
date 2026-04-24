@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   },
   renderMiddleSlide: vi.fn(),
   generateBodyCopyForSlide: vi.fn(),
+  applyMirrorSync: vi.fn(),
+  fireAndForgetMirrorRender: vi.fn(),
 }))
 
 vi.mock('@/lib/middleware', () => ({ requireRole: mocks.requireRole }))
@@ -34,6 +36,11 @@ vi.mock('@/lib/carousel/body-copy-generator', async () => {
   >('@/lib/carousel/body-copy-generator')
   return { ...actual, generateBodyCopyForSlide: mocks.generateBodyCopyForSlide }
 })
+
+vi.mock('@/lib/carousel/mirror-sync', () => ({
+  applyMirrorSync: mocks.applyMirrorSync,
+  fireAndForgetMirrorRender: mocks.fireAndForgetMirrorRender,
+}))
 
 const DRAFT_ID = 'draft-1'
 const FILM_ID = 'film-1'
@@ -126,6 +133,7 @@ beforeEach(() => {
     filmId: FILM_ID,
     bodyCopyJson: EDITED_COPY,
     slotSelectionsJson: SLOT_SELECTIONS,
+    staleBodyCopySlots: [],
   })
   mocks.prisma.carouselDraft.update.mockResolvedValue({})
   mocks.prisma.film.findUnique.mockResolvedValue({
@@ -295,7 +303,7 @@ describe('POST /api/admin/carousel/draft/[draftId]/slide/[slideNum]/regenerate',
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.slideNum).toBe(4)
-    expect(body.bodyCopy).toEqual(REGEN_CANDIDATE)
+    expect(body.bodyCopy).toEqual({ ...REGEN_CANDIDATE, manuallyEdited: false })
     expect(body.pngBase64.length).toBeGreaterThan(0)
 
     expect(mocks.generateBodyCopyForSlide).toHaveBeenCalledTimes(1)
@@ -303,13 +311,13 @@ describe('POST /api/admin/carousel/draft/[draftId]/slide/[slideNum]/regenerate',
     expect(mocks.renderMiddleSlide.mock.calls[0][0]).toMatchObject({
       draftId: DRAFT_ID,
       slideNum: 4,
-      slideCopyOverride: REGEN_CANDIDATE,
+      slideCopyOverride: { ...REGEN_CANDIDATE, manuallyEdited: false },
     })
 
     expect(mocks.prisma.carouselDraft.update).toHaveBeenCalledTimes(1)
     const updateArgs = mocks.prisma.carouselDraft.update.mock.calls[0][0]
     // bodyCopyJson has the new copy at slide 4, preserves all other entries.
-    expect(updateArgs.data.bodyCopyJson['4']).toEqual(REGEN_CANDIDATE)
+    expect(updateArgs.data.bodyCopyJson['4']).toEqual({ ...REGEN_CANDIDATE, manuallyEdited: false })
     expect(updateArgs.data.bodyCopyJson['2']).toEqual(EDITED_COPY['2'])
     expect(updateArgs.data.bodyCopyJson['7']).toEqual(EDITED_COPY['7'])
     // aiBodyCopyJson is NEVER in the update payload.
@@ -389,5 +397,55 @@ describe('POST /api/admin/carousel/draft/[draftId]/slide/[slideNum]/regenerate',
     const callArgs = mocks.generateBodyCopyForSlide.mock.calls[0][0]
     const numbers = callArgs.previousSlides.map((p: { slideNumber: number }) => p.slideNumber).sort()
     expect(numbers).toEqual([2, 5, 6, 7])
+  })
+
+  it('persists candidate with manuallyEdited: false', async () => {
+    const { POST } = await import(
+      '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/regenerate/route'
+    )
+    await POST(regenerateRequest(), params(4))
+    const updateArgs = mocks.prisma.carouselDraft.update.mock.calls[0][0]
+    expect(updateArgs.data.bodyCopyJson['4'].manuallyEdited).toBe(false)
+  })
+
+  it('removes the target slot from staleBodyCopySlots when present', async () => {
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
+      id: DRAFT_ID,
+      filmId: FILM_ID,
+      bodyCopyJson: EDITED_COPY,
+      slotSelectionsJson: SLOT_SELECTIONS,
+      staleBodyCopySlots: [2, 4, 6],
+    })
+    const { POST } = await import(
+      '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/regenerate/route'
+    )
+    await POST(regenerateRequest(), params(4))
+    const updateArgs = mocks.prisma.carouselDraft.update.mock.calls[0][0]
+    expect(updateArgs.data.staleBodyCopySlots).toEqual([2, 6])
+  })
+
+  it('omits staleBodyCopySlots from update payload when target is not in the list', async () => {
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
+      id: DRAFT_ID,
+      filmId: FILM_ID,
+      bodyCopyJson: EDITED_COPY,
+      slotSelectionsJson: SLOT_SELECTIONS,
+      staleBodyCopySlots: [2, 6],
+    })
+    const { POST } = await import(
+      '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/regenerate/route'
+    )
+    await POST(regenerateRequest(), params(4))
+    const updateArgs = mocks.prisma.carouselDraft.update.mock.calls[0][0]
+    expect(updateArgs.data).not.toHaveProperty('staleBodyCopySlots')
+  })
+
+  it('never calls mirror-sync (regenerate is per-format)', async () => {
+    const { POST } = await import(
+      '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/regenerate/route'
+    )
+    await POST(regenerateRequest(), params(4))
+    expect(mocks.applyMirrorSync).not.toHaveBeenCalled()
+    expect(mocks.fireAndForgetMirrorRender).not.toHaveBeenCalled()
   })
 })

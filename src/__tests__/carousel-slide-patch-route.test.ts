@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
     },
   },
   renderMiddleSlide: vi.fn(),
+  applyMirrorSync: vi.fn(),
+  fireAndForgetMirrorRender: vi.fn(),
 }))
 
 vi.mock('@/lib/middleware', () => ({
@@ -31,7 +33,14 @@ vi.mock('@/lib/carousel/render-middle-slide', async () => {
   }
 })
 
+vi.mock('@/lib/carousel/mirror-sync', () => ({
+  applyMirrorSync: mocks.applyMirrorSync,
+  fireAndForgetMirrorRender: mocks.fireAndForgetMirrorRender,
+}))
+
 const DRAFT_ID = 'draft-1'
+const FILM_ID = 'film-1'
+const MIRROR_DRAFT_ID = 'draft-mirror'
 const SLIDE_COPY = {
   '2': { pill: 'Pill two', headline: 'Old H2', body: 'Old body 2' },
   '3': { pill: 'Pill three', headline: 'Old H3', body: 'Old body 3' },
@@ -62,9 +71,15 @@ beforeEach(() => {
   mocks.renderMiddleSlide.mockResolvedValue(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
   mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
     id: DRAFT_ID,
+    filmId: FILM_ID,
+    format: '4x5',
     bodyCopyJson: SLIDE_COPY,
   })
   mocks.prisma.carouselDraft.update.mockResolvedValue({})
+  mocks.applyMirrorSync.mockResolvedValue({
+    status: 'synced',
+    mirrorDraftId: MIRROR_DRAFT_ID,
+  })
 })
 
 describe('PATCH /api/admin/carousel/draft/[draftId]/slide/[slideNum]', () => {
@@ -156,6 +171,7 @@ describe('PATCH /api/admin/carousel/draft/[draftId]/slide/[slideNum]', () => {
       pill: 'Pill three',
       headline: 'New H3',
       body: 'New body 3',
+      manuallyEdited: true,
     })
     expect(typeof body.pngBase64).toBe('string')
     expect(body.pngBase64.length).toBeGreaterThan(0)
@@ -169,6 +185,7 @@ describe('PATCH /api/admin/carousel/draft/[draftId]/slide/[slideNum]', () => {
       pill: 'Pill three',
       headline: 'New H3',
       body: 'New body 3',
+      manuallyEdited: true,
     })
 
     // DB persisted the candidate for slide 3 only.
@@ -179,6 +196,7 @@ describe('PATCH /api/admin/carousel/draft/[draftId]/slide/[slideNum]', () => {
       pill: 'Pill three',
       headline: 'New H3',
       body: 'New body 3',
+      manuallyEdited: true,
     })
     // Other slides are untouched.
     expect(updateArgs.data.bodyCopyJson['2']).toEqual(SLIDE_COPY['2'])
@@ -219,5 +237,85 @@ describe('PATCH /api/admin/carousel/draft/[draftId]/slide/[slideNum]', () => {
     const body = await res.json()
     expect(body.code).toBe('COMPOSER_FAILED')
     expect(mocks.prisma.carouselDraft.update).not.toHaveBeenCalled()
+  })
+
+  describe('mirror-sync wiring', () => {
+    it('calls applyMirrorSync with kind:bodyCopy + candidate (manuallyEdited:true) after persist', async () => {
+      const { PATCH } = await import(
+        '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/route'
+      )
+      await PATCH(
+        patchRequest({ headline: 'New H3', body: 'New body 3' }),
+        params(3),
+      )
+      expect(mocks.applyMirrorSync).toHaveBeenCalledTimes(1)
+      const arg = mocks.applyMirrorSync.mock.calls[0][0]
+      expect(arg.primaryDraftId).toBe(DRAFT_ID)
+      expect(arg.primaryFilmId).toBe(FILM_ID)
+      expect(arg.primaryFormat).toBe('4x5')
+      expect(arg.edit).toEqual({
+        kind: 'bodyCopy',
+        slideNum: 3,
+        copy: {
+          pill: 'Pill three',
+          headline: 'New H3',
+          body: 'New body 3',
+          manuallyEdited: true,
+        },
+      })
+    })
+
+    it('fires mirror render after a synced mirror-sync result', async () => {
+      const { PATCH } = await import(
+        '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/route'
+      )
+      await PATCH(patchRequest({ headline: 'X' }), params(3))
+      expect(mocks.fireAndForgetMirrorRender).toHaveBeenCalledTimes(1)
+      expect(mocks.fireAndForgetMirrorRender.mock.calls[0][0]).toEqual({
+        mirrorDraftId: MIRROR_DRAFT_ID,
+        slideNum: 3,
+      })
+    })
+
+    it('returns mirrorSync:{status:synced,error:null} in the response on success', async () => {
+      const { PATCH } = await import(
+        '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/route'
+      )
+      const res = await PATCH(patchRequest({ headline: 'X' }), params(3))
+      const body = await res.json()
+      expect(body.mirrorSync).toEqual({ status: 'synced', error: null })
+    })
+
+    it('returns mirrorSync:{status:failed,error:...} without firing render when sync fails', async () => {
+      mocks.applyMirrorSync.mockResolvedValue({
+        status: 'failed',
+        error: 'db down',
+      })
+      const { PATCH } = await import(
+        '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/route'
+      )
+      const res = await PATCH(patchRequest({ headline: 'X' }), params(3))
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.mirrorSync).toEqual({ status: 'failed', error: 'db down' })
+      expect(mocks.fireAndForgetMirrorRender).not.toHaveBeenCalled()
+    })
+
+    it('still returns HTTP 200 and the primary edit persists when mirror-sync fails', async () => {
+      mocks.applyMirrorSync.mockResolvedValue({
+        status: 'failed',
+        error: 'transient',
+      })
+      const { PATCH } = await import(
+        '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/route'
+      )
+      const res = await PATCH(patchRequest({ headline: 'New H3' }), params(3))
+      expect(res.status).toBe(200)
+      // Primary write still happened.
+      expect(mocks.prisma.carouselDraft.update).toHaveBeenCalledTimes(1)
+      const updateArgs = mocks.prisma.carouselDraft.update.mock.calls[0][0]
+      expect(updateArgs.data.bodyCopyJson['3'].headline).toBe('New H3')
+      expect(updateArgs.data.bodyCopyJson['3'].manuallyEdited).toBe(true)
+    })
   })
 })

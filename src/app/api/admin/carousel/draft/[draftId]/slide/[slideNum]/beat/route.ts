@@ -8,8 +8,11 @@ import {
   conflictsForSlot,
   type SlotForConflictCheck,
 } from '@/lib/carousel/slot-conflicts'
+import { applyMirrorSync, fireAndForgetMirrorRender } from '@/lib/carousel/mirror-sync'
 import type { MiddleSlideNumber } from '@/lib/carousel/body-copy-generator'
 import type { SentimentDataPoint } from '@/lib/types'
+
+type Format = '4x5' | '9x16'
 
 export const dynamic = 'force-dynamic'
 
@@ -82,7 +85,9 @@ export async function PATCH(
     select: {
       id: true,
       filmId: true,
+      format: true,
       slotSelectionsJson: true,
+      mirrorSyncStatus: true,
     },
   })
   if (!draft) {
@@ -131,12 +136,52 @@ export async function PATCH(
       slots as SlotForConflictCheck[],
       slideNum,
     )
+
+    // If a prior sync failed, attempt to recover on this no-op path. The
+    // primary state didn't change, but the mirror may still be behind —
+    // applyMirrorSync will re-send the current slot state and clear the
+    // failure on success. Skipping this would strand the mirror forever
+    // until the admin makes a real edit.
+    if (draft.mirrorSyncStatus === 'failed') {
+      const mirrorResult = await applyMirrorSync({
+        primaryDraftId: draftId,
+        primaryFilmId: draft.filmId,
+        primaryFormat: draft.format as Format,
+        edit: {
+          kind: 'beat',
+          slideNum: slideNum as MiddleSlideNumber,
+          beatTimestamp: targetBeat.timeMidpoint,
+          beatScore: targetBeat.score,
+          timestampLabel: formatTimestamp(targetBeat.timeMidpoint),
+        },
+      })
+      if (mirrorResult.status === 'synced' && mirrorResult.mirrorDraftId) {
+        fireAndForgetMirrorRender({
+          mirrorDraftId: mirrorResult.mirrorDraftId,
+          slideNum: slideNum as MiddleSlideNumber,
+        })
+      }
+      return Response.json({
+        slideNum,
+        slotSelection: currentSlot,
+        pngBase64: null,
+        conflicts,
+        noop: true,
+        mirrorSync: {
+          status: mirrorResult.status,
+          error: mirrorResult.error ?? null,
+          staleBodyCopySlotsAdded: mirrorResult.staleBodyCopySlotsAdded ?? [],
+        },
+      })
+    }
+
     return Response.json({
       slideNum,
       slotSelection: currentSlot,
       pngBase64: null,
       conflicts,
       noop: true,
+      mirrorSync: { status: 'skipped', error: null },
     })
   }
 
@@ -194,11 +239,35 @@ export async function PATCH(
     slideNum,
   )
 
+  const mirrorResult = await applyMirrorSync({
+    primaryDraftId: draftId,
+    primaryFilmId: draft.filmId,
+    primaryFormat: draft.format as Format,
+    edit: {
+      kind: 'beat',
+      slideNum: slideNum as MiddleSlideNumber,
+      beatTimestamp: targetBeat.timeMidpoint,
+      beatScore: targetBeat.score,
+      timestampLabel: formatTimestamp(targetBeat.timeMidpoint),
+    },
+  })
+  if (mirrorResult.status === 'synced' && mirrorResult.mirrorDraftId) {
+    fireAndForgetMirrorRender({
+      mirrorDraftId: mirrorResult.mirrorDraftId,
+      slideNum: slideNum as MiddleSlideNumber,
+    })
+  }
+
   return Response.json({
     slideNum,
     slotSelection: persistedSlot,
     pngBase64: pngBuffer.toString('base64'),
     conflicts,
     noop: false,
+    mirrorSync: {
+      status: mirrorResult.status,
+      error: mirrorResult.error ?? null,
+      staleBodyCopySlotsAdded: mirrorResult.staleBodyCopySlotsAdded ?? [],
+    },
   })
 }

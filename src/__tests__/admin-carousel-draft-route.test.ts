@@ -310,7 +310,12 @@ describe('POST /api/admin/carousel/draft', () => {
 
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.aiBodyCopy).toEqual(SLIDE_COPY)
+    // Fresh path stamps manuallyEdited: false on every slide before persisting;
+    // aiBodyCopy mirrors that same object so both sides carry the flag.
+    const expected = Object.fromEntries(
+      Object.entries(SLIDE_COPY).map(([k, v]) => [k, { ...v, manuallyEdited: false }]),
+    )
+    expect(body.aiBodyCopy).toEqual(expected)
     expect(body.aiBodyCopy).toEqual(body.bodyCopy)
   })
 
@@ -347,6 +352,32 @@ describe('POST /api/admin/carousel/draft', () => {
     expect(body.bodyCopy[2]).toEqual({ pill: 'Edited 2', body: 'edited 2' })
     expect(body.aiBodyCopy[2]).toEqual({ pill: 'Ryland wakes alone', body: 'copy 2' })
     expect(body.aiBodyCopy).not.toEqual(body.bodyCopy)
+  })
+
+  it('fresh-path upsert sets manuallyEdited: false on every slide 2-7 body copy', async () => {
+    mocks.prisma.film.findUnique.mockResolvedValue(FILM_SHAPE)
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue(null)
+    mocks.prisma.carouselDraft.upsert.mockResolvedValue({
+      id: 'draft-1',
+      filmId: 'film-1',
+      format: '4x5',
+      bodyCopyJson: SLIDE_COPY,
+      slotSelectionsJson: [],
+      characteristicsJson: CHARACTERISTICS,
+      generatedAt: new Date('2026-04-21T11:00:00Z'),
+      generatedAtModel: 'claude-sonnet-4-6',
+    })
+
+    const { POST } = await import('@/app/api/admin/carousel/draft/route')
+    await POST(makeJsonRequest({ filmId: 'film-1', format: '4x5' }))
+
+    expect(mocks.prisma.carouselDraft.upsert).toHaveBeenCalledTimes(1)
+    const upsertArgs = mocks.prisma.carouselDraft.upsert.mock.calls[0][0] as {
+      create: { bodyCopyJson: Record<string, { manuallyEdited?: boolean }> }
+    }
+    for (const n of [2, 3, 4, 5, 6, 7]) {
+      expect(upsertArgs.create.bodyCopyJson[String(n)].manuallyEdited).toBe(false)
+    }
   })
 
   it('cached path: backfills aiBodyCopyJson when null and returns bodyCopy as baseline', async () => {

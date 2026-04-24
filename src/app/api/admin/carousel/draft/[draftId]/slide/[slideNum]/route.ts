@@ -2,7 +2,10 @@ import { NextRequest } from 'next/server'
 import { requireRole } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { renderMiddleSlide, RenderMiddleSlideError } from '@/lib/carousel/render-middle-slide'
+import { applyMirrorSync, fireAndForgetMirrorRender } from '@/lib/carousel/mirror-sync'
 import type { MiddleSlideNumber, SlideCopy } from '@/lib/carousel/body-copy-generator'
+
+type Format = '4x5' | '9x16'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,7 +61,12 @@ export async function PATCH(
 
   const draft = await prisma.carouselDraft.findUnique({
     where: { id: draftId },
-    select: { id: true, bodyCopyJson: true },
+    select: {
+      id: true,
+      filmId: true,
+      format: true,
+      bodyCopyJson: true,
+    },
   })
   if (!draft) {
     return errorJson('Draft not found', 'DRAFT_NOT_FOUND', 404)
@@ -78,6 +86,7 @@ export async function PATCH(
     pill: currentCopy.pill,
     headline: headline !== undefined ? headline : currentCopy.headline,
     body: bodyText !== undefined ? bodyText : currentCopy.body,
+    manuallyEdited: true,
   }
 
   // Render first — if the composer throws (e.g. malformed color marker,
@@ -104,9 +113,30 @@ export async function PATCH(
     data: { bodyCopyJson: nextBodyCopy as unknown as object },
   })
 
+  const mirrorResult = await applyMirrorSync({
+    primaryDraftId: draftId,
+    primaryFilmId: draft.filmId,
+    primaryFormat: draft.format as Format,
+    edit: {
+      kind: 'bodyCopy',
+      slideNum: slideNum as MiddleSlideNumber,
+      copy: candidate,
+    },
+  })
+  if (mirrorResult.status === 'synced' && mirrorResult.mirrorDraftId) {
+    fireAndForgetMirrorRender({
+      mirrorDraftId: mirrorResult.mirrorDraftId,
+      slideNum: slideNum as MiddleSlideNumber,
+    })
+  }
+
   return Response.json({
     slideNum,
     bodyCopy: candidate,
     pngBase64: pngBuffer.toString('base64'),
+    mirrorSync: {
+      status: mirrorResult.status,
+      error: mirrorResult.error ?? null,
+    },
   })
 }

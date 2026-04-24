@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
     },
   },
   renderMiddleSlide: vi.fn(),
+  applyMirrorSync: vi.fn(),
+  fireAndForgetMirrorRender: vi.fn(),
 }))
 
 vi.mock('@/lib/middleware', () => ({ requireRole: mocks.requireRole }))
@@ -24,9 +26,14 @@ vi.mock('@/lib/carousel/render-middle-slide', async () => {
   >('@/lib/carousel/render-middle-slide')
   return { ...actual, renderMiddleSlide: mocks.renderMiddleSlide }
 })
+vi.mock('@/lib/carousel/mirror-sync', () => ({
+  applyMirrorSync: mocks.applyMirrorSync,
+  fireAndForgetMirrorRender: mocks.fireAndForgetMirrorRender,
+}))
 
 const DRAFT_ID = 'draft-1'
 const FILM_ID = 'film-1'
+const MIRROR_DRAFT_ID = 'draft-mirror'
 
 // Sorted indices: 0→t=5, 1→t=25, 2→t=50, 3→t=75, 4→t=80 (unused), 5→t=100, 6→t=150.
 // t=80 is intentionally NOT assigned to any slot so the "no conflict" test
@@ -87,12 +94,19 @@ beforeEach(() => {
   mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
     id: DRAFT_ID,
     filmId: FILM_ID,
+    format: '4x5',
     slotSelectionsJson: SLOT_SELECTIONS,
+    mirrorSyncStatus: null,
   })
   mocks.prisma.carouselDraft.update.mockResolvedValue({})
   mocks.prisma.film.findUnique.mockResolvedValue({
     sentimentGraph: { dataPoints: BEATS },
   })
+  mocks.applyMirrorSync.mockResolvedValue({
+    status: 'synced',
+    mirrorDraftId: MIRROR_DRAFT_ID,
+  })
+  mocks.fireAndForgetMirrorRender.mockReturnValue(undefined)
 })
 
 describe('PATCH /api/admin/carousel/draft/[draftId]/slide/[slideNum]/beat', () => {
@@ -249,5 +263,150 @@ describe('PATCH /api/admin/carousel/draft/[draftId]/slide/[slideNum]/beat', () =
     const body = await res.json()
     expect(body.code).toBe('COMPOSER_FAILED')
     expect(mocks.prisma.carouselDraft.update).not.toHaveBeenCalled()
+  })
+
+  describe('mirror-sync wiring', () => {
+    it('calls applyMirrorSync with kind:beat and the new beat fields after persist', async () => {
+      const { PATCH } = await import(
+        '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/beat/route'
+      )
+      // beatIndex 4 → t=80, score 5.0.
+      const res = await PATCH(patchRequest({ beatIndex: 4 }), params(4))
+      expect(res.status).toBe(200)
+      expect(mocks.applyMirrorSync).toHaveBeenCalledTimes(1)
+      const arg = mocks.applyMirrorSync.mock.calls[0][0]
+      expect(arg.primaryDraftId).toBe(DRAFT_ID)
+      expect(arg.primaryFilmId).toBe(FILM_ID)
+      expect(arg.primaryFormat).toBe('4x5')
+      expect(arg.edit).toEqual({
+        kind: 'beat',
+        slideNum: 4,
+        beatTimestamp: 80,
+        beatScore: 5.0,
+        timestampLabel: '1h 20m',
+      })
+    })
+
+    it('fires mirror render on synced result', async () => {
+      const { PATCH } = await import(
+        '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/beat/route'
+      )
+      const res = await PATCH(patchRequest({ beatIndex: 4 }), params(4))
+      expect(res.status).toBe(200)
+      expect(mocks.fireAndForgetMirrorRender).toHaveBeenCalledTimes(1)
+      expect(mocks.fireAndForgetMirrorRender.mock.calls[0][0]).toEqual({
+        mirrorDraftId: MIRROR_DRAFT_ID,
+        slideNum: 4,
+      })
+      const body = await res.json()
+      expect(body.mirrorSync).toEqual({
+        status: 'synced',
+        error: null,
+        staleBodyCopySlotsAdded: [],
+      })
+    })
+
+    it('returns mirrorSync.status=failed without firing render when sync fails', async () => {
+      mocks.applyMirrorSync.mockResolvedValue({
+        status: 'failed',
+        error: 'mirror draft missing',
+      })
+      const { PATCH } = await import(
+        '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/beat/route'
+      )
+      const res = await PATCH(patchRequest({ beatIndex: 4 }), params(4))
+      expect(res.status).toBe(200)
+      // Primary write still happened.
+      expect(mocks.prisma.carouselDraft.update).toHaveBeenCalledTimes(1)
+      expect(mocks.fireAndForgetMirrorRender).not.toHaveBeenCalled()
+      const body = await res.json()
+      expect(body.mirrorSync.status).toBe('failed')
+      expect(body.mirrorSync.error).toBe('mirror draft missing')
+    })
+
+    it('propagates staleBodyCopySlotsAdded from applyMirrorSync', async () => {
+      mocks.applyMirrorSync.mockResolvedValue({
+        status: 'synced',
+        mirrorDraftId: MIRROR_DRAFT_ID,
+        staleBodyCopySlotsAdded: [4],
+      })
+      const { PATCH } = await import(
+        '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/beat/route'
+      )
+      const res = await PATCH(patchRequest({ beatIndex: 4 }), params(4))
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.mirrorSync.staleBodyCopySlotsAdded).toEqual([4])
+    })
+
+    it('no-op PATCH skips mirror sync when primary has mirrorSyncStatus: null', async () => {
+      const { PATCH } = await import(
+        '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/beat/route'
+      )
+      // Slot 4 already at beatIndex 2 (t=50).
+      const res = await PATCH(patchRequest({ beatIndex: 2 }), params(4))
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.noop).toBe(true)
+      expect(mocks.applyMirrorSync).not.toHaveBeenCalled()
+      expect(mocks.fireAndForgetMirrorRender).not.toHaveBeenCalled()
+      expect(body.mirrorSync).toEqual({ status: 'skipped', error: null })
+    })
+
+    it('no-op PATCH retries mirror sync when primary has mirrorSyncStatus: failed', async () => {
+      mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
+        id: DRAFT_ID,
+        filmId: FILM_ID,
+        format: '4x5',
+        slotSelectionsJson: SLOT_SELECTIONS,
+        mirrorSyncStatus: 'failed',
+      })
+      const { PATCH } = await import(
+        '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/beat/route'
+      )
+      const res = await PATCH(patchRequest({ beatIndex: 2 }), params(4))
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.noop).toBe(true)
+      expect(mocks.applyMirrorSync).toHaveBeenCalledTimes(1)
+      const arg = mocks.applyMirrorSync.mock.calls[0][0]
+      expect(arg.edit).toEqual({
+        kind: 'beat',
+        slideNum: 4,
+        beatTimestamp: 50,
+        beatScore: 4.0,
+        timestampLabel: '50m',
+      })
+      expect(mocks.fireAndForgetMirrorRender).toHaveBeenCalledTimes(1)
+      expect(body.mirrorSync.status).toBe('synced')
+      // Render never runs on the no-op path.
+      expect(mocks.renderMiddleSlide).not.toHaveBeenCalled()
+      expect(mocks.prisma.carouselDraft.update).not.toHaveBeenCalled()
+    })
+
+    it('no-op PATCH retry that fails again leaves mirrorSync.status=failed in response', async () => {
+      mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
+        id: DRAFT_ID,
+        filmId: FILM_ID,
+        format: '4x5',
+        slotSelectionsJson: SLOT_SELECTIONS,
+        mirrorSyncStatus: 'failed',
+      })
+      mocks.applyMirrorSync.mockResolvedValue({
+        status: 'failed',
+        error: 'still broken',
+      })
+      const { PATCH } = await import(
+        '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/beat/route'
+      )
+      const res = await PATCH(patchRequest({ beatIndex: 2 }), params(4))
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.noop).toBe(true)
+      expect(mocks.applyMirrorSync).toHaveBeenCalledTimes(1)
+      expect(mocks.fireAndForgetMirrorRender).not.toHaveBeenCalled()
+      expect(body.mirrorSync.status).toBe('failed')
+      expect(body.mirrorSync.error).toBe('still broken')
+    })
   })
 })

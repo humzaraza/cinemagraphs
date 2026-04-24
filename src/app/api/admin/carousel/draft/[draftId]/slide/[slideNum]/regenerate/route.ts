@@ -68,6 +68,7 @@ export async function POST(
       filmId: true,
       bodyCopyJson: true,
       slotSelectionsJson: true,
+      staleBodyCopySlots: true,
     },
   })
   if (!draft) {
@@ -178,7 +179,7 @@ export async function POST(
       slide: targetSlide,
       previousSlides,
     })
-    candidate = result.slideCopy
+    candidate = { ...result.slideCopy, manuallyEdited: false }
   } catch (err) {
     if (err instanceof BodyCopyGenerationError) {
       return errorJson(err.message, 'AI_GENERATION_FAILED', 500)
@@ -207,9 +208,18 @@ export async function POST(
   // Render succeeded — persist only bodyCopyJson[slideNum]. Do NOT update
   // aiBodyCopyJson: Revert must keep pointing at the original AI baseline.
   const nextBodyCopy = { ...bodyCopyJson, [String(slideNum)]: candidate }
+  const existingStale = draft.staleBodyCopySlots ?? []
+  const nextStale = existingStale.filter((n) => n !== slideNum)
+  const updateData: {
+    bodyCopyJson: object
+    staleBodyCopySlots?: number[]
+  } = { bodyCopyJson: nextBodyCopy as unknown as object }
+  if (nextStale.length !== existingStale.length) {
+    updateData.staleBodyCopySlots = nextStale
+  }
   await prisma.carouselDraft.update({
     where: { id: draftId },
-    data: { bodyCopyJson: nextBodyCopy as unknown as object },
+    data: updateData,
   })
 
   return Response.json({

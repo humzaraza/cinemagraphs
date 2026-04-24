@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
     },
   },
   renderMiddleSlide: vi.fn(),
+  applyMirrorSync: vi.fn(),
+  fireAndForgetMirrorRender: vi.fn(),
 }))
 
 vi.mock('@/lib/middleware', () => ({
@@ -30,6 +32,11 @@ vi.mock('@/lib/carousel/render-middle-slide', async () => {
     renderMiddleSlide: mocks.renderMiddleSlide,
   }
 })
+
+vi.mock('@/lib/carousel/mirror-sync', () => ({
+  applyMirrorSync: mocks.applyMirrorSync,
+  fireAndForgetMirrorRender: mocks.fireAndForgetMirrorRender,
+}))
 
 const DRAFT_ID = 'draft-1'
 const AI_COPY = { pill: 'AI pill', headline: 'AI headline', body: 'AI body' }
@@ -57,6 +64,7 @@ beforeEach(() => {
     id: DRAFT_ID,
     bodyCopyJson: { '3': EDITED_COPY },
     aiBodyCopyJson: { '3': AI_COPY },
+    staleBodyCopySlots: [],
   })
   mocks.prisma.carouselDraft.update.mockResolvedValue({})
 })
@@ -122,15 +130,21 @@ describe('POST /api/admin/carousel/draft/[draftId]/slide/[slideNum]/revert', () 
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.slideNum).toBe(3)
-    expect(body.bodyCopy).toEqual(AI_COPY)
+    expect(body.bodyCopy).toEqual({ ...AI_COPY, manuallyEdited: false })
     expect(body.pngBase64.length).toBeGreaterThan(0)
 
     expect(mocks.renderMiddleSlide).toHaveBeenCalledTimes(1)
-    expect(mocks.renderMiddleSlide.mock.calls[0][0].slideCopyOverride).toEqual(AI_COPY)
+    expect(mocks.renderMiddleSlide.mock.calls[0][0].slideCopyOverride).toEqual({
+      ...AI_COPY,
+      manuallyEdited: false,
+    })
 
     expect(mocks.prisma.carouselDraft.update).toHaveBeenCalledTimes(1)
     const updateArgs = mocks.prisma.carouselDraft.update.mock.calls[0][0]
-    expect(updateArgs.data.bodyCopyJson['3']).toEqual(AI_COPY)
+    expect(updateArgs.data.bodyCopyJson['3']).toEqual({
+      ...AI_COPY,
+      manuallyEdited: false,
+    })
   })
 
   it('is idempotent — skips the DB write when current copy already matches', async () => {
@@ -162,5 +176,74 @@ describe('POST /api/admin/carousel/draft/[draftId]/slide/[slideNum]/revert', () 
     const body = await res.json()
     expect(body.code).toBe('SLOT_MISSING')
     expect(mocks.prisma.carouselDraft.update).not.toHaveBeenCalled()
+  })
+
+  it('persists restored copy with manuallyEdited: false even when current copy was manually edited', async () => {
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
+      id: DRAFT_ID,
+      bodyCopyJson: { '3': { ...EDITED_COPY, manuallyEdited: true } },
+      aiBodyCopyJson: { '3': AI_COPY },
+      staleBodyCopySlots: [],
+    })
+    const { POST } = await import(
+      '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/revert/route'
+    )
+    await POST(revertRequest(), params(3))
+    const updateArgs = mocks.prisma.carouselDraft.update.mock.calls[0][0]
+    expect(updateArgs.data.bodyCopyJson['3'].manuallyEdited).toBe(false)
+  })
+
+  it('removes the target slot from staleBodyCopySlots when present', async () => {
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
+      id: DRAFT_ID,
+      bodyCopyJson: { '3': EDITED_COPY },
+      aiBodyCopyJson: { '3': AI_COPY },
+      staleBodyCopySlots: [2, 3, 5],
+    })
+    const { POST } = await import(
+      '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/revert/route'
+    )
+    await POST(revertRequest(), params(3))
+    const updateArgs = mocks.prisma.carouselDraft.update.mock.calls[0][0]
+    expect(updateArgs.data.staleBodyCopySlots).toEqual([2, 5])
+  })
+
+  it('omits staleBodyCopySlots from update when target is not in the list', async () => {
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
+      id: DRAFT_ID,
+      bodyCopyJson: { '3': EDITED_COPY },
+      aiBodyCopyJson: { '3': AI_COPY },
+      staleBodyCopySlots: [2, 5],
+    })
+    const { POST } = await import(
+      '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/revert/route'
+    )
+    await POST(revertRequest(), params(3))
+    const updateArgs = mocks.prisma.carouselDraft.update.mock.calls[0][0]
+    expect(updateArgs.data).not.toHaveProperty('staleBodyCopySlots')
+  })
+
+  it('idempotent path does not touch staleBodyCopySlots even when target is listed', async () => {
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
+      id: DRAFT_ID,
+      bodyCopyJson: { '3': AI_COPY },
+      aiBodyCopyJson: { '3': AI_COPY },
+      staleBodyCopySlots: [3],
+    })
+    const { POST } = await import(
+      '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/revert/route'
+    )
+    const res = await POST(revertRequest(), params(3))
+    expect(res.status).toBe(200)
+    expect(mocks.prisma.carouselDraft.update).not.toHaveBeenCalled()
+  })
+
+  it('never calls mirror-sync (revert is per-format)', async () => {
+    const { POST } = await import(
+      '@/app/api/admin/carousel/draft/[draftId]/slide/[slideNum]/revert/route'
+    )
+    await POST(revertRequest(), params(3))
+    expect(mocks.applyMirrorSync).not.toHaveBeenCalled()
+    expect(mocks.fireAndForgetMirrorRender).not.toHaveBeenCalled()
   })
 })

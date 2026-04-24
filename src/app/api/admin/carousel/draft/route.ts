@@ -253,7 +253,10 @@ export async function POST(request: NextRequest) {
       slides: slideContexts,
     })
 
-    slideCopy = result.slideCopy
+    slideCopy = { ...result.slideCopy }
+    for (const n of [2, 3, 4, 5, 6, 7] as MiddleSlideNumber[]) {
+      slideCopy[n] = { ...slideCopy[n], manuallyEdited: false }
+    }
     characteristics = result.characteristics
     generatedAtModel = result.modelUsed
 
