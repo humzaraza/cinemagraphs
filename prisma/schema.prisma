@@ -209,6 +209,7 @@ model CarouselDraft {
   mirrorRenderedAt      DateTime?
   staleBodyCopySlots    Int[]      @default([])
   backdropUrl           String?
+  slideBackdropsJson    Json?
   generatedAt           DateTime @default(now())
   generatedAtModel      String
   film                  Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
