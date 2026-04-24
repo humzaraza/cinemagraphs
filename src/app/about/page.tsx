@@ -357,10 +357,10 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* ── 6. Data & Credits ── */}
+      {/* ── 6. Credits ── */}
       <section className="max-w-3xl mx-auto px-4 pb-16 md:pb-24">
         <h2 className="font-[family-name:var(--font-playfair)] text-2xl md:text-3xl font-bold text-cinema-cream mb-6">
-          Data &amp; Credits
+          Credits
         </h2>
         <div className="bg-cinema-darker border border-cinema-border rounded-lg p-6 flex flex-col gap-6 md:flex-row md:items-center md:gap-8">
           <div className="flex-shrink-0 flex items-center justify-center md:justify-start">
