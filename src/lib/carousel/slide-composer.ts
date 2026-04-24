@@ -99,7 +99,7 @@ const PLACEHOLDER_GRADIENTS = [
 
 // ── Format specs (positions + type scale) ─────────────────────
 
-type FormatSpec = {
+export type FormatSpec = {
   canvasW: number
   canvasH: number
   graphZone: { x: number; y: number; w: number; h: number }
@@ -119,7 +119,7 @@ type FormatSpec = {
   miniGraph: { w: number; h: number }
 }
 
-function specFor(format: '4x5' | '9x16'): FormatSpec {
+export function specFor(format: '4x5' | '9x16'): FormatSpec {
   if (format === '4x5') {
     const canvasW = 1080
     const canvasH = 1350
@@ -605,12 +605,13 @@ async function resolveBackground(
 
 type BuiltSvg = { defs: string[]; body: string[] }
 
-function buildBackground(
+export function buildBackground(
   slideNumber: number,
   spec: FormatSpec,
   bgDataUrl: string | null,
 ): BuiltSvg {
   const blurred = slideNumber !== 1 && slideNumber !== 8
+  const isBookend = slideNumber === 1 || slideNumber === 8
   const defs: string[] = []
   const body: string[] = []
 
@@ -621,6 +622,16 @@ function buildBackground(
       `<stop offset="100%" stop-color="${COLORS.gradientBottom}"/>` +
       `</linearGradient>`,
   )
+  if (isBookend) {
+    defs.push(
+      `<linearGradient id="coverCloserScrim" x1="0" y1="0" x2="0" y2="${spec.canvasH}" gradientUnits="userSpaceOnUse">` +
+        `<stop offset="0%" stop-color="#000000" stop-opacity="0.35"/>` +
+        `<stop offset="30%" stop-color="#000000" stop-opacity="0"/>` +
+        `<stop offset="65%" stop-color="#000000" stop-opacity="0"/>` +
+        `<stop offset="100%" stop-color="#000000" stop-opacity="0.35"/>` +
+        `</linearGradient>`,
+    )
+  }
   if (blurred) {
     defs.push(
       `<filter id="bgBlur" x="-10%" y="-10%" width="120%" height="120%">` +
@@ -658,6 +669,12 @@ function buildBackground(
     const filterAttr = blurred ? ' filter="url(#bgBlur)"' : ''
     body.push(
       `<rect x="0" y="0" width="${spec.canvasW}" height="${spec.canvasH}" fill="url(#${gradId})"${filterAttr}/>`,
+    )
+  }
+
+  if (isBookend) {
+    body.push(
+      `<rect x="0" y="0" width="${spec.canvasW}" height="${spec.canvasH}" fill="url(#coverCloserScrim)"/>`,
     )
   }
 

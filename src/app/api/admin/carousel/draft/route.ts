@@ -408,6 +408,13 @@ export async function POST(request: NextRequest) {
     color: computeDotColor(b.score),
   }))
 
+  const slideBackdropsOut: Record<string, string> | null =
+    slideBackdrops &&
+    typeof slideBackdrops === 'object' &&
+    !Array.isArray(slideBackdrops)
+      ? (slideBackdrops as Record<string, string>)
+      : null
+
   return Response.json({
     draftId,
     film: {
@@ -436,6 +443,10 @@ export async function POST(request: NextRequest) {
     aiSlotSelections: aiSlotSelectionsOut,
     // Stripped beats for the dropdown UI. Indexed by position in the sorted array.
     availableBeats,
+    // Per-slide custom still URLs keyed by slide number ("1".."8"). null when
+    // no custom stills are set on this draft. Drives the picker's CURRENT badge
+    // and the "Change still" vs "Pick still" button label.
+    slideBackdrops: slideBackdropsOut,
     slides: slideResults,
   })
 }
