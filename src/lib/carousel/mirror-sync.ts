@@ -1,3 +1,4 @@
+import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { renderMiddleSlide } from './render-middle-slide'
 import { buildConflictMap, type SlotForConflictCheck } from './slot-conflicts'
@@ -30,6 +31,11 @@ export type MirrorEditKind =
       beatTimestamp: number
       beatScore: number
       timestampLabel: string
+    }
+  | {
+      kind: 'still'
+      slideNum: MiddleSlideNumber
+      stillUrl: string | null
     }
 
 export type MirrorSyncResult = {
@@ -69,6 +75,7 @@ export async function applyMirrorSync(args: {
       aiSlotSelectionsJson: true,
       characteristicsJson: true,
       backdropUrl: true,
+      slideBackdropsJson: true,
       generatedAtModel: true,
       staleBodyCopySlots: true,
       mirrorSyncStatus: true,
@@ -106,6 +113,9 @@ export async function applyMirrorSync(args: {
         ...(primary.aiSlotSelectionsJson !== null
           ? { aiSlotSelectionsJson: primary.aiSlotSelectionsJson as unknown as object }
           : {}),
+        ...(primary.slideBackdropsJson !== null
+          ? { slideBackdropsJson: primary.slideBackdropsJson as unknown as object }
+          : {}),
         backdropUrl: primary.backdropUrl,
         generatedAtModel: primary.generatedAtModel,
         mirrorSyncStatus: null,
@@ -119,6 +129,7 @@ export async function applyMirrorSync(args: {
     const updateData: {
       bodyCopyJson?: object
       slotSelectionsJson?: object
+      slideBackdropsJson?: object | typeof Prisma.DbNull
       staleBodyCopySlots?: number[]
       mirrorSyncStatus: string
       mirrorSyncError: null
@@ -129,55 +140,76 @@ export async function applyMirrorSync(args: {
 
     let staleBodyCopySlotsAdded: number[] = []
 
-    if (edit.kind === 'bodyCopy') {
-      const current = (mirror.bodyCopyJson ?? {}) as Record<string, SlideCopy>
-      const next: Record<string, SlideCopy> = {
-        ...current,
-        [String(edit.slideNum)]: { ...edit.copy },
-      }
-      updateData.bodyCopyJson = next as unknown as object
-    } else {
-      const currentSlots = (Array.isArray(mirror.slotSelectionsJson)
-        ? mirror.slotSelectionsJson
-        : []) as unknown as StoredSlot[]
-      const idx = currentSlots.findIndex((s) => s.position === edit.slideNum)
-      if (idx === -1) {
-        throw new Error(
-          `mirror draft has no slot at position ${edit.slideNum}`,
-        )
-      }
-      const nextSlot: StoredSlot = {
-        ...currentSlots[idx],
-        beatTimestamp: edit.beatTimestamp,
-        beatScore: edit.beatScore,
-        timestampLabel: edit.timestampLabel,
-        collision: false, // recomputed below
-      }
-      const nextSlots: StoredSlot[] = currentSlots.map((s, i) =>
-        i === idx ? nextSlot : s,
-      )
-      const conflictMap = buildConflictMap(nextSlots as SlotForConflictCheck[])
-      const finalSlots: StoredSlot[] = nextSlots.map((s) => {
-        if (s.position < 2 || s.position > 7) return s
-        const conf = conflictMap[s.position] ?? []
-        return { ...s, collision: conf.length > 0 }
-      })
-      updateData.slotSelectionsJson = finalSlots as unknown as object
-
-      // Stale detection: a beat change on the primary invalidates the
-      // mirror's slot alignment. If the mirror has a manually-edited body
-      // copy for that slide, flag it so admin can see the copy may no longer
-      // fit the new beat. Auto-generated copy rerenders cleanly via
-      // fireAndForgetMirrorRender and doesn't need a flag.
-      const mirrorCopy = (mirror.bodyCopyJson ?? {}) as Record<string, SlideCopy>
-      const slotCopy = mirrorCopy[String(edit.slideNum)]
-      if (slotCopy && isManuallyEdited(slotCopy)) {
-        const existing = mirror.staleBodyCopySlots ?? []
-        if (!existing.includes(edit.slideNum)) {
-          const nextStale = [...existing, edit.slideNum].sort((a, b) => a - b)
-          updateData.staleBodyCopySlots = nextStale
-          staleBodyCopySlotsAdded = [edit.slideNum]
+    switch (edit.kind) {
+      case 'bodyCopy': {
+        const current = (mirror.bodyCopyJson ?? {}) as Record<string, SlideCopy>
+        const next: Record<string, SlideCopy> = {
+          ...current,
+          [String(edit.slideNum)]: { ...edit.copy },
         }
+        updateData.bodyCopyJson = next as unknown as object
+        break
+      }
+      case 'beat': {
+        const currentSlots = (Array.isArray(mirror.slotSelectionsJson)
+          ? mirror.slotSelectionsJson
+          : []) as unknown as StoredSlot[]
+        const idx = currentSlots.findIndex((s) => s.position === edit.slideNum)
+        if (idx === -1) {
+          throw new Error(
+            `mirror draft has no slot at position ${edit.slideNum}`,
+          )
+        }
+        const nextSlot: StoredSlot = {
+          ...currentSlots[idx],
+          beatTimestamp: edit.beatTimestamp,
+          beatScore: edit.beatScore,
+          timestampLabel: edit.timestampLabel,
+          collision: false, // recomputed below
+        }
+        const nextSlots: StoredSlot[] = currentSlots.map((s, i) =>
+          i === idx ? nextSlot : s,
+        )
+        const conflictMap = buildConflictMap(nextSlots as SlotForConflictCheck[])
+        const finalSlots: StoredSlot[] = nextSlots.map((s) => {
+          if (s.position < 2 || s.position > 7) return s
+          const conf = conflictMap[s.position] ?? []
+          return { ...s, collision: conf.length > 0 }
+        })
+        updateData.slotSelectionsJson = finalSlots as unknown as object
+
+        // Stale detection: a beat change on the primary invalidates the
+        // mirror's slot alignment. If the mirror has a manually-edited body
+        // copy for that slide, flag it so admin can see the copy may no longer
+        // fit the new beat. Auto-generated copy rerenders cleanly via
+        // fireAndForgetMirrorRender and doesn't need a flag.
+        const mirrorCopy = (mirror.bodyCopyJson ?? {}) as Record<string, SlideCopy>
+        const slotCopy = mirrorCopy[String(edit.slideNum)]
+        if (slotCopy && isManuallyEdited(slotCopy)) {
+          const existing = mirror.staleBodyCopySlots ?? []
+          if (!existing.includes(edit.slideNum)) {
+            const nextStale = [...existing, edit.slideNum].sort((a, b) => a - b)
+            updateData.staleBodyCopySlots = nextStale
+            staleBodyCopySlotsAdded = [edit.slideNum]
+          }
+        }
+        break
+      }
+      case 'still': {
+        const current = (mirror.slideBackdropsJson &&
+        typeof mirror.slideBackdropsJson === 'object' &&
+        !Array.isArray(mirror.slideBackdropsJson)
+          ? mirror.slideBackdropsJson
+          : {}) as Record<string, string>
+        const next: Record<string, string> = { ...current }
+        if (edit.stillUrl === null) {
+          delete next[String(edit.slideNum)]
+        } else {
+          next[String(edit.slideNum)] = edit.stillUrl
+        }
+        updateData.slideBackdropsJson =
+          Object.keys(next).length === 0 ? Prisma.DbNull : (next as unknown as object)
+        break
       }
     }
 

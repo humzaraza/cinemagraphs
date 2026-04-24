@@ -149,3 +149,86 @@ describe('renderMiddleSlide — beatOverride', () => {
     expect(e.name).toBe('RenderMiddleSlideError')
   })
 })
+
+describe('renderMiddleSlide — slideBackdropOverride', () => {
+  const OVERRIDE_URL = 'https://image.tmdb.org/t/p/w1280/override.jpg'
+  const PER_SLIDE_URL = 'https://image.tmdb.org/t/p/w1280/per-slide.jpg'
+  const DRAFT_URL = 'https://image.tmdb.org/t/p/w1280/draft.jpg'
+
+  it('string override takes precedence over per-slide and draft URLs', async () => {
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
+      id: DRAFT_ID,
+      filmId: FILM_ID,
+      format: '4x5',
+      bodyCopyJson: { '3': SLIDE_COPY_3 },
+      slotSelectionsJson: [SLOT_3],
+      backdropUrl: DRAFT_URL,
+      slideBackdropsJson: { '3': PER_SLIDE_URL },
+    })
+    const { renderMiddleSlide } = await import('@/lib/carousel/render-middle-slide')
+    await renderMiddleSlide({
+      draftId: DRAFT_ID,
+      slideNum: 3,
+      slideBackdropOverride: OVERRIDE_URL,
+    })
+
+    expect(mocks.composeSlide).toHaveBeenCalledTimes(1)
+    const arg = mocks.composeSlide.mock.calls[0][0]
+    expect(arg.backgroundImage).toBe(OVERRIDE_URL)
+  })
+
+  it('null override falls back to draft.backdropUrl and ignores per-slide map', async () => {
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
+      id: DRAFT_ID,
+      filmId: FILM_ID,
+      format: '4x5',
+      bodyCopyJson: { '3': SLIDE_COPY_3 },
+      slotSelectionsJson: [SLOT_3],
+      backdropUrl: DRAFT_URL,
+      slideBackdropsJson: { '3': PER_SLIDE_URL },
+    })
+    const { renderMiddleSlide } = await import('@/lib/carousel/render-middle-slide')
+    await renderMiddleSlide({
+      draftId: DRAFT_ID,
+      slideNum: 3,
+      slideBackdropOverride: null,
+    })
+
+    const arg = mocks.composeSlide.mock.calls[0][0]
+    expect(arg.backgroundImage).toBe(DRAFT_URL)
+  })
+
+  it('undefined override (omitted) picks up a matching per-slide URL via the resolver', async () => {
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
+      id: DRAFT_ID,
+      filmId: FILM_ID,
+      format: '4x5',
+      bodyCopyJson: { '3': SLIDE_COPY_3 },
+      slotSelectionsJson: [SLOT_3],
+      backdropUrl: DRAFT_URL,
+      slideBackdropsJson: { '3': PER_SLIDE_URL },
+    })
+    const { renderMiddleSlide } = await import('@/lib/carousel/render-middle-slide')
+    await renderMiddleSlide({ draftId: DRAFT_ID, slideNum: 3 })
+
+    const arg = mocks.composeSlide.mock.calls[0][0]
+    expect(arg.backgroundImage).toBe(PER_SLIDE_URL)
+  })
+
+  it('undefined override falls back to draft.backdropUrl when no per-slide match exists', async () => {
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue({
+      id: DRAFT_ID,
+      filmId: FILM_ID,
+      format: '4x5',
+      bodyCopyJson: { '3': SLIDE_COPY_3 },
+      slotSelectionsJson: [SLOT_3],
+      backdropUrl: DRAFT_URL,
+      slideBackdropsJson: { '5': PER_SLIDE_URL },
+    })
+    const { renderMiddleSlide } = await import('@/lib/carousel/render-middle-slide')
+    await renderMiddleSlide({ draftId: DRAFT_ID, slideNum: 3 })
+
+    const arg = mocks.composeSlide.mock.calls[0][0]
+    expect(arg.backgroundImage).toBe(DRAFT_URL)
+  })
+})
