@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { Prisma } from '@/generated/prisma/client'
 
 const mocks = vi.hoisted(() => ({
   prisma: {
@@ -95,6 +96,7 @@ function defaultPrimary(
     aiSlotSelectionsJson: BASE_SLOTS,
     characteristicsJson: { tone: 'neutral' },
     backdropUrl: 'https://example.com/bg.jpg',
+    slideBackdropsJson: null as Record<string, string> | null,
     generatedAtModel: 'claude-opus-4-7',
     staleBodyCopySlots: [] as number[],
     mirrorSyncStatus: null as string | null,
@@ -116,6 +118,7 @@ function defaultMirrorRow(
     aiSlotSelectionsJson: BASE_SLOTS,
     characteristicsJson: { tone: 'neutral' },
     backdropUrl: 'https://example.com/bg.jpg',
+    slideBackdropsJson: null as Record<string, string> | null,
     generatedAtModel: 'claude-opus-4-7',
     staleBodyCopySlots: [] as number[],
     mirrorSyncStatus: null as string | null,
@@ -467,6 +470,162 @@ describe('applyMirrorSync — primary failure state', () => {
     expect(updateCalls).toHaveLength(1)
     expect((updateCalls[0][0] as { where: { id: string } }).where).toEqual({
       id: MIRROR_ID,
+    })
+  })
+})
+
+describe('applyMirrorSync — still kind', () => {
+  it('propagates a new still to the mirror when mirror has no existing map', async () => {
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue(
+      defaultPrimary({ slideBackdropsJson: { '3': 'https://image.tmdb.org/t/p/w1280/a.jpg' } }),
+    )
+    mocks.prisma.carouselDraft.upsert.mockResolvedValue(
+      defaultMirrorRow({ slideBackdropsJson: null }),
+    )
+    mocks.prisma.carouselDraft.update.mockResolvedValue({})
+
+    const result = await applyMirrorSync({
+      primaryDraftId: PRIMARY_ID,
+      primaryFilmId: FILM_ID,
+      primaryFormat: '4x5',
+      edit: { kind: 'still', slideNum: 3, stillUrl: 'https://image.tmdb.org/t/p/w1280/a.jpg' },
+    })
+
+    const arg = mocks.prisma.carouselDraft.update.mock.calls[0][0] as {
+      where: { id: string }
+      data: Record<string, unknown>
+    }
+    expect(arg.where).toEqual({ id: MIRROR_ID })
+    expect(arg.data.slideBackdropsJson).toEqual({ '3': 'https://image.tmdb.org/t/p/w1280/a.jpg' })
+    // bodyCopy and slotSelections must NOT be touched on a still edit.
+    expect(arg.data.bodyCopyJson).toBeUndefined()
+    expect(arg.data.slotSelectionsJson).toBeUndefined()
+    expect(result).toEqual({
+      status: 'synced',
+      mirrorDraftId: MIRROR_ID,
+      staleBodyCopySlotsAdded: [],
+    })
+  })
+
+  it('merges new still into existing mirror map without clobbering other slides', async () => {
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue(defaultPrimary())
+    mocks.prisma.carouselDraft.upsert.mockResolvedValue(
+      defaultMirrorRow({
+        slideBackdropsJson: { '2': 'https://image.tmdb.org/t/p/w1280/x.jpg' },
+      }),
+    )
+    mocks.prisma.carouselDraft.update.mockResolvedValue({})
+
+    await applyMirrorSync({
+      primaryDraftId: PRIMARY_ID,
+      primaryFilmId: FILM_ID,
+      primaryFormat: '4x5',
+      edit: { kind: 'still', slideNum: 4, stillUrl: 'https://image.tmdb.org/t/p/w1280/y.jpg' },
+    })
+
+    const arg = mocks.prisma.carouselDraft.update.mock.calls[0][0] as {
+      data: Record<string, unknown>
+    }
+    expect(arg.data.slideBackdropsJson).toEqual({
+      '2': 'https://image.tmdb.org/t/p/w1280/x.jpg',
+      '4': 'https://image.tmdb.org/t/p/w1280/y.jpg',
+    })
+  })
+
+  it('clearing a still (stillUrl: null) removes only that key', async () => {
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue(defaultPrimary())
+    mocks.prisma.carouselDraft.upsert.mockResolvedValue(
+      defaultMirrorRow({
+        slideBackdropsJson: {
+          '3': 'https://image.tmdb.org/t/p/w1280/a.jpg',
+          '5': 'https://image.tmdb.org/t/p/w1280/b.jpg',
+        },
+      }),
+    )
+    mocks.prisma.carouselDraft.update.mockResolvedValue({})
+
+    await applyMirrorSync({
+      primaryDraftId: PRIMARY_ID,
+      primaryFilmId: FILM_ID,
+      primaryFormat: '4x5',
+      edit: { kind: 'still', slideNum: 3, stillUrl: null },
+    })
+
+    const arg = mocks.prisma.carouselDraft.update.mock.calls[0][0] as {
+      data: Record<string, unknown>
+    }
+    expect(arg.data.slideBackdropsJson).toEqual({
+      '5': 'https://image.tmdb.org/t/p/w1280/b.jpg',
+    })
+  })
+
+  it('clearing the last still nulls the whole column (Prisma.DbNull, not {})', async () => {
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue(defaultPrimary())
+    mocks.prisma.carouselDraft.upsert.mockResolvedValue(
+      defaultMirrorRow({
+        slideBackdropsJson: { '3': 'https://image.tmdb.org/t/p/w1280/a.jpg' },
+      }),
+    )
+    mocks.prisma.carouselDraft.update.mockResolvedValue({})
+
+    await applyMirrorSync({
+      primaryDraftId: PRIMARY_ID,
+      primaryFilmId: FILM_ID,
+      primaryFormat: '4x5',
+      edit: { kind: 'still', slideNum: 3, stillUrl: null },
+    })
+
+    const arg = mocks.prisma.carouselDraft.update.mock.calls[0][0] as {
+      data: Record<string, unknown>
+    }
+    expect(arg.data.slideBackdropsJson).toBe(Prisma.DbNull)
+    expect(arg.data.slideBackdropsJson).not.toEqual({})
+  })
+
+  it('does not mark body copy stale for still edits even when mirror has manuallyEdited copy', async () => {
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue(defaultPrimary())
+    mocks.prisma.carouselDraft.upsert.mockResolvedValue(
+      defaultMirrorRow({
+        bodyCopyJson: { ...BASE_BODY, '3': makeCopy({ manuallyEdited: true }) },
+        staleBodyCopySlots: [] as number[],
+      }),
+    )
+    mocks.prisma.carouselDraft.update.mockResolvedValue({})
+
+    const result = await applyMirrorSync({
+      primaryDraftId: PRIMARY_ID,
+      primaryFilmId: FILM_ID,
+      primaryFormat: '4x5',
+      edit: { kind: 'still', slideNum: 3, stillUrl: 'https://image.tmdb.org/t/p/w1280/a.jpg' },
+    })
+
+    const arg = mocks.prisma.carouselDraft.update.mock.calls[0][0] as {
+      data: Record<string, unknown>
+    }
+    expect(arg.data.staleBodyCopySlots).toBeUndefined()
+    expect(result.staleBodyCopySlotsAdded).toEqual([])
+  })
+
+  it('failure path writes mirrorSyncError on primary for a still edit', async () => {
+    mocks.prisma.carouselDraft.findUnique.mockResolvedValue(defaultPrimary())
+    mocks.prisma.carouselDraft.upsert.mockResolvedValue(defaultMirrorRow())
+    mocks.prisma.carouselDraft.update
+      .mockRejectedValueOnce(new Error('still db error'))
+      .mockResolvedValueOnce({})
+
+    const result = await applyMirrorSync({
+      primaryDraftId: PRIMARY_ID,
+      primaryFilmId: FILM_ID,
+      primaryFormat: '4x5',
+      edit: { kind: 'still', slideNum: 3, stillUrl: 'https://image.tmdb.org/t/p/w1280/a.jpg' },
+    })
+
+    expect(result).toEqual({ status: 'failed', error: 'still db error' })
+    const updateCalls = mocks.prisma.carouselDraft.update.mock.calls
+    expect(updateCalls).toHaveLength(2)
+    expect(updateCalls[1][0]).toEqual({
+      where: { id: PRIMARY_ID },
+      data: { mirrorSyncStatus: 'failed', mirrorSyncError: 'still db error' },
     })
   })
 })

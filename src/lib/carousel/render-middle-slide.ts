@@ -3,6 +3,7 @@ import { computeDotColor, type DataPoint } from './graph-renderer'
 import { composeSlide, type FilmData, type MiddleSlideContent } from './slide-composer'
 import type { MiddleSlideNumber, SlideCopy } from './body-copy-generator'
 import { formatTimestamp, type OriginalRole } from './slot-selection'
+import { resolvePerSlideBackdrop } from './slide-backdrop-resolver'
 import type { SentimentDataPoint } from '@/lib/types'
 
 const ROLE_PILL_FALLBACK: Record<OriginalRole, string> = {
@@ -76,6 +77,11 @@ export type RenderMiddleSlideParams = {
   // 0-based against the chronologically sorted beats array (the same array
   // used to resolve slot.beatTimestamp).
   beatOverride?: { beatIndex: number }
+  // Overrides the backdrop URL for this slide before persistence.
+  //   undefined → use per-slide resolver chain (slideBackdropsJson then draft)
+  //   string    → use this URL (unsaved preview from stills PATCH)
+  //   null      → explicitly clear to draft-wide backdropUrl fallback
+  slideBackdropOverride?: string | null
 }
 
 // Re-compose a single middle slide (2-7) for an existing draft row. Reads the
@@ -87,7 +93,7 @@ export type RenderMiddleSlideParams = {
 export async function renderMiddleSlide(
   params: RenderMiddleSlideParams,
 ): Promise<Buffer> {
-  const { draftId, slideNum, slideCopyOverride, beatOverride } = params
+  const { draftId, slideNum, slideCopyOverride, beatOverride, slideBackdropOverride } = params
 
   if (!Number.isInteger(slideNum) || slideNum < 2 || slideNum > 7) {
     throw new RenderMiddleSlideError(
@@ -105,6 +111,7 @@ export async function renderMiddleSlide(
       bodyCopyJson: true,
       slotSelectionsJson: true,
       backdropUrl: true,
+      slideBackdropsJson: true,
     },
   })
   if (!draft) {
@@ -228,11 +235,18 @@ export async function renderMiddleSlide(
     totalRuntimeMinutes: film.runtime,
   }
 
+  const overrideProvided = slideBackdropOverride !== undefined
+  const resolvedBackdrop = overrideProvided
+    ? slideBackdropOverride
+    : resolvePerSlideBackdrop(draft.slideBackdropsJson, slideNum)
+
+  const backgroundImage = resolvedBackdrop ?? draft.backdropUrl ?? undefined
+
   return composeSlide({
     film: filmData,
     slideNumber: slideNum as 2 | 3 | 4 | 5 | 6 | 7,
     format: draft.format as '4x5' | '9x16',
     middleContent,
-    backgroundImage: draft.backdropUrl ?? undefined,
+    backgroundImage,
   })
 }
