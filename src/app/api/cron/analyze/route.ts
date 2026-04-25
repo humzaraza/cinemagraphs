@@ -305,7 +305,11 @@ export async function GET(request: Request) {
     }
 
     const noGraphCandidates = await prisma.film.findMany({
-      where: { ...baseWhere, sentimentGraph: { is: null } },
+      where: {
+        ...baseWhere,
+        sentimentGraph: { is: null },
+        reviews: { some: {} },
+      },
       include: { sentimentGraph: { select: { id: true, generatedAt: true } } },
       orderBy: { createdAt: 'asc' },
       take: CANDIDATE_POOL,
@@ -340,7 +344,7 @@ export async function GET(request: Request) {
       eligible_stale_regen: 0,
     }
 
-    const queueable: { id: string; title: string; reason: string }[] = []
+    const queueable: { id: string; title: string; tmdbId: number; reason: string }[] = []
     for (const film of candidates) {
       const decision: CronRegenDecision = decideCronRegen({
         releaseDate: film.releaseDate,
@@ -364,7 +368,7 @@ export async function GET(request: Request) {
         skipTally.skipped_already_regenerated_today++
         continue
       }
-      queueable.push({ id: film.id, title: film.title, reason })
+      queueable.push({ id: film.id, title: film.title, tmdbId: film.tmdbId, reason })
       cronLogger.info({ filmId: film.id, filmTitle: film.title, reason }, 'Film queued for batch')
     }
 
@@ -409,23 +413,36 @@ export async function GET(request: Request) {
         break
       }
 
-      const prep = await prepareSentimentGraphInput(candidate.id, { force: false })
-      if (prep.status === 'ready') {
-        readyInputs.push(prep.input)
-      } else if (prep.status === 'skipped_unchanged') {
+      try {
+        const prep = await prepareSentimentGraphInput(candidate.id, { force: false })
+        if (prep.status === 'ready') {
+          readyInputs.push(prep.input)
+        } else if (prep.status === 'skipped_unchanged') {
+          skipResults.push({
+            title: candidate.title,
+            status: 'skipped_unchanged',
+            reason: `hash match (${prep.reviewHash.slice(0, 12)}…)`,
+          })
+        } else if (prep.status === 'skipped_insufficient_reviews') {
+          skipResults.push({
+            title: candidate.title,
+            status: 'skipped_insufficient_reviews',
+            reason: `${prep.qualityCount} quality reviews, need ${prep.minRequired}`,
+          })
+        } else {
+          skipResults.push({ title: candidate.title, status: 'skipped_film_not_found', reason: '' })
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        cronLogger.error(
+          { err: e, filmId: candidate.id, title: candidate.title, tmdbId: candidate.tmdbId },
+          'Prep failed for film, continuing to next candidate'
+        )
         skipResults.push({
           title: candidate.title,
-          status: 'skipped_unchanged',
-          reason: `hash match (${prep.reviewHash.slice(0, 12)}…)`,
+          status: 'prep_error',
+          reason: msg.slice(0, 200),
         })
-      } else if (prep.status === 'skipped_insufficient_reviews') {
-        skipResults.push({
-          title: candidate.title,
-          status: 'skipped_insufficient_reviews',
-          reason: `${prep.qualityCount} quality reviews, need ${prep.minRequired}`,
-        })
-      } else {
-        skipResults.push({ title: candidate.title, status: 'skipped_film_not_found', reason: '' })
       }
     }
 
