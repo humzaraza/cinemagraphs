@@ -285,23 +285,47 @@ export async function GET(request: Request) {
 
     // ── Stage B: find candidates for a new batch ──
     // Daily cron: most mature films will skip via decideCronRegen, so we pull
-    // a wider pool than the per-batch cap. Candidates are ordered by oldest
-    // sentiment graph first, so stale films rise to the top.
-    const candidates = await prisma.film.findMany({
-      where: {
-        status: 'ACTIVE',
-        OR: [
-          { releaseDate: null },
-          { releaseDate: { lte: new Date() } },
-        ],
-      },
-      include: { sentimentGraph: { select: { id: true, generatedAt: true } } },
-      orderBy: [
-        { sentimentGraph: { generatedAt: 'asc' } },
-        { createdAt: 'asc' },
+    // a wider pool than the per-batch cap. Two-phase ordering:
+    //  (1) films with NO sentiment graph yet — first-time generation
+    //      candidates, ordered by oldest createdAt
+    //  (2) films with a graph — staleness-ordered by oldest generatedAt
+    // We can't express this as a single Prisma orderBy because Prisma 7
+    // doesn't expose a `nulls: 'first'` knob for relation orderBy on
+    // non-nullable columns (SentimentGraph.generatedAt is non-nullable, so
+    // its generated SortOrder type has no nulls option). Without this,
+    // Postgres' default NULLS LAST would strand graphless films behind
+    // every graphed film, so they'd never get analyzed.
+    const CANDIDATE_POOL = 200
+    const baseWhere = {
+      status: 'ACTIVE' as const,
+      OR: [
+        { releaseDate: null },
+        { releaseDate: { lte: new Date() } },
       ],
-      take: 200,
+    }
+
+    const noGraphCandidates = await prisma.film.findMany({
+      where: { ...baseWhere, sentimentGraph: { is: null } },
+      include: { sentimentGraph: { select: { id: true, generatedAt: true } } },
+      orderBy: { createdAt: 'asc' },
+      take: CANDIDATE_POOL,
     })
+
+    const remainingBudget = CANDIDATE_POOL - noGraphCandidates.length
+    const withGraphCandidates =
+      remainingBudget > 0
+        ? await prisma.film.findMany({
+            where: { ...baseWhere, sentimentGraph: { isNot: null } },
+            include: { sentimentGraph: { select: { id: true, generatedAt: true } } },
+            orderBy: [
+              { sentimentGraph: { generatedAt: 'asc' } },
+              { createdAt: 'asc' },
+            ],
+            take: remainingBudget,
+          })
+        : []
+
+    const candidates = [...noGraphCandidates, ...withGraphCandidates]
 
     const now = new Date()
     const skipTally = {

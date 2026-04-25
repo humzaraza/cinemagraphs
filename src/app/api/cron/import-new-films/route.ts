@@ -88,7 +88,32 @@ export async function GET(request: Request) {
       where: { nowPlaying: true, nowPlayingOverride: null, tmdbId: { notIn: Array.from(nowPlayingIds) } },
       data: { nowPlaying: false },
     })
+    // Capture films about to flip false→true via the auto-managed branch
+    // BEFORE we run the updateMany — afterwards we can't distinguish them
+    // from films that were already nowPlaying=true from a prior run.
+    // We only handle the auto-managed (override=null) branch here; force_show
+    // films are admin-curated and the analyze cron's first-priority queue
+    // (graphless films) will pick them up on the next tick.
+    const flippedAndGraphless: { id: string; title: string; tmdbId: number }[] = []
     if (nowPlayingIds.size > 0) {
+      const willFlip = await prisma.film.findMany({
+        where: {
+          nowPlaying: false,
+          nowPlayingOverride: null,
+          tmdbId: { in: Array.from(nowPlayingIds) },
+        },
+        select: {
+          id: true,
+          title: true,
+          tmdbId: true,
+          sentimentGraph: { select: { id: true } },
+        },
+      })
+      for (const f of willFlip) {
+        if (!f.sentimentGraph) {
+          flippedAndGraphless.push({ id: f.id, title: f.title, tmdbId: f.tmdbId })
+        }
+      }
       await prisma.film.updateMany({
         where: { nowPlayingOverride: null, tmdbId: { in: Array.from(nowPlayingIds) } },
         data: { nowPlaying: true },
@@ -104,6 +129,29 @@ export async function GET(request: Request) {
       data: { nowPlaying: false },
     })
     cronLogger.info({ nowPlayingIds: nowPlayingIds.size }, 'nowPlaying flags refreshed (overrides respected)')
+
+    // Generate sentiment graphs for newly-flipped films that lack one.
+    // Mirrors the import-time auto-generate path's call shape (sequential
+    // synchronous Messages API; no parallelism). On a busy release weekend
+    // this can compound with new-import generation and exceed Vercel's
+    // maxDuration; films past the cutoff fall through to the next analyze
+    // cron tick, which now prioritizes graphless films first (Stage B).
+    for (const film of flippedAndGraphless) {
+      try {
+        await generateSentimentGraph(film.id, { callerPath: 'cron-analyze' })
+        await invalidateFilmCache(film.id)
+        cronLogger.info(
+          { tmdbId: film.tmdbId, title: film.title },
+          'Sentiment graph generated for newly-flipped film'
+        )
+      } catch (sentErr) {
+        const sentMsg = sentErr instanceof Error ? sentErr.message : 'Unknown error'
+        cronLogger.error(
+          { tmdbId: film.tmdbId, title: film.title, error: sentMsg },
+          'Failed to generate sentiment graph for newly-flipped film'
+        )
+      }
+    }
 
     await invalidateHomepageCache()
 
