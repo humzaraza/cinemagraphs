@@ -292,7 +292,7 @@ export default function ListDetailPage() {
               onClick={() => setAddFilmsOpen(true)}
               className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-md transition-colors hover:bg-cinema-gold/10"
               style={{
-                color: '#C8A951',
+                color: 'var(--cinema-gold)',
                 border: '1px solid rgba(200,169,81,0.4)',
               }}
             >
@@ -312,7 +312,7 @@ export default function ListDetailPage() {
           <span
             className="text-[11px] font-semibold tracking-wide px-2.5 py-1 rounded-full"
             style={{
-              color: '#C8A951',
+              color: 'var(--cinema-gold)',
               background: 'rgba(200,169,81,0.08)',
               border: '1px solid rgba(200,169,81,0.25)',
             }}
@@ -360,7 +360,7 @@ export default function ListDetailPage() {
             aria-checked={list.isPublic}
             className="relative flex-shrink-0 w-10 h-6 rounded-full transition-colors disabled:opacity-60"
             style={{
-              background: list.isPublic ? '#C8A951' : 'rgba(245,240,225,0.15)',
+              background: list.isPublic ? 'var(--cinema-gold)' : 'rgba(245,240,225,0.15)',
             }}
           >
             <span
@@ -386,7 +386,7 @@ export default function ListDetailPage() {
               onClick={() => setAddFilmsOpen(true)}
               className="text-xs font-semibold px-4 py-2 rounded-md transition-colors mt-2"
               style={{
-                color: '#C8A951',
+                color: 'var(--cinema-gold)',
                 border: '1px solid rgba(200,169,81,0.4)',
                 background: 'rgba(200,169,81,0.08)',
               }}

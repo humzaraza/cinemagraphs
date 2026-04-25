@@ -218,7 +218,7 @@ export default function AddToListDropdown({ filmId }: Props) {
                   aria-pressed={l.containsFilm}
                 >
                   {l.containsFilm ? (
-                    <span className="relative flex items-center justify-center w-[18px] h-[18px] rounded-full flex-shrink-0" style={{ backgroundColor: '#2DD4A8' }}>
+                    <span className="relative flex items-center justify-center w-[18px] h-[18px] rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--cinema-teal)' }}>
                       <svg
                         width="10"
                         height="10"

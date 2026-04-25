@@ -21,7 +21,7 @@ export default function AdminTabs({ tabs }: { tabs: Tab[] }) {
             onClick={() => setActive(tab.id)}
             className="px-5 py-3 text-sm font-medium whitespace-nowrap transition-colors relative"
             style={{
-              color: active === tab.id ? '#C8A951' : '#888',
+              color: active === tab.id ? 'var(--cinema-gold)' : '#888',
             }}
           >
             {tab.label}

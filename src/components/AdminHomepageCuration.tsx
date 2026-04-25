@@ -352,7 +352,7 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
               <span className="text-sm text-cinema-cream">{label}</span>
               <div
                 className="w-10 h-5 rounded-full relative transition-colors"
-                style={{ backgroundColor: visibility[key as keyof SectionVisibility] ? '#C8A951' : '#333' }}
+                style={{ backgroundColor: visibility[key as keyof SectionVisibility] ? 'var(--cinema-gold)' : '#333' }}
               >
                 <div
                   className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform"
@@ -373,7 +373,7 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
           Controls which films appear in the scrolling ticker. Independent from the In Theaters section below.
         </p>
         <div className="flex gap-3 mb-3 text-[10px] text-cinema-muted">
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#2DD4A8]" /> Auto (now playing)</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cinema-teal" /> Auto (now playing)</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cinema-gold" /> Force shown</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Force hidden</span>
         </div>
@@ -396,14 +396,14 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
                   <span
                     className="w-2 h-2 rounded-full shrink-0"
                     style={{
-                      backgroundColor: isForceShow ? '#C8A951' : isForceHide ? '#ef4444' : '#2DD4A8',
+                      backgroundColor: isForceShow ? 'var(--cinema-gold)' : isForceHide ? '#ef4444' : 'var(--cinema-teal)',
                     }}
                   />
                   <span className={`text-sm truncate ${isForceHide ? 'text-cinema-muted line-through' : 'text-cinema-cream'}`}>
                     {film.title}
                   </span>
                   {isAuto && film.nowPlaying && (
-                    <span className="text-[9px] text-[#2DD4A8]/60 shrink-0">auto</span>
+                    <span className="text-[9px] text-cinema-teal/60 shrink-0">auto</span>
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -430,7 +430,7 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
                   {override && (
                     <button
                       onClick={() => setTickerOverride(film, null)}
-                      className="text-[10px] px-2 py-0.5 rounded border border-cinema-border text-cinema-muted hover:border-[#2DD4A8]/40 hover:text-[#2DD4A8] transition-colors"
+                      className="text-[10px] px-2 py-0.5 rounded border border-cinema-border text-cinema-muted hover:border-cinema-teal/40 hover:text-cinema-teal transition-colors"
                     >
                       Auto
                     </button>
@@ -456,7 +456,7 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
           Controls which films appear in the &quot;In Theaters&quot; homepage section. Independent from the ticker above.
         </p>
         <div className="flex gap-3 mb-3 text-[10px] text-cinema-muted">
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#2DD4A8]" /> Auto (TMDB)</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cinema-teal" /> Auto (TMDB)</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cinema-gold" /> Force shown</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Force hidden</span>
         </div>
@@ -479,14 +479,14 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
                   <span
                     className="w-2 h-2 rounded-full shrink-0"
                     style={{
-                      backgroundColor: isForceShow ? '#C8A951' : isForceHide ? '#ef4444' : '#2DD4A8',
+                      backgroundColor: isForceShow ? 'var(--cinema-gold)' : isForceHide ? '#ef4444' : 'var(--cinema-teal)',
                     }}
                   />
                   <span className={`text-sm truncate ${isForceHide ? 'text-cinema-muted line-through' : 'text-cinema-cream'}`}>
                     {film.title}
                   </span>
                   {isAuto && film.nowPlaying && (
-                    <span className="text-[9px] text-[#2DD4A8]/60 shrink-0">TMDB</span>
+                    <span className="text-[9px] text-cinema-teal/60 shrink-0">TMDB</span>
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -513,7 +513,7 @@ export default function AdminHomepageCuration({ films }: { films: FilmOption[] }
                   {override && (
                     <button
                       onClick={() => setNowPlayingOverride(film, null)}
-                      className="text-[10px] px-2 py-0.5 rounded border border-cinema-border text-cinema-muted hover:border-[#2DD4A8]/40 hover:text-[#2DD4A8] transition-colors"
+                      className="text-[10px] px-2 py-0.5 rounded border border-cinema-border text-cinema-muted hover:border-cinema-teal/40 hover:text-cinema-teal transition-colors"
                     >
                       Auto
                     </button>

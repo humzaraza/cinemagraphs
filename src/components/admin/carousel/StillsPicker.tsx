@@ -189,7 +189,7 @@ export function StillsPickerView(props: StillsPickerViewProps) {
                       key={b.url}
                       type="button"
                       onClick={() => props.onSelect(b.url)}
-                      className={`relative aspect-[16/9] bg-[#0D0D1A] overflow-hidden rounded border-2 ${
+                      className={`relative aspect-[16/9] bg-cinema-dark overflow-hidden rounded border-2 ${
                         isSelected
                           ? 'border-cinema-gold'
                           : 'border-transparent hover:border-cinema-gold/40'

@@ -460,7 +460,7 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search films..."
             style={{
-              background: '#1a1a2e',
+              background: 'var(--cinema-card)',
               border: '0.5px solid #333',
               color: '#e0e0e0',
               borderRadius: 6,
@@ -476,7 +476,7 @@ export default function AdminAnalyze({ films: initialFilms }: { films: Film[] })
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as SortOption)}
               style={{
-                background: '#1a1a2e',
+                background: 'var(--cinema-card)',
                 border: '0.5px solid #333',
                 color: '#e0e0e0',
                 borderRadius: 6,

@@ -33,7 +33,7 @@ export function CompositeArcGraph({
   const yMax = Math.min(10, Math.ceil(maxScore) + 1)
 
   return (
-    <div className="mt-8 rounded-lg border border-cinema-border bg-[#1A1A2E] p-4 md:p-6">
+    <div className="mt-8 rounded-lg border border-cinema-border bg-cinema-card p-4 md:p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="font-[family-name:var(--font-playfair)] text-lg font-bold">
@@ -55,8 +55,8 @@ export function CompositeArcGraph({
         <AreaChart data={arcPoints} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
           <defs>
             <linearGradient id="arcGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#C8A951" stopOpacity={0.3} />
-              <stop offset="100%" stopColor="#C8A951" stopOpacity={0} />
+              <stop offset="0%" stopColor="var(--cinema-gold)" stopOpacity={0.3} />
+              <stop offset="100%" stopColor="var(--cinema-gold)" stopOpacity={0} />
             </linearGradient>
           </defs>
           <XAxis
@@ -82,7 +82,7 @@ export function CompositeArcGraph({
           />
           <Tooltip
             contentStyle={{
-              background: '#1a1a2e',
+              background: 'var(--cinema-card)',
               border: '1px solid rgba(200,169,81,0.3)',
               borderRadius: 6,
               fontSize: 12,
@@ -93,11 +93,11 @@ export function CompositeArcGraph({
           <Area
             type="monotone"
             dataKey="score"
-            stroke="#C8A951"
+            stroke="var(--cinema-gold)"
             strokeWidth={2}
             fill="url(#arcGradient)"
             dot={false}
-            activeDot={{ r: 4, fill: '#C8A951', stroke: '#0D0D1A', strokeWidth: 2 }}
+            activeDot={{ r: 4, fill: 'var(--cinema-gold)', stroke: 'var(--cinema-dark)', strokeWidth: 2 }}
           />
         </AreaChart>
       </ResponsiveContainer>

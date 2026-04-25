@@ -84,7 +84,7 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
               const effectiveDelta = hasDelta ? d : dpTrend
               const isUp = effectiveDelta > 0
               const isDown = effectiveDelta < 0
-              const color = isUp ? '#2DD4A8' : isDown ? '#ef4444' : '#C8A951'
+              const color = isUp ? 'var(--cinema-teal)' : isDown ? '#ef4444' : 'var(--cinema-gold)'
 
               return (
                 <Link

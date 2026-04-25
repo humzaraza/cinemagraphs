@@ -152,7 +152,7 @@ export function BeatPickerDropdown({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`${slotLabel} beat`}
-        className={`w-full flex items-center gap-2 bg-[#0D0D1A] border rounded px-2.5 py-1.5 text-sm transition-colors ${
+        className={`w-full flex items-center gap-2 bg-cinema-dark border rounded px-2.5 py-1.5 text-sm transition-colors ${
           disabled
             ? 'border-[#222] text-cinema-muted/50 cursor-not-allowed'
             : open
@@ -196,7 +196,7 @@ export function BeatPickerDropdown({
           // Stop bubbled mousedown from immediately re-closing (we still want
           // the document listener for clicks outside).
           onMouseDown={(e) => e.stopPropagation()}
-          className="absolute z-30 left-0 right-0 top-full mt-1 max-h-64 overflow-y-auto bg-[#0D0D1A] border border-[#333] rounded-lg shadow-xl outline-none"
+          className="absolute z-30 left-0 right-0 top-full mt-1 max-h-64 overflow-y-auto bg-cinema-dark border border-[#333] rounded-lg shadow-xl outline-none"
         >
           {beats.map((b, i) => {
             const isSelected = b.beatIndex === selectedBeatIndex

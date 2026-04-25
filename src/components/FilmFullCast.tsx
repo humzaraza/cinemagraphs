@@ -66,7 +66,7 @@ export function FilmFullCast({ cast }: { cast: CastEntry[] }) {
 
               {/* Name + character */}
               <div className="min-w-0">
-                <p className="text-sm text-[#2DD4A8] truncate">{member.name}</p>
+                <p className="text-sm text-cinema-teal truncate">{member.name}</p>
                 {member.character && (
                   <p className="text-xs text-[#666] truncate">{member.character}</p>
                 )}

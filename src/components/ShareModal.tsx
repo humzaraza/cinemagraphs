@@ -117,7 +117,7 @@ export default function ShareModal({ reviewId, filmTitle, onClose }: Props) {
       <div
         className="rounded-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto"
         style={{
-          backgroundColor: '#1a1a2e',
+          backgroundColor: 'var(--cinema-card)',
           border: '1px solid rgba(200,169,110,0.2)',
         }}
         onClick={(e) => e.stopPropagation()}

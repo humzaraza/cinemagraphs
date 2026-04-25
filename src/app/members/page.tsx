@@ -182,8 +182,8 @@ function MemberCard({ user }: { user: MemberUser }) {
           <div
             className="w-11 h-11 rounded-full flex items-center justify-center text-base font-bold shrink-0"
             style={{
-              background: 'linear-gradient(135deg, #C8A951, #a08530)',
-              color: '#0D0D1A',
+              background: 'linear-gradient(135deg, var(--cinema-gold), #a08530)',
+              color: 'var(--cinema-dark)',
             }}
           >
             {initial}

@@ -52,8 +52,8 @@ function formatTime(minutes: number): string {
 }
 
 function scoreColor(score: number): string {
-  if (score >= 8) return '#2DD4A8'
-  if (score >= 6) return '#C8A951'
+  if (score >= 8) return 'var(--cinema-teal)'
+  if (score >= 6) return 'var(--cinema-gold)'
   return '#ef4444'
 }
 
@@ -210,12 +210,12 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                 <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
                   <defs>
                     <linearGradient id="heroGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#C8A951" stopOpacity={0.3} />
-                      <stop offset="50%" stopColor="#C8A951" stopOpacity={0.1} />
-                      <stop offset="95%" stopColor="#C8A951" stopOpacity={0} />
+                      <stop offset="5%" stopColor="var(--cinema-gold)" stopOpacity={0.3} />
+                      <stop offset="50%" stopColor="var(--cinema-gold)" stopOpacity={0.1} />
+                      <stop offset="95%" stopColor="var(--cinema-gold)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3e" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--cinema-border)" />
                   <XAxis dataKey="timeMidpoint" tickFormatter={formatTime} stroke="#666" fontSize={11} />
                   <YAxis domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={11} width={28} />
                   <YAxis yAxisId="right" orientation="right" domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={11} width={28} />
@@ -227,7 +227,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                       const data = payload[0].payload
                       if (!data.label) return null
                       return (
-                        <div className="bg-[#1a1a2e] border border-[#2a2a3e] rounded-lg px-3 py-2 shadow-xl">
+                        <div className="bg-cinema-card border border-cinema-border rounded-lg px-3 py-2 shadow-xl">
                           <div className="flex items-center gap-2">
                             <span
                               className="font-[family-name:var(--font-bebas)] text-xl"
@@ -242,12 +242,12 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                         </div>
                       )
                     }}
-                    cursor={{ stroke: '#C8A951', strokeOpacity: 0.3, strokeDasharray: '4 4' }}
+                    cursor={{ stroke: 'var(--cinema-gold)', strokeOpacity: 0.3, strokeDasharray: '4 4' }}
                   />
                   <Area
                     type="natural"
                     dataKey="score"
-                    stroke="#C8A951"
+                    stroke="var(--cinema-gold)"
                     strokeWidth={2.5}
                     fill="url(#heroGradient)"
                     isAnimationActive={false}
@@ -260,8 +260,8 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                           cx={cx}
                           cy={cy}
                           r={4}
-                          fill="#C8A951"
-                          stroke="#0D0D1A"
+                          fill="var(--cinema-gold)"
+                          stroke="var(--cinema-dark)"
                           strokeWidth={2}
                         />
                       )

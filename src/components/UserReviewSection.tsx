@@ -247,9 +247,9 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
                             : 'rgba(239,68,68,0.15)',
                       color:
                         myReview.status === 'approved'
-                          ? '#2DD4A8'
+                          ? 'var(--cinema-teal)'
                           : myReview.status === 'flagged'
-                            ? '#C8A951'
+                            ? 'var(--cinema-gold)'
                             : '#ef4444',
                     }}
                   >
@@ -260,11 +260,11 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
                     style={{
                       backgroundColor:
                         myReview.overallRating >= 8
-                          ? '#2DD4A8'
+                          ? 'var(--cinema-teal)'
                           : myReview.overallRating >= 6
-                            ? '#C8A951'
+                            ? 'var(--cinema-gold)'
                             : '#ef4444',
-                      color: '#1a1a2e',
+                      color: 'var(--cinema-card)',
                     }}
                   >
                     {myReview.overallRating.toFixed(1)}
@@ -285,7 +285,7 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
                       className="text-[10px] px-2 py-0.5 rounded-full border"
                       style={{
                         borderColor: score >= 8 ? '#2DD4A840' : score >= 6 ? '#C8A95140' : '#ef444440',
-                        color: score >= 8 ? '#2DD4A8' : score >= 6 ? '#C8A951' : '#ef4444',
+                        color: score >= 8 ? 'var(--cinema-teal)' : score >= 6 ? 'var(--cinema-gold)' : '#ef4444',
                       }}
                     >
                       {label}: {score.toFixed(1)}
@@ -316,8 +316,8 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
             </h3>
 
             {!hasGraph && (
-              <div className="bg-[#2DD4A8]/10 border border-[#2DD4A8]/20 rounded-lg p-3">
-                <span className="text-sm text-[#2DD4A8]">
+              <div className="bg-cinema-teal/10 border border-cinema-teal/20 rounded-lg p-3">
+                <span className="text-sm text-cinema-teal">
                   Help build this film&apos;s graph — your review helps create one
                 </span>
               </div>
@@ -375,7 +375,7 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
                               {beat.labelFull ?? beat.label}
                             </span>
                             {tag === 'peak' && (
-                              <span className="text-[10px] text-[#2DD4A8] mt-0.5 inline-block">
+                              <span className="text-[10px] text-cinema-teal mt-0.5 inline-block">
                                 ⬆ Peak moment
                               </span>
                             )}
@@ -434,9 +434,9 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
               disabled={submitting}
               className="w-full py-3 rounded-lg font-medium transition-all duration-200 disabled:opacity-50"
               style={{
-                backgroundColor: session ? '#C8A951' : 'transparent',
-                color: session ? '#1a1a2e' : '#C8A951',
-                border: session ? 'none' : '1px solid #C8A951',
+                backgroundColor: session ? 'var(--cinema-gold)' : 'transparent',
+                color: session ? 'var(--cinema-card)' : 'var(--cinema-gold)',
+                border: session ? 'none' : '1px solid var(--cinema-gold)',
               }}
             >
               {submitting
@@ -478,7 +478,7 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
                     className="h-full rounded-full transition-all duration-300"
                     style={{
                       width: `${(d.count / maxCount) * 100}%`,
-                      backgroundColor: d.score >= 8 ? '#2DD4A8' : d.score >= 6 ? '#C8A951' : '#ef4444',
+                      backgroundColor: d.score >= 8 ? 'var(--cinema-teal)' : d.score >= 6 ? 'var(--cinema-gold)' : '#ef4444',
                     }}
                   />
                 </div>
@@ -607,11 +607,11 @@ function ReviewCard({
             style={{
               backgroundColor:
                 review.overallRating >= 8
-                  ? '#2DD4A8'
+                  ? 'var(--cinema-teal)'
                   : review.overallRating >= 6
-                    ? '#C8A951'
+                    ? 'var(--cinema-gold)'
                     : '#ef4444',
-              color: '#1a1a2e',
+              color: 'var(--cinema-card)',
             }}
           >
             {review.overallRating.toFixed(1)}

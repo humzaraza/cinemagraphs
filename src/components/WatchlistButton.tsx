@@ -56,8 +56,8 @@ export default function WatchlistButton({ filmId, size = 'md', className = '' }:
         width={iconSize}
         height={iconSize}
         viewBox="0 0 24 24"
-        fill={inWatchlist ? '#C8A951' : 'none'}
-        stroke="#C8A951"
+        fill={inWatchlist ? 'var(--cinema-gold)' : 'none'}
+        stroke="var(--cinema-gold)"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
