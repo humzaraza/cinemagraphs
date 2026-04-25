@@ -65,6 +65,7 @@ const COLORS = {
   red: '#E05555',
   cream: '#F5F0E1',
   creamMuted: 'rgba(245,240,225,0.7)',
+  bodyText: '#F5F5F5',
   creamSubtle: 'rgba(245,240,225,0.5)',
   panelBg: 'rgba(13,13,26,0.25)',
   gradientTop: 'rgba(13,13,26,0.5)',
@@ -133,11 +134,11 @@ export function specFor(format: '4x5' | '9x16'): FormatSpec {
       graphZone: { x: gx, y: gy, w: gW, h: gH },
       panel: { x: gx - 20, y: gy - 20, w: gW + 40, h: gH + 40 },
       topTextY: 60,
-      bodyBottom: 220,
+      bodyBottom: 260,
       brandNameSize: 20,
       brandTaglineSize: 13,
       counterSize: 14,
-      bodySize: 24,
+      bodySize: 28,
       beatLabelSize: 28,
       pillSize: 22,
       headlineSize: 44,
@@ -157,11 +158,11 @@ export function specFor(format: '4x5' | '9x16'): FormatSpec {
     graphZone: { x: gx, y: gy, w: gW, h: gH },
     panel: { x: gx - 20, y: panelY, w: gW + 40, h: gH + 40 },
     topTextY: 120,
-    bodyBottom: 220,
+    bodyBottom: 280,
     brandNameSize: 24,
     brandTaglineSize: 15,
     counterSize: 16,
-    bodySize: 30,
+    bodySize: 35,
     beatLabelSize: 36,
     pillSize: 28,
     headlineSize: 56,
@@ -750,7 +751,7 @@ function bodyCopy(text: string, spec: FormatSpec): string {
   const xRight = spec.canvasW - 60
   const maxWidth = xRight - xLeft
   const fontSize = spec.bodySize
-  const lineHeight = fontSize * 1.5
+  const lineHeight = fontSize * 1.65
 
   const segments = parseBodyCopyTokens(text)
   const words = segmentsToColoredWords(segments)
@@ -794,7 +795,7 @@ function bodyCopy(text: string, spec: FormatSpec): string {
   })
 
   return (
-    `<text x="${xLeft}" y="${fmt(firstBaseline)}" fill="${COLORS.creamMuted}" font-family="DM Sans" font-size="${fontSize}" font-weight="400">` +
+    `<text x="${xLeft}" y="${fmt(firstBaseline)}" fill="${COLORS.bodyText}" font-family="DM Sans" font-size="${fontSize}" font-weight="400">` +
     parts.join('') +
     `</text>`
   )
