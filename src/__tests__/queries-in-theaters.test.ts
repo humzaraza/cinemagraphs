@@ -15,7 +15,10 @@ import { getInTheatersFilms } from '@/lib/queries'
 
 // ── Fixtures ───────────────────────────────────────────────────
 const NOW = new Date('2026-04-24T12:00:00.000Z')
-const PAST = new Date('2025-01-15T00:00:00.000Z')
+// PAST sits inside the 90-day recency window (60 days before NOW) so the
+// canonical "released, in theaters" gating tests don't accidentally collide
+// with the recency floor at 90 days.
+const PAST = new Date(NOW.getTime() - 60 * 86400000)
 const FUTURE = new Date('2026-12-25T00:00:00.000Z')
 
 type FilmFixture = {
@@ -51,7 +54,7 @@ function makeFilm(overrides: Partial<FilmFixture>): FilmFixture {
 type ScalarFilter<T> = T | { not?: T }
 type WhereArg = {
   status?: 'ACTIVE' | 'ARCHIVED'
-  releaseDate?: { not?: null; lte?: Date }
+  releaseDate?: { not?: null; lte?: Date; gte?: Date }
   nowPlaying?: boolean
   nowPlayingOverride?: ScalarFilter<string | null>
   NOT?: WhereArg
@@ -72,6 +75,12 @@ function matchesWhere(f: FilmFixture, where: WhereArg): boolean {
     if (
       where.releaseDate.lte &&
       (f.releaseDate === null || f.releaseDate > where.releaseDate.lte)
+    ) {
+      return false
+    }
+    if (
+      where.releaseDate.gte &&
+      (f.releaseDate === null || f.releaseDate < where.releaseDate.gte)
     ) {
       return false
     }
@@ -260,5 +269,58 @@ describe('getInTheatersFilms gating', () => {
     expect(result).toHaveLength(20)
     // Most recent releases first
     expect(result[0].id).toBe('f0')
+  })
+
+  // ── Recency gate (90-day floor): keeps anniversary re-releases out ──
+  // Even when TMDB's /movie/now_playing surfaces them, films whose stored
+  // releaseDate is the *original* theatrical release from months/years back
+  // should be excluded. Boundary is inclusive at exactly 90 days.
+
+  it('(h) excludes a film whose releaseDate is 6 months ago even when nowPlaying=true and sparkline non-empty', async () => {
+    setup([
+      makeFilm({
+        id: 'oldRerelease',
+        nowPlaying: true,
+        releaseDate: new Date(NOW.getTime() - 180 * 86400000),
+      }),
+    ])
+    const result = await getInTheatersFilms()
+    expect(result).toEqual([])
+  })
+
+  it('(i) includes a film whose releaseDate is 30 days ago when nowPlaying=true and sparkline non-empty', async () => {
+    setup([
+      makeFilm({
+        id: 'recent',
+        nowPlaying: true,
+        releaseDate: new Date(NOW.getTime() - 30 * 86400000),
+      }),
+    ])
+    const result = await getInTheatersFilms()
+    expect(result.map((f) => f.id)).toEqual(['recent'])
+  })
+
+  it('(j) recency boundary: 89 days ago is INCLUDED', async () => {
+    setup([
+      makeFilm({
+        id: 'edgeIn',
+        nowPlaying: true,
+        releaseDate: new Date(NOW.getTime() - 89 * 86400000),
+      }),
+    ])
+    const result = await getInTheatersFilms()
+    expect(result.map((f) => f.id)).toEqual(['edgeIn'])
+  })
+
+  it('(k) recency boundary: 91 days ago is EXCLUDED', async () => {
+    setup([
+      makeFilm({
+        id: 'edgeOut',
+        nowPlaying: true,
+        releaseDate: new Date(NOW.getTime() - 91 * 86400000),
+      }),
+    ])
+    const result = await getInTheatersFilms()
+    expect(result).toEqual([])
   })
 })

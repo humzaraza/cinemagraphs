@@ -14,8 +14,14 @@ import { prisma } from './prisma'
  *
  * On top of either branch, ALL of these must also hold:
  *   - status === 'ACTIVE'
- *   - releaseDate IS NOT NULL AND releaseDate <= now (pre-release
- *     films never render, even when force_show is set)
+ *   - releaseDate IS NOT NULL AND releaseDate <= now AND
+ *     releaseDate >= (now - IN_THEATERS_RECENCY_DAYS days).
+ *     Films released within the last 90 days only — excludes
+ *     anniversary re-releases and stale TMDB now_playing entries
+ *     (e.g. Bridesmaids 2011, Speed Racer 2008) that would otherwise
+ *     bleed onto the homepage with their original release dates.
+ *     Pre-release films also never render, even when force_show is
+ *     set.
  *   - SentimentGraph relation exists AND its dataPoints array is
  *     non-empty (no blank-sparkline cards)
  *
@@ -33,12 +39,16 @@ import { prisma } from './prisma'
  * (`take: 40`) and `.slice(0, 20)` after filtering so the final list
  * hits the expected 20-row cap.
  */
+export const IN_THEATERS_RECENCY_DAYS = 90
+const MS_PER_DAY = 24 * 60 * 60 * 1000
+
 export async function getInTheatersFilms() {
   const now = new Date()
+  const recencyFloor = new Date(now.getTime() - IN_THEATERS_RECENCY_DAYS * MS_PER_DAY)
   const films = await prisma.film.findMany({
     where: {
       status: 'ACTIVE',
-      releaseDate: { not: null, lte: now },
+      releaseDate: { not: null, lte: now, gte: recencyFloor },
       sentimentGraph: { isNot: null },
       OR: [
         { nowPlayingOverride: 'force_show' },
