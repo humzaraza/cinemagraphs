@@ -149,7 +149,7 @@ export default function EditProfileModal({
               ) : (
                 <div
                   className="w-full h-full flex items-center justify-center text-2xl font-bold"
-                  style={{ background: 'linear-gradient(135deg, #C8A951, #a08530)', color: '#0D0D1A' }}
+                  style={{ background: 'linear-gradient(135deg, var(--cinema-gold), #a08530)', color: 'var(--cinema-dark)' }}
                 >
                   {(name || 'U')[0].toUpperCase()}
                 </div>

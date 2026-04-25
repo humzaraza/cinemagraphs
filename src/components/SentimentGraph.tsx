@@ -50,8 +50,8 @@ function formatTime(minutes: number): string {
 }
 
 function scoreColor(score: number): string {
-  if (score >= 8) return '#2DD4A8'
-  if (score >= 6) return '#C8A951'
+  if (score >= 8) return 'var(--cinema-teal)'
+  if (score >= 6) return 'var(--cinema-gold)'
   return '#ef4444'
 }
 
@@ -122,7 +122,7 @@ function CustomTooltip({
   const view = graphView ?? 'critics'
 
   return (
-    <div className="bg-[#1a1a2e] border border-[#2a2a3e] rounded-lg p-3 max-w-xs shadow-xl">
+    <div className="bg-cinema-card border border-cinema-border rounded-lg p-3 max-w-xs shadow-xl">
       {showSpoilers && data.label && (
         <span className="text-cinema-cream font-semibold text-sm block mb-1.5">
           {data.labelFull ?? data.label}
@@ -132,7 +132,7 @@ function CustomTooltip({
       {/* Critics score */}
       {(view === 'critics' || view === 'both') && (
         <div className="flex items-center gap-2 mb-1">
-          <span className="w-3 h-[2px] rounded bg-[#C8A951] inline-block" />
+          <span className="w-3 h-[2px] rounded bg-cinema-gold inline-block" />
           <span className="text-xs text-cinema-muted">Critics:</span>
           <span
             className="font-[family-name:var(--font-bebas)] text-lg"
@@ -146,9 +146,9 @@ function CustomTooltip({
       {/* Audience score */}
       {(view === 'audience' || view === 'both') && data.userScore != null && (
         <div className="flex items-center gap-2 mb-1">
-          <span className="w-3 h-[2px] rounded bg-[#2DD4A8] inline-block" />
+          <span className="w-3 h-[2px] rounded bg-cinema-teal inline-block" />
           <span className="text-xs text-cinema-muted">Audience:</span>
-          <span className="font-[family-name:var(--font-bebas)] text-lg text-[#2DD4A8]">
+          <span className="font-[family-name:var(--font-bebas)] text-lg text-cinema-teal">
             {data.userScore.toFixed(1)}
           </span>
         </div>
@@ -182,7 +182,7 @@ function CustomTooltip({
             className="w-2 h-2 rounded-full"
             style={{
               backgroundColor:
-                data.confidence === 'high' ? '#2DD4A8' : data.confidence === 'medium' ? '#C8A951' : '#666',
+                data.confidence === 'high' ? 'var(--cinema-teal)' : data.confidence === 'medium' ? 'var(--cinema-gold)' : '#666',
             }}
           />
           <span className="text-xs text-cinema-muted capitalize">{data.confidence} confidence</span>
@@ -390,9 +390,9 @@ export default function SentimentGraph({
 
   // ── Toggle options ──
   const toggleOptions: { value: GraphView; label: string; disabled: boolean; color: string }[] = [
-    { value: 'critics', label: 'Critics', disabled: false, color: '#C8A951' },
-    { value: 'audience', label: 'Audience', disabled: !hasAudienceData, color: '#2DD4A8' },
-    { value: 'both', label: 'Both', disabled: !hasAudienceData, color: '#C8A951' },
+    { value: 'critics', label: 'Critics', disabled: false, color: 'var(--cinema-gold)' },
+    { value: 'audience', label: 'Audience', disabled: !hasAudienceData, color: 'var(--cinema-teal)' },
+    { value: 'both', label: 'Both', disabled: !hasAudienceData, color: 'var(--cinema-gold)' },
     { value: 'merged', label: 'Merged', disabled: !hasAudienceData, color: '#F5F0E8' },
   ]
 
@@ -418,7 +418,7 @@ export default function SentimentGraph({
                 <span className="text-xs text-cinema-muted">Critics</span>
                 <span
                   className="font-[family-name:var(--font-bebas)] text-3xl"
-                  style={{ color: '#C8A951' }}
+                  style={{ color: 'var(--cinema-gold)' }}
                 >
                   {overallScore.toFixed(1)}
                 </span>
@@ -428,7 +428,7 @@ export default function SentimentGraph({
                   <span className="text-xs text-cinema-muted">Audience</span>
                   <span
                     className="font-[family-name:var(--font-bebas)] text-3xl"
-                    style={{ color: '#2DD4A8' }}
+                    style={{ color: 'var(--cinema-teal)' }}
                   >
                     {audienceOverall.toFixed(1)}
                   </span>
@@ -445,9 +445,9 @@ export default function SentimentGraph({
               <span
                 className="font-[family-name:var(--font-bebas)] text-3xl"
                 style={{
-                  color: graphView === 'audience' && hasAudienceData ? '#2DD4A8'
+                  color: graphView === 'audience' && hasAudienceData ? 'var(--cinema-teal)'
                     : graphView === 'merged' && hasAudienceData ? '#F5F0E1'
-                    : '#C8A951',
+                    : 'var(--cinema-gold)',
                 }}
               >
                 {graphView === 'audience' && hasAudienceData && audienceOverall != null
@@ -525,20 +525,20 @@ export default function SentimentGraph({
           <AreaChart data={chartData} margin={{ top: 10, right: isMobile ? 25 : 35, left: isMobile ? 5 : 10, bottom: 30 }}>
             <defs>
               <linearGradient id="sentimentGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#C8A951" stopOpacity={0.3} />
-                <stop offset="50%" stopColor="#C8A951" stopOpacity={0.1} />
-                <stop offset="95%" stopColor="#C8A951" stopOpacity={0} />
+                <stop offset="5%" stopColor="var(--cinema-gold)" stopOpacity={0.3} />
+                <stop offset="50%" stopColor="var(--cinema-gold)" stopOpacity={0.1} />
+                <stop offset="95%" stopColor="var(--cinema-gold)" stopOpacity={0} />
               </linearGradient>
               <linearGradient id="userGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#2DD4A8" stopOpacity={0.2} />
-                <stop offset="95%" stopColor="#2DD4A8" stopOpacity={0} />
+                <stop offset="5%" stopColor="var(--cinema-teal)" stopOpacity={0.2} />
+                <stop offset="95%" stopColor="var(--cinema-teal)" stopOpacity={0} />
               </linearGradient>
               <linearGradient id="mergedGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#F5F0E8" stopOpacity={0.15} />
                 <stop offset="95%" stopColor="#F5F0E8" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3e" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--cinema-border)" />
             <XAxis
               dataKey="timeMidpoint"
               tickFormatter={formatTime}
@@ -589,7 +589,7 @@ export default function SentimentGraph({
 
             <Tooltip
               content={<CustomTooltip spoilersRevealed={spoilersRevealed} graphView={graphView} />}
-              cursor={{ stroke: '#C8A951', strokeOpacity: 0.3, strokeDasharray: '4 4' }}
+              cursor={{ stroke: 'var(--cinema-gold)', strokeOpacity: 0.3, strokeDasharray: '4 4' }}
             />
 
             {/* Neutral reference line */}
@@ -600,7 +600,7 @@ export default function SentimentGraph({
               <Area
                 type="monotone"
                 dataKey="score"
-                stroke="#C8A951"
+                stroke="var(--cinema-gold)"
                 strokeWidth={2.5}
                 fill="url(#sentimentGradient)"
                 isAnimationActive={false}
@@ -646,7 +646,7 @@ export default function SentimentGraph({
                         cy={cy}
                         r={r}
                         fill={color}
-                        stroke={isHighlighted ? '#fff' : '#1a1a2e'}
+                        stroke={isHighlighted ? '#fff' : 'var(--cinema-card)'}
                         strokeWidth={isHighlighted ? 3 : 2}
                         style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
                       />
@@ -666,7 +666,7 @@ export default function SentimentGraph({
                       cy={cy}
                       r={r}
                       fill={color}
-                      stroke="#F0E6D3"
+                      stroke="var(--cinema-cream)"
                       strokeWidth={2}
                       style={{ cursor: 'pointer' }}
                     />
@@ -681,8 +681,8 @@ export default function SentimentGraph({
                 x={peakMoment.time}
                 y={peakMoment.score}
                 r={8}
-                fill="#2DD4A8"
-                stroke="#F0E6D3"
+                fill="var(--cinema-teal)"
+                stroke="var(--cinema-cream)"
                 strokeWidth={2}
               />
             )}
@@ -694,7 +694,7 @@ export default function SentimentGraph({
                 y={lowestMoment.score}
                 r={8}
                 fill="#ef4444"
-                stroke="#F0E6D3"
+                stroke="var(--cinema-cream)"
                 strokeWidth={2}
               />
             )}
@@ -704,7 +704,7 @@ export default function SentimentGraph({
               <Area
                 type="monotone"
                 dataKey="userScore"
-                stroke="#2DD4A8"
+                stroke="var(--cinema-teal)"
                 strokeWidth={2}
                 fill="url(#userGradient)"
                 isAnimationActive={false}
@@ -718,8 +718,8 @@ export default function SentimentGraph({
                       cx={cx}
                       cy={cy}
                       r={4}
-                      fill="#2DD4A8"
-                      stroke="#1a1a2e"
+                      fill="var(--cinema-teal)"
+                      stroke="var(--cinema-card)"
                       strokeWidth={1.5}
                     />
                   )
@@ -733,8 +733,8 @@ export default function SentimentGraph({
                       cx={cx}
                       cy={cy}
                       r={6}
-                      fill="#2DD4A8"
-                      stroke="#F0E6D3"
+                      fill="var(--cinema-teal)"
+                      stroke="var(--cinema-cream)"
                       strokeWidth={2}
                     />
                   )
@@ -762,7 +762,7 @@ export default function SentimentGraph({
                       cy={cy}
                       r={5}
                       fill="#F5F0E8"
-                      stroke="#1a1a2e"
+                      stroke="var(--cinema-card)"
                       strokeWidth={1.5}
                     />
                   )
@@ -777,7 +777,7 @@ export default function SentimentGraph({
                       cy={cy}
                       r={7}
                       fill="#F5F0E8"
-                      stroke="#1a1a2e"
+                      stroke="var(--cinema-card)"
                       strokeWidth={2}
                     />
                   )
@@ -802,17 +802,17 @@ export default function SentimentGraph({
               onClick={toggleSpoilers}
               className="inline-flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-md border text-xs md:text-sm font-medium transition-all duration-200"
               style={{
-                borderColor: '#C8A951',
-                color: spoilersRevealed ? '#1a1a2e' : '#C8A951',
-                backgroundColor: spoilersRevealed ? '#C8A951' : 'transparent',
+                borderColor: 'var(--cinema-gold)',
+                color: spoilersRevealed ? 'var(--cinema-card)' : 'var(--cinema-gold)',
+                backgroundColor: spoilersRevealed ? 'var(--cinema-gold)' : 'transparent',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#C8A951'
-                e.currentTarget.style.color = '#1a1a2e'
+                e.currentTarget.style.backgroundColor = 'var(--cinema-gold)'
+                e.currentTarget.style.color = 'var(--cinema-card)'
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = spoilersRevealed ? '#C8A951' : 'transparent'
-                e.currentTarget.style.color = spoilersRevealed ? '#1a1a2e' : '#C8A951'
+                e.currentTarget.style.backgroundColor = spoilersRevealed ? 'var(--cinema-gold)' : 'transparent'
+                e.currentTarget.style.color = spoilersRevealed ? 'var(--cinema-card)' : 'var(--cinema-gold)'
               }}
             >
               {spoilersRevealed ? (
@@ -863,7 +863,7 @@ export default function SentimentGraph({
                   className="text-[10px] px-2 py-0.5 rounded-full border transition-all duration-200 flex-shrink-0 md:flex-shrink whitespace-normal"
                   title={dp.labelFull ?? dp.label}
                   style={{
-                    color: isActive ? '#1a1a2e' : color,
+                    color: isActive ? 'var(--cinema-card)' : color,
                     borderColor: isActive ? color : color + '40',
                     backgroundColor: isActive ? color : color + '10',
                     transform: isActive ? 'scale(1.1)' : 'scale(1)',
@@ -891,13 +891,13 @@ export default function SentimentGraph({
             {/* Line labels — only for visible lines */}
             {showCritics && (
               <div className="flex items-center gap-1.5">
-                <span className="w-5 h-[2px] rounded bg-[#C8A951] inline-block" />
+                <span className="w-5 h-[2px] rounded bg-cinema-gold inline-block" />
                 <span>Critics</span>
               </div>
             )}
             {showAudience && (
               <div className="flex items-center gap-1.5">
-                <span className="w-5 h-[2px] rounded bg-[#2DD4A8] inline-block" />
+                <span className="w-5 h-[2px] rounded bg-cinema-teal inline-block" />
                 <span>Audience</span>
               </div>
             )}
@@ -910,7 +910,7 @@ export default function SentimentGraph({
             <span className="text-cinema-muted/40">|</span>
             {/* Score color key */}
             <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-[#2DD4A8]" />
+              <span className="w-3 h-3 rounded-full bg-cinema-teal" />
               <span>8+ Great</span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -943,14 +943,14 @@ export default function SentimentGraph({
         {/* Peak moment card */}
         {peakMoment && (
           <div
-            className="bg-cinema-darker rounded-lg border border-[#2DD4A8]/20 p-4 transition-all duration-300"
+            className="bg-cinema-darker rounded-lg border border-cinema-teal/20 p-4 transition-all duration-300"
             style={{
               filter: spoilersRevealed ? 'none' : 'blur(6px)',
               opacity: spoilersRevealed ? 1 : 0.6,
             }}
           >
             <div className="flex items-center gap-2 mb-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#2DD4A8]" />
+              <span className="w-2.5 h-2.5 rounded-full bg-cinema-teal" />
               <span className="text-xs text-cinema-muted uppercase tracking-wider">Peak Moment</span>
             </div>
             <p
@@ -960,7 +960,7 @@ export default function SentimentGraph({
               {peakMoment.labelFull ?? peakMoment.label}
             </p>
             <div className="flex items-baseline gap-2">
-              <span className="font-[family-name:var(--font-bebas)] text-2xl text-[#2DD4A8]">
+              <span className="font-[family-name:var(--font-bebas)] text-2xl text-cinema-teal">
                 {peakMoment.score.toFixed(1)}
               </span>
               <span className="text-xs text-cinema-muted">at {formatTime(peakMoment.time)}</span>

@@ -25,7 +25,7 @@ export default function FilmCommunityTabs({ filmId, hasGraph, beats, beatSource,
         <button
           className="px-6 py-3 text-sm font-medium transition-all duration-200 relative"
           style={{
-            color: '#C8A951',
+            color: 'var(--cinema-gold)',
           }}
         >
           Write a Review

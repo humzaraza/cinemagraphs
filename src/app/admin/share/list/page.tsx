@@ -284,7 +284,7 @@ export default function ShareListPage() {
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="Christopher Nolan"
-                  className="w-full bg-[#1a1a2e] border border-[#333] rounded-lg px-3 py-2 text-sm text-cinema-cream placeholder:text-cinema-muted/40 focus:outline-none focus:border-cinema-gold/50"
+                  className="w-full bg-cinema-card border border-[#333] rounded-lg px-3 py-2 text-sm text-cinema-cream placeholder:text-cinema-muted/40 focus:outline-none focus:border-cinema-gold/50"
                 />
               </div>
               <div>
@@ -294,7 +294,7 @@ export default function ShareListPage() {
                   value={subtitle}
                   onChange={(e) => setSubtitle(e.target.value)}
                   placeholder="Every film ranked by emotional arc"
-                  className="w-full bg-[#1a1a2e] border border-[#333] rounded-lg px-3 py-2 text-sm text-cinema-cream placeholder:text-cinema-muted/40 focus:outline-none focus:border-cinema-gold/50"
+                  className="w-full bg-cinema-card border border-[#333] rounded-lg px-3 py-2 text-sm text-cinema-cream placeholder:text-cinema-muted/40 focus:outline-none focus:border-cinema-gold/50"
                 />
               </div>
             </div>
@@ -330,10 +330,10 @@ export default function ShareListPage() {
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search films..."
                 disabled={films.length >= 15}
-                className="w-full bg-[#1a1a2e] border border-[#333] rounded-lg px-3 py-2 text-sm text-cinema-cream placeholder:text-cinema-muted/40 focus:outline-none focus:border-cinema-gold/50 disabled:opacity-40"
+                className="w-full bg-cinema-card border border-[#333] rounded-lg px-3 py-2 text-sm text-cinema-cream placeholder:text-cinema-muted/40 focus:outline-none focus:border-cinema-gold/50 disabled:opacity-40"
               />
               {results.length > 0 && (
-                <div className="absolute z-20 top-full mt-1 w-full bg-[#1a1a2e] border border-[#333] rounded-lg max-h-64 overflow-y-auto shadow-xl">
+                <div className="absolute z-20 top-full mt-1 w-full bg-cinema-card border border-[#333] rounded-lg max-h-64 overflow-y-auto shadow-xl">
                   {results
                     .filter((r) => !films.some((f) => f.id === r.id))
                     .map((film) => (
@@ -409,7 +409,7 @@ export default function ShareListPage() {
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-grab active:cursor-grabbing transition-all ${
                       dragOverIndex === i
                         ? 'border-cinema-gold/50 bg-cinema-gold/5'
-                        : 'border-[#333] bg-[#1a1a2e]'
+                        : 'border-[#333] bg-cinema-card'
                     } ${dragIndex === i ? 'opacity-40' : ''}`}
                   >
                     <span className="text-sm font-bold text-cinema-gold w-6 text-center flex-shrink-0">
@@ -512,7 +512,7 @@ export default function ShareListPage() {
                 </button>
               </div>
             ) : (
-              <div className={`rounded-lg border border-[#333] bg-[#1a1a2e] flex items-center justify-center text-cinema-muted/40 text-sm ${
+              <div className={`rounded-lg border border-[#333] bg-cinema-card flex items-center justify-center text-cinema-muted/40 text-sm ${
                 ratio === '16:9' ? 'aspect-[16/9]' : ratio === '1:1' ? 'aspect-square' : ratio === '4:5' ? 'aspect-[4/5]' : 'aspect-[9/16]'
               }`}>
                 {generating ? 'Generating poster...' : 'Poster preview will appear here'}

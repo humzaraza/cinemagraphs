@@ -86,7 +86,7 @@ export function ListSparkline({ scores, runtime, width = 200, height = 62 }: Pro
           <path
             d={pathD}
             fill="none"
-            stroke="#C8A951"
+            stroke="var(--cinema-gold)"
             strokeWidth={1.5}
             strokeLinecap="round"
             strokeLinejoin="round"

@@ -14,16 +14,16 @@ function GoldLineGraph() {
     <svg viewBox="0 0 280 80" className="w-full h-auto" aria-hidden="true">
       <defs>
         <linearGradient id="aboutGoldFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#C8A951" stopOpacity={0.25} />
-          <stop offset="100%" stopColor="#C8A951" stopOpacity={0} />
+          <stop offset="0%" stopColor="var(--cinema-gold)" stopOpacity={0.25} />
+          <stop offset="100%" stopColor="var(--cinema-gold)" stopOpacity={0} />
         </linearGradient>
       </defs>
-      <path d="M0,60 Q30,55 60,42 T120,30 T180,22 T240,35 T280,28" fill="none" stroke="#C8A951" strokeWidth="2.5" />
+      <path d="M0,60 Q30,55 60,42 T120,30 T180,22 T240,35 T280,28" fill="none" stroke="var(--cinema-gold)" strokeWidth="2.5" />
       <path d="M0,60 Q30,55 60,42 T120,30 T180,22 T240,35 T280,28 V80 H0 Z" fill="url(#aboutGoldFill)" />
       {/* grid lines */}
-      <line x1="0" y1="20" x2="280" y2="20" stroke="#2a2a3e" strokeWidth="0.5" />
-      <line x1="0" y1="40" x2="280" y2="40" stroke="#2a2a3e" strokeWidth="0.5" />
-      <line x1="0" y1="60" x2="280" y2="60" stroke="#2a2a3e" strokeWidth="0.5" />
+      <line x1="0" y1="20" x2="280" y2="20" stroke="var(--cinema-border)" strokeWidth="0.5" />
+      <line x1="0" y1="40" x2="280" y2="40" stroke="var(--cinema-border)" strokeWidth="0.5" />
+      <line x1="0" y1="60" x2="280" y2="60" stroke="var(--cinema-border)" strokeWidth="0.5" />
     </svg>
   )
 }
@@ -31,10 +31,10 @@ function GoldLineGraph() {
 function TealDashedGraph() {
   return (
     <svg viewBox="0 0 280 80" className="w-full h-auto" aria-hidden="true">
-      <line x1="0" y1="20" x2="280" y2="20" stroke="#2a2a3e" strokeWidth="0.5" />
-      <line x1="0" y1="40" x2="280" y2="40" stroke="#2a2a3e" strokeWidth="0.5" />
-      <line x1="0" y1="60" x2="280" y2="60" stroke="#2a2a3e" strokeWidth="0.5" />
-      <path d="M0,50 Q40,45 80,35 T160,28 T240,32 T280,24" fill="none" stroke="#2DD4A8" strokeWidth="2" strokeDasharray="6 4" />
+      <line x1="0" y1="20" x2="280" y2="20" stroke="var(--cinema-border)" strokeWidth="0.5" />
+      <line x1="0" y1="40" x2="280" y2="40" stroke="var(--cinema-border)" strokeWidth="0.5" />
+      <line x1="0" y1="60" x2="280" y2="60" stroke="var(--cinema-border)" strokeWidth="0.5" />
+      <path d="M0,50 Q40,45 80,35 T160,28 T240,32 T280,24" fill="none" stroke="var(--cinema-teal)" strokeWidth="2" strokeDasharray="6 4" />
     </svg>
   )
 }
@@ -182,7 +182,7 @@ export default function AboutPage() {
                       className="h-full rounded-full"
                       style={{
                         width: `${[65, 80, 72][i]}%`,
-                        backgroundColor: '#2DD4A8',
+                        backgroundColor: 'var(--cinema-teal)',
                         opacity: 0.6,
                       }}
                     />
@@ -247,13 +247,13 @@ export default function AboutPage() {
             <div className="flex-1 rounded-lg bg-cinema-dark/60 border border-cinema-border/50 p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs md:text-sm font-semibold text-cinema-cream truncate mr-2">Reminders of Him</span>
-                <span className="font-[family-name:var(--font-bebas)] text-lg" style={{ color: '#C8A951' }}>7.3</span>
+                <span className="font-[family-name:var(--font-bebas)] text-lg" style={{ color: 'var(--cinema-gold)' }}>7.3</span>
               </div>
               <svg viewBox="0 0 120 32" className="w-full h-8 mb-2" aria-hidden="true">
-                <path d="M0,16 L15,17 L30,15 L45,16 L60,16 L75,15 L90,16 L105,15 L120,16" fill="none" stroke="#C8A951" strokeWidth="1.5" />
-                <path d="M0,16 L15,17 L30,15 L45,16 L60,16 L75,15 L90,16 L105,15 L120,16 V32 H0 Z" fill="#C8A951" fillOpacity="0.08" />
+                <path d="M0,16 L15,17 L30,15 L45,16 L60,16 L75,15 L90,16 L105,15 L120,16" fill="none" stroke="var(--cinema-gold)" strokeWidth="1.5" />
+                <path d="M0,16 L15,17 L30,15 L45,16 L60,16 L75,15 L90,16 L105,15 L120,16 V32 H0 Z" fill="var(--cinema-gold)" fillOpacity="0.08" />
               </svg>
-              <span className="text-xs font-semibold" style={{ color: '#C8A951' }}>&mdash;</span>
+              <span className="text-xs font-semibold" style={{ color: 'var(--cinema-gold)' }}>&mdash;</span>
             </div>
           </div>
         </div>
@@ -299,8 +299,8 @@ export default function AboutPage() {
         </p>
         <div className="space-y-3">
           {[
-            { range: '9 - 10', color: '#2DD4A8', label: 'Exceptional', desc: 'Near-universal acclaim across the full runtime.' },
-            { range: '7 - 8.9', color: '#C8A951', label: 'Great', desc: 'Strong positive sentiment with minor dips.' },
+            { range: '9 - 10', color: 'var(--cinema-teal)', label: 'Exceptional', desc: 'Near-universal acclaim across the full runtime.' },
+            { range: '7 - 8.9', color: 'var(--cinema-gold)', label: 'Great', desc: 'Strong positive sentiment with minor dips.' },
             { range: '5 - 6.9', color: 'rgba(255,255,255,0.5)', label: 'Mixed', desc: 'Significant highs and lows, or consistently average.' },
             { range: 'Below 5', color: '#ef4444', label: 'Poor', desc: 'Predominantly negative sentiment throughout.' },
           ].map((tier) => (

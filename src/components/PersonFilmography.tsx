@@ -75,7 +75,7 @@ function Sparkline({
 }
 
 function scoreColor(score: number): string {
-  if (score >= 8) return 'text-[#2DD4A8]'
+  if (score >= 8) return 'text-cinema-teal'
   if (score >= 6) return 'text-cinema-gold'
   return 'text-red-500'
 }
@@ -184,7 +184,7 @@ export function PersonFilmography({ filmography }: { filmography: FilmEntry[] })
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {directed.map((film) => (
-              <FilmCard key={`dir-${film.filmId}`} film={film} sparkColor="#C8A951" />
+              <FilmCard key={`dir-${film.filmId}`} film={film} sparkColor="var(--cinema-gold)" />
             ))}
           </div>
         </div>
@@ -193,11 +193,11 @@ export function PersonFilmography({ filmography }: { filmography: FilmEntry[] })
       {actedIn.length > 0 && (
         <div className={sectionCount > 1 ? 'mb-6' : ''}>
           {sectionCount > 1 && (
-            <h3 className="text-sm font-semibold text-[#2DD4A8] uppercase tracking-wider mb-3">Acted In</h3>
+            <h3 className="text-sm font-semibold text-cinema-teal uppercase tracking-wider mb-3">Acted In</h3>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {actedIn.map((film) => (
-              <FilmCard key={`act-${film.filmId}`} film={film} sparkColor="#2DD4A8" />
+              <FilmCard key={`act-${film.filmId}`} film={film} sparkColor="var(--cinema-teal)" />
             ))}
           </div>
         </div>

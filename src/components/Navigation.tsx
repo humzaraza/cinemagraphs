@@ -53,7 +53,7 @@ export default function Navigation() {
               className="md:hidden flex items-center justify-center w-10 h-10"
               aria-label="Open menu"
             >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#C8A951" strokeWidth="2" strokeLinecap="round">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--cinema-gold)" strokeWidth="2" strokeLinecap="round">
                 <line x1="3" y1="6" x2="21" y2="6" />
                 <line x1="3" y1="12" x2="21" y2="12" />
                 <line x1="3" y1="18" x2="21" y2="18" />
@@ -118,7 +118,7 @@ export default function Navigation() {
         className={`fixed top-0 right-0 bottom-0 z-[70] md:hidden w-72 flex flex-col transition-transform duration-250 ease-out ${
           drawerOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
-        style={{ backgroundColor: '#0D0D1A' }}
+        style={{ backgroundColor: 'var(--cinema-dark)' }}
       >
         {/* Drawer header */}
         <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'rgba(200,169,110,0.15)' }}>
@@ -130,7 +130,7 @@ export default function Navigation() {
             >
               <div
                 className="flex items-center justify-center rounded-full font-semibold text-sm"
-                style={{ width: 36, height: 36, backgroundColor: '#C8A951', color: '#0D0D1A' }}
+                style={{ width: 36, height: 36, backgroundColor: 'var(--cinema-gold)', color: 'var(--cinema-dark)' }}
               >
                 {(session.user?.name || session.user?.email || '?').charAt(0).toUpperCase()}
               </div>
@@ -153,7 +153,7 @@ export default function Navigation() {
             className="flex items-center justify-center w-8 h-8"
             aria-label="Close menu"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#C8A951" strokeWidth="2" strokeLinecap="round">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--cinema-gold)" strokeWidth="2" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>

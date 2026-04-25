@@ -231,8 +231,8 @@ export default function ProfilePage() {
           <div
             className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold"
             style={{
-              background: 'linear-gradient(135deg, #C8A951, #a08530)',
-              color: '#0D0D1A',
+              background: 'linear-gradient(135deg, var(--cinema-gold), #a08530)',
+              color: 'var(--cinema-dark)',
             }}
           >
             {initial}
@@ -442,7 +442,7 @@ function ListsTabContent({
               onClick={onNewList}
               className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-md transition-colors border hover:bg-cinema-gold/10"
               style={{
-                color: '#C8A951',
+                color: 'var(--cinema-gold)',
                 borderColor: 'rgba(200,169,81,0.4)',
               }}
             >
@@ -462,7 +462,7 @@ function ListsTabContent({
               background: 'rgba(245,240,225,0.02)',
             }}
           >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C8A951" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--cinema-gold)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="7" height="7" rx="1" />
               <rect x="14" y="3" width="7" height="7" rx="1" />
               <rect x="3" y="14" width="7" height="7" rx="1" />
@@ -482,7 +482,7 @@ function ListsTabContent({
               onClick={onNewList}
               className="flex items-center gap-1.5 text-xs font-semibold px-4 py-2.5 rounded-md transition-colors"
               style={{
-                color: '#C8A951',
+                color: 'var(--cinema-gold)',
                 border: '1px solid rgba(200,169,81,0.4)',
                 background: 'rgba(200,169,81,0.08)',
               }}
@@ -510,7 +510,7 @@ function ListsTabContent({
             onClick={onNewList}
             className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-md transition-colors hover:bg-cinema-gold/10"
             style={{
-              color: '#C8A951',
+              color: 'var(--cinema-gold)',
               border: '1px solid rgba(200,169,81,0.4)',
             }}
           >
@@ -589,7 +589,7 @@ function ListCard({ list }: { list: ListCardData }) {
             className="uppercase px-1.5 py-0.5 rounded font-semibold tracking-wide"
             style={{
               fontSize: '9px',
-              color: list.isPublic ? '#2DD4A8' : 'rgba(245,240,225,0.45)',
+              color: list.isPublic ? 'var(--cinema-teal)' : 'rgba(245,240,225,0.45)',
               border: list.isPublic ? '1px solid rgba(45,212,168,0.35)' : '1px solid rgba(245,240,225,0.12)',
             }}
           >
@@ -604,7 +604,7 @@ function ListCard({ list }: { list: ListCardData }) {
             className="inline-block px-2 py-0.5 rounded-full font-semibold"
             style={{
               fontSize: '10px',
-              color: '#C8A951',
+              color: 'var(--cinema-gold)',
               background: 'rgba(200,169,81,0.12)',
               border: '1px solid rgba(200,169,81,0.25)',
             }}
@@ -715,7 +715,7 @@ function ReviewCard({
   onShare: () => void
 }) {
   const { film } = review
-  const ratingColor = review.overallRating >= 7 ? '#C8A951' : '#ef4444'
+  const ratingColor = review.overallRating >= 7 ? 'var(--cinema-gold)' : '#ef4444'
   const hasBeatRatings = review.beatRatings !== null
 
   return (
@@ -784,7 +784,7 @@ function ReviewCard({
             {hasBeatRatings && (
               <span
                 className="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase"
-                style={{ backgroundColor: 'rgba(200,169,81,0.2)', color: '#C8A951' }}
+                style={{ backgroundColor: 'rgba(200,169,81,0.2)', color: 'var(--cinema-gold)' }}
               >
                 Graphed
               </span>
@@ -792,7 +792,7 @@ function ReviewCard({
             {!hasBeatRatings && review.combinedText && (
               <span
                 className="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase"
-                style={{ backgroundColor: 'rgba(45,212,168,0.2)', color: '#2DD4A8' }}
+                style={{ backgroundColor: 'rgba(45,212,168,0.2)', color: 'var(--cinema-teal)' }}
               >
                 Reviewed
               </span>
@@ -859,13 +859,13 @@ function MiniGraph({
   return (
     <svg width={width} height={height} className="w-full" viewBox={`0 0 ${width} ${height}`}>
       {goldPath && (
-        <path d={goldPath} fill="none" stroke="#C8A951" strokeWidth="1.5" opacity="0.6" />
+        <path d={goldPath} fill="none" stroke="var(--cinema-gold)" strokeWidth="1.5" opacity="0.6" />
       )}
       {tealPath && (
         <path
           d={tealPath}
           fill="none"
-          stroke="#2DD4A8"
+          stroke="var(--cinema-teal)"
           strokeWidth="1.5"
           strokeDasharray="3 2"
           opacity="0.8"
@@ -926,7 +926,7 @@ function ReactionCard({
         </div>
         <span
           className="font-[family-name:var(--font-bebas)] text-xl"
-          style={{ color: lastScore >= 7 ? '#C8A951' : '#ef4444' }}
+          style={{ color: lastScore >= 7 ? 'var(--cinema-gold)' : '#ef4444' }}
         >
           {lastScore.toFixed(1)}
         </span>
@@ -940,7 +940,7 @@ function ReactionCard({
       </div>
       <span
         className="inline-block text-[10px] px-1.5 py-0.5 rounded font-bold uppercase mt-2"
-        style={{ backgroundColor: 'rgba(45,212,168,0.2)', color: '#2DD4A8' }}
+        style={{ backgroundColor: 'rgba(45,212,168,0.2)', color: 'var(--cinema-teal)' }}
       >
         Reacted
       </span>
@@ -1105,8 +1105,8 @@ function FollowModal({
                         <div
                           className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
                           style={{
-                            background: 'linear-gradient(135deg, #C8A951, #a08530)',
-                            color: '#0D0D1A',
+                            background: 'linear-gradient(135deg, var(--cinema-gold), #a08530)',
+                            color: 'var(--cinema-dark)',
                           }}
                         >
                           {initial}

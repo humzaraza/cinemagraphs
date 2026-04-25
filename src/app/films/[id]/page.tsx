@@ -242,7 +242,7 @@ export default async function FilmPage({
                     <Link
                       key={fp.person.slug}
                       href={`/person/${fp.person.slug}`}
-                      className="text-[13px] text-[#2DD4A8] bg-[#2DD4A808] border border-[#2DD4A833] rounded-full px-2.5 py-0.5 hover:bg-[#2DD4A818] hover:border-[#2DD4A866] transition-colors"
+                      className="text-[13px] text-cinema-teal bg-[#2DD4A808] border border-[#2DD4A833] rounded-full px-2.5 py-0.5 hover:bg-[#2DD4A818] hover:border-[#2DD4A866] transition-colors"
                     >
                       {fp.person.name}
                     </Link>
@@ -375,7 +375,7 @@ export default async function FilmPage({
                         {i > 0 && ', '}
                         <Link
                           href={`/person/${p.slug}`}
-                          className="text-[#2DD4A8] hover:underline"
+                          className="text-cinema-teal hover:underline"
                         >
                           {p.name}
                         </Link>

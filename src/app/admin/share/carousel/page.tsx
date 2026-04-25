@@ -975,10 +975,10 @@ export default function CarouselSharePage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search films..."
-            className="w-full bg-[#1a1a2e] border border-[#333] rounded-lg px-3 py-2 text-sm text-cinema-cream placeholder:text-cinema-muted/40 focus:outline-none focus:border-cinema-gold/50"
+            className="w-full bg-cinema-card border border-[#333] rounded-lg px-3 py-2 text-sm text-cinema-cream placeholder:text-cinema-muted/40 focus:outline-none focus:border-cinema-gold/50"
           />
           {results.length > 0 && (
-            <div className="absolute z-20 top-full mt-1 w-full bg-[#1a1a2e] border border-[#333] rounded-lg max-h-64 overflow-y-auto shadow-xl">
+            <div className="absolute z-20 top-full mt-1 w-full bg-cinema-card border border-[#333] rounded-lg max-h-64 overflow-y-auto shadow-xl">
               {results.map((film) => (
                 <button
                   key={film.id}
@@ -1035,7 +1035,7 @@ export default function CarouselSharePage() {
 
         {/* Loading state */}
         {loading && (
-          <div className="bg-[#1a1a2e] border border-[#333] rounded-lg px-4 py-8 text-center">
+          <div className="bg-cinema-card border border-[#333] rounded-lg px-4 py-8 text-center">
             <span className="text-sm text-cinema-muted">{LOADING_MESSAGES[loadingMsgIdx]}</span>
           </div>
         )}
@@ -1050,7 +1050,7 @@ export default function CarouselSharePage() {
         {/* Status row + slides */}
         {data && !loading && (
           <>
-            <div className="bg-[#1a1a2e] border border-[#333] rounded-lg px-4 py-3 mb-4">
+            <div className="bg-cinema-card border border-[#333] rounded-lg px-4 py-3 mb-4">
               <div className="flex items-baseline gap-3 flex-wrap">
                 <span className="font-[family-name:var(--font-playfair)] text-lg text-cinema-cream">
                   {data.film.title}
@@ -1104,7 +1104,7 @@ export default function CarouselSharePage() {
                     <div className="text-xs text-cinema-muted mb-1.5">
                       Slide {s.slideNumber} — {SLIDE_LABELS[s.slideNumber] ?? ''}
                     </div>
-                    <div className="relative bg-[#0D0D1A] border border-[#333] rounded-lg overflow-hidden">
+                    <div className="relative bg-cinema-dark border border-[#333] rounded-lg overflow-hidden">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={`data:image/png;base64,${pngBase64}`}
@@ -1167,7 +1167,7 @@ export default function CarouselSharePage() {
                     }
                   }}
                   disabled={zipDownloadStatus === 'saving'}
-                  className="text-xs bg-[#1a1a2e] border border-[#333] rounded-lg px-2.5 py-1.5 text-cinema-cream focus:outline-none focus:border-cinema-gold/50 disabled:opacity-50"
+                  className="text-xs bg-cinema-card border border-[#333] rounded-lg px-2.5 py-1.5 text-cinema-cream focus:outline-none focus:border-cinema-gold/50 disabled:opacity-50"
                 >
                   <option value="4x5">4:5 (Instagram)</option>
                   <option value="9x16">9:16 (TikTok)</option>
@@ -1298,7 +1298,7 @@ function SlideEditor({
   const regenerating = regenerateState.status === 'saving'
 
   return (
-    <div className="mt-2 bg-[#1a1a2e] border border-[#333] rounded-lg p-3 flex flex-col gap-3">
+    <div className="mt-2 bg-cinema-card border border-[#333] rounded-lg p-3 flex flex-col gap-3">
       {/* Headline */}
       <div>
         <div className="flex items-center justify-between mb-1">
@@ -1312,7 +1312,7 @@ function SlideEditor({
           onChange={(e) => onHeadlineChange(e.target.value)}
           onBlur={onBlur}
           rows={2}
-          className="w-full bg-[#0D0D1A] border border-[#333] rounded px-2 py-1.5 text-sm text-cinema-cream focus:outline-none focus:border-cinema-gold/50 resize-none"
+          className="w-full bg-cinema-dark border border-[#333] rounded px-2 py-1.5 text-sm text-cinema-cream focus:outline-none focus:border-cinema-gold/50 resize-none"
           placeholder="Short editorial headline..."
         />
       </div>
@@ -1332,7 +1332,7 @@ function SlideEditor({
           onChange={(e) => onBodyChange(e.target.value)}
           onBlur={onBlur}
           rows={4}
-          className="w-full bg-[#0D0D1A] border border-[#333] rounded px-2 py-1.5 text-sm text-cinema-cream focus:outline-none focus:border-cinema-gold/50 resize-none"
+          className="w-full bg-cinema-dark border border-[#333] rounded px-2 py-1.5 text-sm text-cinema-cream focus:outline-none focus:border-cinema-gold/50 resize-none"
           placeholder="Body copy..."
         />
       </div>
@@ -1411,7 +1411,7 @@ function BeatPickerSection({
         : `Same beat as Slides ${conflictPositions.join(', ')}`
 
   return (
-    <div className="mt-2 bg-[#1a1a2e] border border-[#333] rounded-lg p-3 flex flex-col gap-2">
+    <div className="mt-2 bg-cinema-card border border-[#333] rounded-lg p-3 flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
         <label className="text-xs text-cinema-muted">Beat</label>
         {conflictText && (

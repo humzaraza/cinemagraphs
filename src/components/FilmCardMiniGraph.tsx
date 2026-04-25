@@ -22,8 +22,8 @@ function formatRuntime(minutes: number): string {
 }
 
 function scoreColor(score: number): string {
-  if (score >= 8) return '#2DD4A8'
-  if (score >= 6) return '#C8A951'
+  if (score >= 8) return 'var(--cinema-teal)'
+  if (score >= 6) return 'var(--cinema-gold)'
   return '#ef4444'
 }
 
@@ -162,8 +162,8 @@ export function FilmCardMiniGraph({
       >
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#C8A951" stopOpacity={0.35} />
-            <stop offset="100%" stopColor="#C8A951" stopOpacity={0} />
+            <stop offset="0%" stopColor="var(--cinema-gold)" stopOpacity={0.35} />
+            <stop offset="100%" stopColor="var(--cinema-gold)" stopOpacity={0} />
           </linearGradient>
         </defs>
 
@@ -182,7 +182,7 @@ export function FilmCardMiniGraph({
         />
 
         {/* Gold line */}
-        <path d={linePath} fill="none" stroke="#C8A951" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+        <path d={linePath} fill="none" stroke="var(--cinema-gold)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
 
         {/* Hover elements — all inside SVG so they're never clipped */}
         {hover && (
@@ -202,7 +202,7 @@ export function FilmCardMiniGraph({
               cy={hoverY}
               r={3}
               fill={scoreColor(hover.score)}
-              stroke="#0D0D1A"
+              stroke="var(--cinema-dark)"
               strokeWidth={1}
             />
             {/* Tooltip background */}
@@ -212,7 +212,7 @@ export function FilmCardMiniGraph({
               width={tooltipText.length * 5.6 + 8}
               height={12}
               rx={2}
-              fill="#1a1a2e"
+              fill="var(--cinema-card)"
               stroke="rgba(200,169,110,0.3)"
               strokeWidth={0.5}
             />

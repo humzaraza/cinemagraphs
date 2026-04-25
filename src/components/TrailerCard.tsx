@@ -34,7 +34,7 @@ export default function TrailerCard({ title, genres, backdropUrl, trailerKey }: 
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="w-16 h-16 rounded-full bg-cinema-gold/90 flex items-center justify-center group-hover:bg-cinema-gold group-hover:scale-110 transition-all duration-300 shadow-xl">
             <svg viewBox="0 0 24 24" fill="none" className="w-7 h-7 ml-1">
-              <path d="M8 5v14l11-7L8 5z" fill="#0D0D1A" />
+              <path d="M8 5v14l11-7L8 5z" fill="var(--cinema-dark)" />
             </svg>
           </div>
         </div>

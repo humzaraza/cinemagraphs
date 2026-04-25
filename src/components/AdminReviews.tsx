@@ -80,8 +80,8 @@ export default function AdminReviews() {
           onClick={() => setTab('flagged')}
           className="px-4 py-1.5 rounded text-sm font-medium transition-colors"
           style={{
-            backgroundColor: tab === 'flagged' ? '#C8A951' : 'transparent',
-            color: tab === 'flagged' ? '#1a1a2e' : '#888',
+            backgroundColor: tab === 'flagged' ? 'var(--cinema-gold)' : 'transparent',
+            color: tab === 'flagged' ? 'var(--cinema-card)' : '#888',
             border: tab === 'flagged' ? 'none' : '1px solid rgba(255,255,255,0.1)',
           }}
         >
@@ -96,8 +96,8 @@ export default function AdminReviews() {
           onClick={() => setTab('all')}
           className="px-4 py-1.5 rounded text-sm font-medium transition-colors"
           style={{
-            backgroundColor: tab === 'all' ? '#C8A951' : 'transparent',
-            color: tab === 'all' ? '#1a1a2e' : '#888',
+            backgroundColor: tab === 'all' ? 'var(--cinema-gold)' : 'transparent',
+            color: tab === 'all' ? 'var(--cinema-card)' : '#888',
             border: tab === 'all' ? 'none' : '1px solid rgba(255,255,255,0.1)',
           }}
         >
@@ -160,9 +160,9 @@ export default function AdminReviews() {
                             : 'rgba(239,68,68,0.15)',
                       color:
                         review.status === 'approved'
-                          ? '#2DD4A8'
+                          ? 'var(--cinema-teal)'
                           : review.status === 'flagged'
-                            ? '#C8A951'
+                            ? 'var(--cinema-gold)'
                             : '#ef4444',
                     }}
                   >
@@ -173,11 +173,11 @@ export default function AdminReviews() {
                     style={{
                       backgroundColor:
                         review.overallRating >= 8
-                          ? '#2DD4A8'
+                          ? 'var(--cinema-teal)'
                           : review.overallRating >= 6
-                            ? '#C8A951'
+                            ? 'var(--cinema-gold)'
                             : '#ef4444',
-                      color: '#1a1a2e',
+                      color: 'var(--cinema-card)',
                     }}
                   >
                     {review.overallRating.toFixed(1)}
@@ -205,7 +205,7 @@ export default function AdminReviews() {
                         <span
                           className="font-bold"
                           style={{
-                            color: score >= 8 ? '#2DD4A8' : score >= 6 ? '#C8A951' : '#ef4444',
+                            color: score >= 8 ? 'var(--cinema-teal)' : score >= 6 ? 'var(--cinema-gold)' : '#ef4444',
                           }}
                         >
                           {score.toFixed(1)}
@@ -230,7 +230,7 @@ export default function AdminReviews() {
                   <>
                     <button
                       onClick={() => handleAction(review.id, 'approved')}
-                      className="px-4 py-1.5 rounded text-sm font-medium bg-[#2DD4A8] text-[#1a1a2e] hover:bg-[#2DD4A8]/80 transition-colors"
+                      className="px-4 py-1.5 rounded text-sm font-medium bg-cinema-teal text-cinema-card hover:bg-cinema-teal/80 transition-colors"
                     >
                       Approve
                     </button>

@@ -4,9 +4,9 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { useSession, signIn } from 'next-auth/react'
 
 const REACTIONS = [
-  { key: 'up', emoji: '👍', label: 'Like', weight: '+0.5', color: '#2DD4A8' },
+  { key: 'up', emoji: '👍', label: 'Like', weight: '+0.5', color: 'var(--cinema-teal)' },
   { key: 'down', emoji: '👎', label: 'Dislike', weight: '-0.5', color: '#ef4444' },
-  { key: 'wow', emoji: '🤩', label: 'Wow', weight: '+1.0', color: '#C8A951' },
+  { key: 'wow', emoji: '🤩', label: 'Wow', weight: '+1.0', color: 'var(--cinema-gold)' },
   { key: 'shock', emoji: '😱', label: 'Shock', weight: '+0.5', color: '#a855f7' },
   { key: 'funny', emoji: '😂', label: 'Funny', weight: '+0.3', color: '#38bdf8' },
 ]
@@ -151,7 +151,7 @@ export default function LiveReactionSection({ filmId, runtime }: Props) {
     ctx.fillRect(0, 0, w, h)
 
     // Grid lines
-    ctx.strokeStyle = '#2a2a3e'
+    ctx.strokeStyle = 'var(--cinema-border)'
     ctx.lineWidth = 0.5
     for (let i = 1; i <= 9; i++) {
       const y = h - (i / 10) * h
@@ -173,7 +173,7 @@ export default function LiveReactionSection({ filmId, runtime }: Props) {
 
     if (points.length === 0) {
       // Just show the neutral start
-      ctx.fillStyle = '#C8A951'
+      ctx.fillStyle = 'var(--cinema-gold)'
       ctx.beginPath()
       ctx.arc(0, neutralY, 4, 0, Math.PI * 2)
       ctx.fill()
@@ -185,7 +185,7 @@ export default function LiveReactionSection({ filmId, runtime }: Props) {
     const maxTime = Math.max(elapsed, allPoints[allPoints.length - 1].time)
 
     ctx.beginPath()
-    ctx.strokeStyle = '#C8A951'
+    ctx.strokeStyle = 'var(--cinema-gold)'
     ctx.lineWidth = 2
 
     for (let i = 0; i < allPoints.length; i++) {
@@ -212,11 +212,11 @@ export default function LiveReactionSection({ filmId, runtime }: Props) {
     ctx.fill()
 
     // Current score dot
-    ctx.fillStyle = '#C8A951'
+    ctx.fillStyle = 'var(--cinema-gold)'
     ctx.beginPath()
     ctx.arc(lastX, lastY, 6, 0, Math.PI * 2)
     ctx.fill()
-    ctx.strokeStyle = '#F0E6D3'
+    ctx.strokeStyle = 'var(--cinema-cream)'
     ctx.lineWidth = 2
     ctx.stroke()
   }, [points, elapsed])
@@ -331,7 +331,7 @@ export default function LiveReactionSection({ filmId, runtime }: Props) {
             <button
               onClick={resumeSession}
               className="px-4 py-2 rounded text-sm font-medium"
-              style={{ backgroundColor: '#C8A951', color: '#0D0D1A' }}
+              style={{ backgroundColor: 'var(--cinema-gold)', color: 'var(--cinema-dark)' }}
             >
               Resume
             </button>
@@ -362,8 +362,8 @@ export default function LiveReactionSection({ filmId, runtime }: Props) {
           <span
             className="text-xs px-2 py-0.5 rounded-full font-bold"
             style={{
-              backgroundColor: isPlaying ? '#2DD4A8' : '#666',
-              color: '#1a1a2e',
+              backgroundColor: isPlaying ? 'var(--cinema-teal)' : '#666',
+              color: 'var(--cinema-card)',
             }}
           >
             {isPlaying ? 'LIVE' : 'PAUSED'}
@@ -388,8 +388,8 @@ export default function LiveReactionSection({ filmId, runtime }: Props) {
               onClick={() => setIsPlaying(!isPlaying)}
               className="px-4 py-1.5 rounded text-sm font-medium transition-colors"
               style={{
-                backgroundColor: isPlaying ? '#ef4444' : '#2DD4A8',
-                color: '#1a1a2e',
+                backgroundColor: isPlaying ? '#ef4444' : 'var(--cinema-teal)',
+                color: 'var(--cinema-card)',
               }}
             >
               {isPlaying ? '⏸ Pause' : '▶ Play'}
@@ -482,7 +482,7 @@ export default function LiveReactionSection({ filmId, runtime }: Props) {
             className="font-[family-name:var(--font-bebas)] text-2xl"
             style={{
               color:
-                currentScore >= 8 ? '#2DD4A8' : currentScore >= 6 ? '#C8A951' : '#ef4444',
+                currentScore >= 8 ? 'var(--cinema-teal)' : currentScore >= 6 ? 'var(--cinema-gold)' : '#ef4444',
             }}
           >
             {currentScore.toFixed(1)}
