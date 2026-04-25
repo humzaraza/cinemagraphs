@@ -287,7 +287,7 @@ describe('renderGraph', () => {
   })
 
   describe('main-line stroke widths', () => {
-    it('renders the main curve stroke at 4px and the glow stroke at 9px', () => {
+    it('non-highlighted mode renders the main curve at 4px and the glow at 9px', () => {
       const out = renderGraph({
         dataPoints: SAMPLE,
         totalRuntime: 60,
@@ -300,6 +300,38 @@ describe('renderGraph', () => {
       expect(out.svg).toContain('stroke-width="4"')
       expect(out.svg).not.toContain('stroke-width="2.5"')
       expect(out.svg).not.toContain('stroke-width="8"')
+    })
+
+    it('highlighted mode renders bold masked layer (7px main + 14px glow) over a thin 2px faded backdrop', () => {
+      const out = renderGraph({
+        dataPoints: SAMPLE,
+        totalRuntime: 60,
+        criticsScore: 8.1,
+        width: 960,
+        height: 540,
+        format: '4x5',
+        highlightBeatIndex: 3,
+      })
+      expect(out.svg).toContain('stroke-width="7"')
+      expect(out.svg).toContain('stroke-width="14"')
+      expect(out.svg).toContain('stroke-width="2"')
+      expect(out.svg).not.toContain('stroke-width="9"')
+      expect(out.svg).not.toContain('stroke-width="4"')
+    })
+
+    it('highlighted dot has a stroked peak ring at r=12 with 30% opacity (no gaussian-blur filter)', () => {
+      const out = renderGraph({
+        dataPoints: SAMPLE,
+        totalRuntime: 60,
+        criticsScore: 8.1,
+        width: 960,
+        height: 540,
+        format: '4x5',
+        highlightBeatIndex: 3,
+      })
+      expect(out.svg).toMatch(/<circle[^>]*r="12"[^>]*fill="none"[^>]*opacity="0\.3"/)
+      expect(out.svg).not.toContain('peakGlow')
+      expect(out.svg).not.toContain('feGaussianBlur')
     })
   })
 
