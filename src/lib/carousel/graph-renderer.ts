@@ -89,7 +89,7 @@ export function marginsFor(format: Format): Margins {
 }
 
 export function dotRadiusFor(format: Format): number {
-  return format === '4x5' ? 5 : 7
+  return 7
 }
 
 // ── Main ──────────────────────────────────────────────────────
@@ -156,11 +156,6 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
       `</linearGradient>`,
   )
   if (highlighted) {
-    defs.push(
-      `<filter id="peakGlow" x="-100%" y="-100%" width="300%" height="300%">` +
-        `<feGaussianBlur stdDeviation="8"/>` +
-        `</filter>`,
-    )
     const maskRadius = format === '4x5' ? 90 : 120
     defs.push(
       `<mask id="hlMask-${format}">` +
@@ -175,17 +170,26 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
   }
 
   // ── body ──────────────────────────────────────────────────
-  const curveBody =
+  // Highlighted slides render the curve in two layers: a thin faded backdrop
+  // (no glow) plus a bold masked layer that pops the highlighted region.
+  // Non-highlighted slides (takeaway mini) keep the original medium weight.
+  const fadedCurveBody =
+    `<path d="${areaD}" fill="url(#areaGrad)"/>` +
+    `<path d="${lineD}" stroke="${MAIN_LINE}" stroke-width="2" fill="none"/>`
+  const highlightedCurveBody =
+    `<path d="${lineD}" stroke="${MAIN_LINE}" stroke-width="14" stroke-linecap="round" fill="none" opacity="0.2"/>` +
+    `<path d="${lineD}" stroke="${MAIN_LINE}" stroke-width="7" fill="none"/>`
+  const defaultCurveBody =
     `<path d="${areaD}" fill="url(#areaGrad)"/>` +
     `<path d="${lineD}" stroke="${GLOW_LINE}" stroke-width="9" stroke-linecap="round" fill="none"/>` +
     `<path d="${lineD}" stroke="${MAIN_LINE}" stroke-width="4" fill="none"/>`
 
   const body: string[] = []
   if (highlighted) {
-    body.push(`<g opacity="0.22">${curveBody}</g>`)
-    body.push(`<g mask="url(#hlMask-${format})">${curveBody}</g>`)
+    body.push(`<g opacity="0.22">${fadedCurveBody}</g>`)
+    body.push(`<g mask="url(#hlMask-${format})">${highlightedCurveBody}</g>`)
   } else {
-    body.push(curveBody)
+    body.push(defaultCurveBody)
   }
 
   const baseOpacityFor = (idx: number): number => {
@@ -218,7 +222,7 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
 
     if (highlighted && i === highlightBeatIndex) {
       body.push(
-        `<circle cx="${fmt(cx)}" cy="${fmt(cy)}" r="${dotRadius + 8}" fill="${fill}" opacity="0.6" filter="url(#peakGlow)"/>`,
+        `<circle cx="${fmt(cx)}" cy="${fmt(cy)}" r="12" fill="none" stroke="${fill}" stroke-width="2" opacity="0.3"/>`,
       )
     }
     body.push(
