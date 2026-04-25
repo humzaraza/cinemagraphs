@@ -41,49 +41,94 @@ function makeFilm(overrides: Partial<FilmFixture>): FilmFixture {
   }
 }
 
-// ── Minimal where-clause simulator ──────────────────────────────
-// Reproduces the exact subset of Prisma where-semantics that getInTheatersFilms
-// uses so tests exercise the SQL gate AND the app-level sparkline gate end to end.
+// ── Where-clause simulator (faithful to Prisma 7 / SQL 3VL) ─────
+// Reproduces the subset of Prisma where-semantics getInTheatersFilms
+// uses, with one critical fidelity rule: NULL participates in
+// three-valued logic. `NOT (col = 'X')` is UNKNOWN (not TRUE) when
+// col IS NULL, so the WHERE clause rejects NULL rows. `{ not: 'X' }`
+// behaves the same way. Inside an OR clause object, multiple fields
+// AND together (Prisma's implicit AND).
+type ScalarFilter<T> = T | { not?: T }
 type WhereArg = {
   status?: 'ACTIVE' | 'ARCHIVED'
   releaseDate?: { not?: null; lte?: Date }
-  NOT?: { nowPlayingOverride?: string }
-  OR?: Array<{ nowPlayingOverride?: string; nowPlaying?: boolean }>
+  nowPlaying?: boolean
+  nowPlayingOverride?: ScalarFilter<string | null>
+  NOT?: WhereArg
+  OR?: WhereArg[]
+  AND?: WhereArg[]
   sentimentGraph?: { isNot?: null }
 }
 
-function applyWhere(films: FilmFixture[], where: WhereArg): FilmFixture[] {
-  return films.filter((f) => {
-    if (where.status && f.status !== where.status) return false
-    if (where.releaseDate?.not === null && f.releaseDate === null) return false
+function isObjectFilter<T>(v: unknown): v is { not?: T } {
+  return typeof v === 'object' && v !== null && 'not' in (v as object)
+}
+
+function matchesWhere(f: FilmFixture, where: WhereArg): boolean {
+  if (where.status !== undefined && f.status !== where.status) return false
+
+  if (where.releaseDate) {
+    if (where.releaseDate.not === null && f.releaseDate === null) return false
     if (
-      where.releaseDate?.lte &&
+      where.releaseDate.lte &&
       (f.releaseDate === null || f.releaseDate > where.releaseDate.lte)
     ) {
       return false
     }
-    if (
-      where.NOT?.nowPlayingOverride !== undefined &&
-      f.nowPlayingOverride === where.NOT.nowPlayingOverride
-    ) {
+  }
+
+  if (where.nowPlaying !== undefined && f.nowPlaying !== where.nowPlaying) {
+    return false
+  }
+
+  if (where.nowPlayingOverride !== undefined) {
+    const filter = where.nowPlayingOverride
+    if (isObjectFilter<string | null>(filter)) {
+      // `{ not: 'X' }`: NULL rows fail (NULL <> 'X' is UNKNOWN).
+      if (f.nowPlayingOverride === null) return false
+      if (f.nowPlayingOverride === filter.not) return false
+    } else {
+      // Direct equality, including explicit `null`.
+      if (f.nowPlayingOverride !== filter) return false
+    }
+  }
+
+  if (where.sentimentGraph?.isNot === null && !f.sentimentGraph) return false
+
+  if (where.NOT) {
+    // For a NOT block, each subfilter inverts with 3-valued logic:
+    // a NULL value on the field auto-fails (NOT UNKNOWN is UNKNOWN).
+    if (where.NOT.nowPlayingOverride !== undefined) {
+      const target = where.NOT.nowPlayingOverride
+      if (f.nowPlayingOverride === null) return false
+      if (
+        !isObjectFilter<string | null>(target) &&
+        f.nowPlayingOverride === target
+      ) {
+        return false
+      }
+    }
+    if (where.NOT.nowPlaying !== undefined && f.nowPlaying === where.NOT.nowPlaying) {
       return false
     }
-    if (where.OR) {
-      const matches = where.OR.some((clause) => {
-        if (
-          clause.nowPlayingOverride !== undefined &&
-          f.nowPlayingOverride === clause.nowPlayingOverride
-        ) {
-          return true
-        }
-        if (clause.nowPlaying === true && f.nowPlaying === true) return true
-        return false
-      })
-      if (!matches) return false
-    }
-    if (where.sentimentGraph?.isNot === null && !f.sentimentGraph) return false
-    return true
-  })
+  }
+
+  if (where.OR) {
+    // Each clause is a sub-where; multiple fields inside a clause AND.
+    const anyMatch = where.OR.some((clause) => matchesWhere(f, clause))
+    if (!anyMatch) return false
+  }
+
+  if (where.AND) {
+    const allMatch = where.AND.every((clause) => matchesWhere(f, clause))
+    if (!allMatch) return false
+  }
+
+  return true
+}
+
+function applyWhere(films: FilmFixture[], where: WhereArg): FilmFixture[] {
+  return films.filter((f) => matchesWhere(f, where))
 }
 
 function setup(films: FilmFixture[]) {
@@ -186,6 +231,20 @@ describe('getInTheatersFilms gating', () => {
     ])
     const result = await getInTheatersFilms()
     expect(result).toEqual([])
+  })
+
+  it('(g) INCLUDES the canonical case: nowPlaying=true + past release + null override + non-empty sparkline (regression for NOT-on-NULL bug)', async () => {
+    setup([
+      makeFilm({
+        id: 'canonical',
+        nowPlaying: true,
+        nowPlayingOverride: null,
+        releaseDate: PAST,
+        sentimentGraph: { overallScore: 7.2, dataPoints: [{ score: 7.2 }] },
+      }),
+    ])
+    const result = await getInTheatersFilms()
+    expect(result.map((f) => f.id)).toEqual(['canonical'])
   })
 
   it('caps final list at 20 even when many films qualify', async () => {
