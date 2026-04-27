@@ -53,3 +53,5 @@ spike-resvg.mjs
 spike-output/
 graph-renderer-output/
 slide-composer-output/
+test-horizontal.webm
+test-vertical.webm
