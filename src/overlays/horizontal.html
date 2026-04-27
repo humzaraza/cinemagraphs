@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Michael — Cinemagraphs Overlay (16:9)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #000000;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'DM Sans', sans-serif;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  #restart {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: rgba(200, 169, 81, 0.2);
+    border: 1px solid rgba(200, 169, 81, 0.4);
+    color: #C8A951;
+    font-size: 12px;
+    padding: 8px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    letter-spacing: 1px;
+    z-index: 10;
+  }
+  #restart:hover {
+    background: rgba(200, 169, 81, 0.3);
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<button id="restart">RESTART</button>
+<script>
+(function() {
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var SCALE = 2;
+
+  // ===== Data =====
+  var data = [
+    { t: 0,   s: 5.0, c: 'red'  },
+    { t: 5,   s: 7.2, c: 'gold' },
+    { t: 15,  s: 6.8, c: 'gold' },
+    { t: 25,  s: 8.1, c: 'teal' },
+    { t: 35,  s: 7.5, c: 'gold' },
+    { t: 45,  s: 8.3, c: 'teal' },
+    { t: 55,  s: 7.8, c: 'gold' },
+    { t: 65,  s: 6.4, c: 'gold' },
+    { t: 75,  s: 9.1, c: 'teal' },
+    { t: 85,  s: 8.7, c: 'teal' },
+    { t: 95,  s: 8.9, c: 'teal' },
+    { t: 105, s: 7.6, c: 'gold' },
+    { t: 115, s: 8.4, c: 'teal' },
+    { t: 124, s: 9.3, c: 'teal' }
+  ];
+
+  var OVERALL_SCORE = '7.0';
+  var TOTAL_TIME = 124;
+
+  var colorMap = {
+    red:  '#E05555',
+    gold: '#C8A951',
+    teal: '#2DD4A8'
+  };
+
+  // ===== Y-axis range =====
+  var lowest = data[0].s;
+  var highest = data[0].s;
+  for (var i = 0; i < data.length; i++) {
+    if (data[i].s < lowest)  lowest  = data[i].s;
+    if (data[i].s > highest) highest = data[i].s;
+  }
+  var Y_MIN   = Math.max(1, Math.floor(lowest) - 1);
+  var Y_MAX   = Math.min(10, Math.ceil(highest) + 1);
+  var Y_RANGE = Y_MAX - Y_MIN;
+
+  // ===== Layout (horizontal) =====
+  var GRAPH_HEIGHT = 0.65;
+  var MARGIN_X = 0.08;
+  var W, H;
+  var lastW = -1, lastH = -1;
+  var cachedCurve = null;
+
+  function ensureSize() {
+    var newW = window.innerWidth;
+    var newH = window.innerHeight;
+    if (newW !== lastW || newH !== lastH) {
+      W = newW;
+      H = newH;
+      canvas.width  = W * SCALE;
+      canvas.height = H * SCALE;
+      canvas.style.width  = W + 'px';
+      canvas.style.height = H + 'px';
+      ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
+      lastW = newW;
+      lastH = newH;
+      cachedCurve = null;
+    }
+  }
+
+  function getTopY() { return H * ((1 - GRAPH_HEIGHT) / 2); }
+  function getBotY() { return H - H * ((1 - GRAPH_HEIGHT) / 2); }
+  function tX(t) { return W * MARGIN_X + (t / TOTAL_TIME) * W * (1 - 2 * MARGIN_X); }
+  function sY(s) {
+    var top = getTopY();
+    var bot = getBotY();
+    var graphH = bot - top;
+    return top + graphH - ((s - Y_MIN) / Y_RANGE) * graphH;
+  }
+
+  function easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+  function smoothstep(t) {
+    return t * t * (3 - 2 * t);
+  }
+
+  function buildCurve() {
+    var pts = [];
+    for (var i = 0; i < data.length; i++) {
+      pts.push({ x: tX(data[i].t), y: sY(data[i].s) });
+    }
+
+    var slopes = [];
+    for (var i = 0; i < pts.length - 1; i++) {
+      slopes[i] = (pts[i+1].y - pts[i].y) / (pts[i+1].x - pts[i].x);
+    }
+
+    var tangents = new Array(pts.length);
+    tangents[0] = slopes[0];
+    for (var i = 1; i < pts.length - 1; i++) {
+      if (slopes[i-1] * slopes[i] <= 0) {
+        tangents[i] = 0;
+      } else {
+        var dx0 = pts[i].x - pts[i-1].x;
+        var dx1 = pts[i+1].x - pts[i].x;
+        var w0 = 2 * dx1 + dx0;
+        var w1 = dx1 + 2 * dx0;
+        tangents[i] = (w0 + w1) / (w0 / slopes[i-1] + w1 / slopes[i]);
+      }
+    }
+    tangents[pts.length - 1] = slopes[slopes.length - 1];
+
+    for (var i = 0; i < slopes.length; i++) {
+      if (slopes[i] === 0) {
+        tangents[i] = 0;
+        tangents[i+1] = 0;
+      } else {
+        var a = tangents[i] / slopes[i];
+        var b = tangents[i+1] / slopes[i];
+        var h = a * a + b * b;
+        if (h > 9) {
+          var tau = 3 / Math.sqrt(h);
+          tangents[i]   = tau * a * slopes[i];
+          tangents[i+1] = tau * b * slopes[i];
+        }
+      }
+    }
+
+    var curve = [];
+    for (var i = 0; i < pts.length - 1; i++) {
+      for (var step = 0; step < 30; step++) {
+        var t = step / 30;
+        var tt = t * t;
+        var ttt = tt * t;
+        var h00 =  2*ttt - 3*tt + 1;
+        var h10 =      ttt - 2*tt + t;
+        var h01 = -2*ttt + 3*tt;
+        var h11 =      ttt -   tt;
+        var dx = pts[i+1].x - pts[i].x;
+        var x = pts[i].x + dx * t;
+        var y = h00 * pts[i].y + h10 * dx * tangents[i]
+              + h01 * pts[i+1].y + h11 * dx * tangents[i+1];
+        curve.push({ x: x, y: y });
+      }
+    }
+    curve.push({ x: pts[pts.length-1].x, y: pts[pts.length-1].y });
+
+    var arcLengths = [0];
+    var totalLength = 0;
+    for (var i = 1; i < curve.length; i++) {
+      var ddx = curve[i].x - curve[i-1].x;
+      var ddy = curve[i].y - curve[i-1].y;
+      totalLength += Math.sqrt(ddx*ddx + ddy*ddy);
+      arcLengths.push(totalLength);
+    }
+
+    return { curve: curve, arcLengths: arcLengths, totalLength: totalLength };
+  }
+
+  var DURATION         = 16000;
+  var FADE_IN_DURATION = 1200;
+  var HOLD             = 4000;
+  var startTime = null;
+  var rafId = null;
+  var dotFirstVisible = data.map(function() { return null; });
+
+  function draw(now) {
+    if (!startTime) startTime = now;
+    var elapsed = now - startTime;
+
+    ensureSize();
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, W, H);
+
+    if (!cachedCurve) cachedCurve = buildCurve();
+    var curve       = cachedCurve.curve;
+    var arcLengths  = cachedCurve.arcLengths;
+    var totalLength = cachedCurve.totalLength;
+
+    var lineProgress = Math.min(1, elapsed / DURATION);
+    var targetLength = lineProgress * totalLength;
+
+    var headSegIdx = 0;
+    for (var i = 0; i < arcLengths.length - 1; i++) {
+      if (arcLengths[i+1] >= targetLength) { headSegIdx = i; break; }
+      headSegIdx = i + 1;
+    }
+    var headX, headY, segFrac;
+    if (headSegIdx >= curve.length - 1 || lineProgress >= 1) {
+      headX = curve[curve.length - 1].x;
+      headY = curve[curve.length - 1].y;
+      segFrac = 1;
+    } else {
+      var segLen = arcLengths[headSegIdx + 1] - arcLengths[headSegIdx];
+      segFrac = segLen > 0 ? (targetLength - arcLengths[headSegIdx]) / segLen : 0;
+      headX = curve[headSegIdx].x + (curve[headSegIdx+1].x - curve[headSegIdx].x) * segFrac;
+      headY = curve[headSegIdx].y + (curve[headSegIdx+1].y - curve[headSegIdx].y) * segFrac;
+    }
+
+    var fadeAlpha = 0;
+    if (elapsed > DURATION) {
+      var fadeProgress = Math.min(1, (elapsed - DURATION) / FADE_IN_DURATION);
+      fadeAlpha = smoothstep(fadeProgress);
+    }
+
+    var leftX  = tX(0);
+    var rightX = tX(TOTAL_TIME);
+    var topY   = getTopY();
+    var botY   = getBotY();
+
+    if (fadeAlpha > 0) {
+      ctx.globalAlpha = fadeAlpha;
+
+      ctx.strokeStyle = 'rgba(232, 228, 220, 0.1)';
+      ctx.lineWidth = 0.5;
+      for (var v = Y_MIN; v <= Y_MAX; v++) {
+        var gy = sY(v);
+        ctx.beginPath();
+        ctx.moveTo(leftX, gy);
+        ctx.lineTo(rightX, gy);
+        ctx.stroke();
+      }
+
+      if (5 >= Y_MIN && 5 <= Y_MAX) {
+        ctx.strokeStyle = 'rgba(232, 228, 220, 0.25)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 5]);
+        var dy = sY(5);
+        ctx.beginPath();
+        ctx.moveTo(leftX, dy);
+        ctx.lineTo(rightX, dy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      ctx.strokeStyle = 'rgba(232, 228, 220, 0.45)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(leftX, topY);  ctx.lineTo(leftX, botY);  ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(rightX, topY); ctx.lineTo(rightX, botY); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(leftX, botY);  ctx.lineTo(rightX, botY); ctx.stroke();
+
+      var yLabelSize = Math.max(11, W * 0.011);
+      ctx.fillStyle = 'rgba(232, 228, 220, 0.55)';
+      ctx.font = '400 ' + yLabelSize + 'px DM Sans, sans-serif';
+      ctx.textBaseline = 'middle';
+      for (var v = Y_MIN; v <= Y_MAX; v++) {
+        var ly = sY(v);
+        ctx.textAlign = 'right'; ctx.fillText(String(v), leftX - 8, ly);
+        ctx.textAlign = 'left';  ctx.fillText(String(v), rightX + 8, ly);
+      }
+
+      var xLabelSize = Math.max(11, W * 0.011);
+      ctx.fillStyle = 'rgba(232, 228, 220, 0.5)';
+      ctx.font = '400 ' + xLabelSize + 'px DM Sans, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      var times = [
+        { t: 0,          l: '0m'     },
+        { t: 20,         l: '20m'    },
+        { t: 40,         l: '40m'    },
+        { t: 60,         l: '1h'     },
+        { t: 80,         l: '1h 20m' },
+        { t: 100,        l: '1h 40m' },
+        { t: TOTAL_TIME, l: '2h 4m'  }
+      ];
+      for (var ti = 0; ti < times.length; ti++) {
+        ctx.fillText(times[ti].l, tX(times[ti].t), botY + 8);
+      }
+
+      ctx.globalAlpha = 1;
+    }
+
+    if (targetLength > 0) {
+      var grad = ctx.createLinearGradient(0, topY, 0, botY);
+      grad.addColorStop(0,   'rgba(200, 169, 81, 0.18)');
+      grad.addColorStop(0.6, 'rgba(200, 169, 81, 0.04)');
+      grad.addColorStop(1,   'rgba(200, 169, 81, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(curve[0].x, curve[0].y);
+      for (var i = 1; i <= headSegIdx; i++) {
+        ctx.lineTo(curve[i].x, curve[i].y);
+      }
+      ctx.lineTo(headX, headY);
+      ctx.lineTo(headX, botY);
+      ctx.lineTo(curve[0].x, botY);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    if (targetLength > 0) {
+      ctx.strokeStyle = 'rgba(200, 169, 81, 0.2)';
+      ctx.lineWidth = 10;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(curve[0].x, curve[0].y);
+      for (var i = 1; i <= headSegIdx; i++) {
+        ctx.lineTo(curve[i].x, curve[i].y);
+      }
+      ctx.lineTo(headX, headY);
+      ctx.stroke();
+    }
+
+    if (targetLength > 0) {
+      ctx.strokeStyle = '#C8A951';
+      ctx.lineWidth = 4.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(curve[0].x, curve[0].y);
+      for (var i = 1; i <= headSegIdx; i++) {
+        ctx.lineTo(curve[i].x, curve[i].y);
+      }
+      ctx.lineTo(headX, headY);
+      ctx.stroke();
+    }
+
+    if (lineProgress < 1) {
+      ctx.fillStyle = 'rgba(200, 169, 81, 0.3)';
+      ctx.beginPath(); ctx.arc(headX, headY, 7,   0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#C8A951';
+      ctx.beginPath(); ctx.arc(headX, headY, 3.5, 0, Math.PI * 2); ctx.fill();
+    }
+
+    var r = Math.max(5, W * 0.005);
+    for (var di = 1; di < data.length; di++) {
+      var d = data[di];
+      var dotCurveIdx = (di === data.length - 1) ? curve.length - 1 : di * 30;
+      var dotArcLength = arcLengths[dotCurveIdx];
+
+      if (targetLength >= dotArcLength) {
+        if (dotFirstVisible[di] === null) dotFirstVisible[di] = elapsed;
+        var dotAgeMs = elapsed - dotFirstVisible[di];
+        var dotAlpha = Math.min(1, dotAgeMs / 250);
+
+        var px = tX(d.t);
+        var py = sY(d.s);
+
+        ctx.globalAlpha = dotAlpha * 0.3;
+        ctx.fillStyle = colorMap[d.c];
+        ctx.beginPath();
+        ctx.arc(px, py, r + 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.globalAlpha = dotAlpha;
+        ctx.fillStyle = colorMap[d.c];
+        ctx.beginPath();
+        ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    if (fadeAlpha > 0) {
+      ctx.globalAlpha = fadeAlpha;
+      var scoreOffset    = Math.max(30, W * 0.03);
+      var scoreFontSize  = Math.max(32, W * 0.035);
+      var labelFontSize  = Math.max(11, W * 0.011);
+
+      ctx.font = '500 ' + scoreFontSize + 'px DM Sans, sans-serif';
+      ctx.textBaseline = 'top';
+      var scoreWidth   = ctx.measureText(OVERALL_SCORE).width;
+      var scoreRightX  = rightX - scoreOffset;
+      var scoreLeftX   = scoreRightX - scoreWidth;
+      var scoreCenterX = scoreLeftX + scoreWidth / 2;
+
+      ctx.fillStyle = 'rgba(232, 228, 220, 0.4)';
+      ctx.font = '400 ' + labelFontSize + 'px DM Sans, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Overall', scoreCenterX, topY + 6);
+
+      ctx.fillStyle = '#C8A951';
+      ctx.font = '500 ' + scoreFontSize + 'px DM Sans, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(OVERALL_SCORE, scoreLeftX, topY + 6 + labelFontSize + 4);
+
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.globalAlpha = 0.25;
+    var wmCineSize = Math.max(13, W * 0.013);
+    var wmSubSize  = Math.max(9,  W * 0.008);
+    var wmX = leftX + Math.max(15, W * 0.015);
+    var wmY = topY  + Math.max(5,  H * 0.005);
+
+    ctx.fillStyle = '#C8A951';
+    ctx.font = '700 ' + wmCineSize + 'px Libre Baskerville, serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('Cinemagraphs', wmX, wmY);
+
+    ctx.fillStyle = '#E8E4DC';
+    ctx.font = '300 ' + wmSubSize + 'px DM Sans, sans-serif';
+    ctx.fillText('Movie reviews, visualized', wmX, wmY + wmCineSize + 2);
+    ctx.globalAlpha = 1;
+
+    if (elapsed < DURATION + FADE_IN_DURATION + HOLD) {
+      rafId = requestAnimationFrame(draw);
+    }
+  }
+
+  function start() {
+    if (rafId) cancelAnimationFrame(rafId);
+    startTime = null;
+    dotFirstVisible = data.map(function() { return null; });
+    ensureSize();
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, W, H);
+    rafId = requestAnimationFrame(draw);
+  }
+
+  document.getElementById('restart').addEventListener('click', function() {
+    if (rafId) cancelAnimationFrame(rafId);
+    startTime = null;
+    dotFirstVisible = data.map(function() { return null; });
+    ensureSize();
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, W, H);
+    setTimeout(start, 200);
+  });
+
+  window.addEventListener('resize', ensureSize);
+  start();
+})();
+</script>
+</body>
+</html>
