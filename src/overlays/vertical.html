@@ -64,25 +64,53 @@
   var ctx = canvas.getContext('2d');
   var SCALE = 2;
 
-  var data = [
-    { t: 0,   s: 5.0, c: 'red'  },
-    { t: 5,   s: 7.2, c: 'gold' },
-    { t: 15,  s: 6.8, c: 'gold' },
-    { t: 25,  s: 8.1, c: 'teal' },
-    { t: 35,  s: 7.5, c: 'gold' },
-    { t: 45,  s: 8.3, c: 'teal' },
-    { t: 55,  s: 7.8, c: 'gold' },
-    { t: 65,  s: 6.4, c: 'gold' },
-    { t: 75,  s: 9.1, c: 'teal' },
-    { t: 85,  s: 8.7, c: 'teal' },
-    { t: 95,  s: 8.9, c: 'teal' },
-    { t: 105, s: 7.6, c: 'gold' },
-    { t: 115, s: 8.4, c: 'teal' },
-    { t: 124, s: 9.3, c: 'teal' }
-  ];
+  // ===== Mode detection =====
+  var params = new URLSearchParams(window.location.search);
+  var RENDER_MODE = params.get('render') === '1';
 
-  var OVERALL_SCORE = '7.0';
-  var TOTAL_TIME = 124;
+  // ===== Data injection =====
+  function loadInjectedData() {
+    if (window.__OVERLAY_DATA__) {
+      return window.__OVERLAY_DATA__;
+    }
+    var dataParam = params.get('data');
+    if (dataParam) {
+      try {
+        return JSON.parse(atob(dataParam));
+      } catch (e) {
+        console.warn('Failed to parse ?data param, falling back to demo', e);
+      }
+    }
+    return null;
+  }
+
+  var data, OVERALL_SCORE, TOTAL_TIME;
+  var injected = loadInjectedData();
+  if (injected) {
+    data = injected.data;
+    OVERALL_SCORE = injected.OVERALL_SCORE;
+    TOTAL_TIME = injected.TOTAL_TIME;
+  } else {
+    // Hardcoded Michael demo (default when no injection present)
+    data = [
+      { t: 0,   s: 5.0, c: 'red'  },
+      { t: 5,   s: 7.2, c: 'gold' },
+      { t: 15,  s: 6.8, c: 'gold' },
+      { t: 25,  s: 8.1, c: 'teal' },
+      { t: 35,  s: 7.5, c: 'gold' },
+      { t: 45,  s: 8.3, c: 'teal' },
+      { t: 55,  s: 7.8, c: 'gold' },
+      { t: 65,  s: 6.4, c: 'gold' },
+      { t: 75,  s: 9.1, c: 'teal' },
+      { t: 85,  s: 8.7, c: 'teal' },
+      { t: 95,  s: 8.9, c: 'teal' },
+      { t: 105, s: 7.6, c: 'gold' },
+      { t: 115, s: 8.4, c: 'teal' },
+      { t: 124, s: 9.3, c: 'teal' }
+    ];
+    OVERALL_SCORE = '7.0';
+    TOTAL_TIME = 124;
+  }
 
   var colorMap = {
     red:  '#E05555',
@@ -220,6 +248,8 @@
   var startTime = null;
   var rafId = null;
   var dotFirstVisible = data.map(function() { return null; });
+  var mediaRecorder = null;
+  var recordedChunks = [];
 
   function draw(now) {
     if (!startTime) startTime = now;
@@ -452,7 +482,73 @@
 
     if (elapsed < DURATION + FADE_IN_DURATION + HOLD) {
       rafId = requestAnimationFrame(draw);
+    } else if (RENDER_MODE && mediaRecorder && mediaRecorder.state === 'recording') {
+      mediaRecorder.stop();
     }
+  }
+
+  function pickWebmMimeType() {
+    var candidates = [
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8',
+      'video/webm'
+    ];
+    if (typeof MediaRecorder === 'undefined') return null;
+    for (var i = 0; i < candidates.length; i++) {
+      if (MediaRecorder.isTypeSupported(candidates[i])) {
+        return candidates[i];
+      }
+    }
+    return null;
+  }
+
+  async function setupRecording() {
+    var btn = document.getElementById('restart');
+    if (btn) btn.style.display = 'none';
+
+    ensureSize();
+
+    // Wait for web fonts to finish loading before starting the recorder,
+    // so the first captured frames don't render with fallback fonts.
+    if (document.fonts && document.fonts.ready) {
+      await document.fonts.ready;
+    }
+
+    // Wait one rAF tick so the first frame after recorder.start() is
+    // the actual animation start, not a dead/black frame from before
+    // start() runs.
+    await new Promise(function(resolve) {
+      requestAnimationFrame(function() { resolve(); });
+    });
+
+    var stream = canvas.captureStream(30);
+    var mimeType = pickWebmMimeType();
+    if (!mimeType) {
+      console.error('No supported WebM mime type for MediaRecorder');
+      return;
+    }
+
+    mediaRecorder = new MediaRecorder(stream, {
+      mimeType: mimeType,
+      videoBitsPerSecond: 8000000
+    });
+
+    mediaRecorder.ondataavailable = function(e) {
+      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = function() {
+      var blob = new Blob(recordedChunks, { type: 'video/webm' });
+      window.__renderBlob = blob;
+      var reader = new FileReader();
+      reader.onloadend = function() {
+        window.__renderResult = reader.result;
+        window.__renderComplete = true;
+      };
+      reader.readAsDataURL(blob);
+    };
+
+    mediaRecorder.start(100);
   }
 
   function start() {
@@ -476,7 +572,11 @@
   });
 
   window.addEventListener('resize', ensureSize);
-  start();
+  if (RENDER_MODE) {
+    setupRecording().then(start);
+  } else {
+    start();
+  }
 })();
 </script>
 </body>
