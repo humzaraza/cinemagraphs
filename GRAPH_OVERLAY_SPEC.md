@@ -43,6 +43,7 @@ This document defines how to build animated sentiment graph overlays for Cinemag
 
 ### Data Format
 - First data point is ALWAYS { t: 0, s: 5.0, c: 'red' }
+- The LAST data point's t MUST equal TOTAL_TIME. When converting DB beats to graph data points, use timeMidpoint for all beats except the last, which uses timeEnd. This matches how all existing Cinemagraphs film graphs render — the curve always closes at the right edge of the x-axis.
 - Data extracted from screenshot: each dot = one data point with timestamp (minutes), score, and color
 - Color rules: c: 'red' for scores below 6, c: 'gold' for 6 to 7.9, c: 'teal' for 8 and above
 - Store as: var data = [ { t: 0, s: 5.0, c: 'red' }, { t: 4, s: 8.5, c: 'teal' }, ... ];
