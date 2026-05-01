@@ -89,7 +89,7 @@ interface SparklineResult {
   midScore: number
 }
 
-async function buildSparklinePng(
+export async function buildSparklinePng(
   dataPoints: SentimentDataPoint[],
   sw: number,
   sh: number
@@ -386,14 +386,17 @@ export async function GET(request: NextRequest) {
   )
 
   // ── Build rows ──
-  // Set of film IDs forced to font display (populated on satori failures)
+  // Set of film IDs forced to font display (populated on satori logo-branch failures)
   const forceFont = new Set<string>()
+  // Set of film IDs whose logo AND font branches both crashed satori — render as placeholder
+  const renderFailed = new Set<string>()
 
   function buildRows() {
     return ordered.map((film, i) => buildRow(film, i))
   }
 
-  function buildRow(film: typeof ordered[number], i: number) {
+  function buildRow(film: typeof ordered[number], i: number): React.ReactElement {
+    if (renderFailed.has(film.id)) return buildPlaceholderRow(film, i)
     const filmTitle = String(film.title || '').normalize('NFC')
     const year = film.releaseDate ? new Date(film.releaseDate).getFullYear().toString() : ''
     const score = film.sentimentGraph?.overallScore ?? null
@@ -664,6 +667,129 @@ export async function GET(request: NextRequest) {
     )
   }
 
+  // Minimal placeholder for films whose logo AND font branches both crashed satori.
+  // No backdrop, logo, or sparkline — only title, year, "Graph unavailable", and score.
+  // Same row height as working rows so the poster layout stays balanced.
+  function buildPlaceholderRow(film: typeof ordered[number], i: number): React.ReactElement {
+    const filmTitle = String(film.title || '').normalize('NFC')
+    const year = film.releaseDate ? new Date(film.releaseDate).getFullYear().toString() : ''
+    const score = film.sentimentGraph?.overallScore ?? null
+    const titleFontSize = rowH > 80 ? 22 : rowH > 60 ? 18 : 14
+    const yearFontSize = rowH > 80 ? 16 : rowH > 60 ? 14 : 12
+    const scoreFontSize = rowH > 80 ? 30 : rowH > 60 ? 24 : 18
+    const placeholderFontSize = rowH > 80 ? 14 : rowH > 60 ? 13 : 12
+
+    return React.createElement(
+      'div',
+      {
+        key: film.id,
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          width: W,
+          height: rowH,
+          position: 'relative' as const,
+          overflow: 'hidden',
+          borderBottom: i < count - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+          backgroundColor: BG,
+        },
+      },
+      // Title (DM Sans — distinguishes placeholder from working rows that use Libre Baskerville)
+      React.createElement(
+        'div',
+        {
+          style: {
+            position: 'absolute' as const,
+            left: titleStartX,
+            top: 0,
+            width: titleZoneW,
+            height: rowH,
+            display: 'flex',
+            flexDirection: 'column' as const,
+            overflow: 'hidden',
+            justifyContent: 'center',
+          },
+        },
+        React.createElement(
+          'span',
+          {
+            style: {
+              fontFamily: 'DM Sans',
+              fontSize: titleFontSize,
+              color: IVORY,
+              lineHeight: 1.2,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap' as const,
+            },
+          },
+          filmTitle
+        ),
+        year
+          ? React.createElement(
+              'span',
+              {
+                style: {
+                  fontFamily: 'DM Sans',
+                  fontSize: yearFontSize,
+                  color: 'rgba(245,240,232,0.5)',
+                  marginTop: 2,
+                },
+              },
+              year
+            )
+          : null
+      ),
+      // "Graph unavailable" in the sparkline zone
+      React.createElement(
+        'div',
+        {
+          style: {
+            position: 'absolute' as const,
+            left: sparkStartX - 30,
+            top: 0,
+            width: sparkZoneW + 32,
+            height: rowH,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
+        },
+        React.createElement(
+          'span',
+          {
+            style: {
+              fontFamily: 'DM Sans',
+              fontSize: placeholderFontSize,
+              color: 'rgba(245,240,232,0.35)',
+              fontStyle: 'italic' as const,
+            },
+          },
+          'Graph unavailable'
+        )
+      ),
+      // Score — same style as working rows (gold Libre Baskerville bold) so layout is balanced
+      React.createElement(
+        'span',
+        {
+          style: {
+            position: 'absolute' as const,
+            left: scoreStartX,
+            top: Math.round((rowH - scoreFontSize * 1.2) / 2),
+            width: scoreZoneW,
+            fontFamily: score != null ? 'Libre Baskerville' : 'DM Sans',
+            fontWeight: score != null ? 700 : 400,
+            fontSize: score != null ? scoreFontSize : scoreFontSize - 4,
+            color: score != null ? GOLD : 'rgba(255,255,255,0.2)',
+            textAlign: 'right' as const,
+            paddingRight: 10,
+          },
+        },
+        score != null ? score.toFixed(1) : '--'
+      )
+    )
+  }
+
   let rows = buildRows()
 
   // ── Full poster element ──
@@ -783,22 +909,62 @@ export async function GET(request: NextRequest) {
     ],
   }
 
-  // Test each row individually — if a logo crashes satori, fall back to font
+  // Test each row individually. Two-stage degradation:
+  //   1. If the row crashes (logo branch), retry with font branch.
+  //   2. If font ALSO crashes, mark renderFailed → row becomes a placeholder.
+  // A single broken film must never prevent the rest of the poster from generating.
+  async function testRow(rowEl: React.ReactElement) {
+    const testEl = React.createElement('div', { style: { display: 'flex', width: W, height: 100 } }, rowEl)
+    await satori(testEl, { width: W, height: 100, fonts: satoriOpts.fonts })
+  }
+
   for (let i = 0; i < rows.length; i++) {
+    const film = ordered[i]
     try {
-      const testEl = React.createElement('div', { style: { display: 'flex', width: W, height: 100 } }, rows[i])
-      await satori(testEl, { width: satoriOpts.width, height: 100, fonts: satoriOpts.fonts })
-    } catch (rowErr) {
-      const film = ordered[i]
-      console.error(`[og/list] Row ${i} ("${film.title}") crashed satori, falling back to font display`, {
-        error: rowErr instanceof Error ? rowErr.message : String(rowErr),
-      })
-      forceFont.add(film.id)
+      await testRow(rows[i])
+    } catch (firstErr) {
+      const logoSrc = logoCache.get(film.id) ?? null
+      const wasUsingLogo = displayMap.get(film.id) === 'logo' && logoSrc != null
+      if (wasUsingLogo) {
+        // Logo branch crashed — try font branch before giving up
+        forceFont.add(film.id)
+        const fontRow = buildRow(film, i)
+        try {
+          await testRow(fontRow)
+          console.error(
+            `[og/list] Row ${i} ("${film.title}") logo branch crashed, falling back to font display`,
+            { error: firstErr instanceof Error ? firstErr.message : String(firstErr) }
+          )
+        } catch (fontErr) {
+          forceFont.delete(film.id)
+          renderFailed.add(film.id)
+          console.error(
+            `[og/list] Row ${i} (${film.id}, "${film.title}") failed both logo and font branches: ${fontErr instanceof Error ? fontErr.message : String(fontErr)}`,
+            {
+              logoError: firstErr instanceof Error ? firstErr.message : String(firstErr),
+              logoStack: firstErr instanceof Error ? firstErr.stack : undefined,
+              fontError: fontErr instanceof Error ? fontErr.message : String(fontErr),
+              fontStack: fontErr instanceof Error ? fontErr.stack : undefined,
+            }
+          )
+        }
+      } else {
+        // Original branch was already font (or logo unavailable) — go straight to placeholder
+        renderFailed.add(film.id)
+        console.error(
+          `[og/list] Row ${i} (${film.id}, "${film.title}") failed both logo and font branches: ${firstErr instanceof Error ? firstErr.message : String(firstErr)}`,
+          {
+            error: firstErr instanceof Error ? firstErr.message : String(firstErr),
+            stack: firstErr instanceof Error ? firstErr.stack : undefined,
+            note: 'logo branch unavailable (display=font or logo image missing)',
+          }
+        )
+      }
     }
   }
 
-  // Rebuild rows with font fallbacks if any logos crashed
-  if (forceFont.size > 0) {
+  // Rebuild rows if any film was forced to font or to placeholder
+  if (forceFont.size > 0 || renderFailed.size > 0) {
     rows = buildRows()
   }
 
