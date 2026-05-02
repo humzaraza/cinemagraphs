@@ -1,3 +1,17 @@
+/**
+ * Shared TMDB image fetcher with Cloudflare-aware format normalization.
+ *
+ * TMDB serves images through Cloudflare content negotiation: a URL ending in
+ * .jpg can return WebP, AVIF, or JPEG depending on edge cache state. Satori
+ * cannot decode WebP/AVIF ("u is not iterable" crash); Resvg 2.6.2 silently
+ * skips them, leaving blank backdrops. Fixes: 4f93b44 (OG list),
+ * edd98b7 (share/review), 63e582b (carousel slide composer).
+ *
+ * The `Accept: image/jpeg, image/png` header is necessary but insufficient
+ * — Cloudflare may ignore it. The sharp transcode below is the load-bearing
+ * safeguard. If you fetch TMDB images server-side for satori, sharp, or
+ * Resvg, USE THIS HELPER. Do not bare fetch().
+ */
 import sharp from 'sharp'
 
 export interface TmdbImageOpts {
