@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
+import { withDerivedFields } from '@/lib/films'
 
 export async function GET(request: NextRequest) {
   try {
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
       return aLower.localeCompare(bLower)
     })
 
-    const films = allMatches.slice(0, 20)
+    const films = allMatches.slice(0, 20).map(withDerivedFields)
 
     return Response.json({ films, query: sanitizedQuery })
   } catch (err) {
