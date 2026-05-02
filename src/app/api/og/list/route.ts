@@ -5,6 +5,7 @@ import satori, { type SatoriOptions } from 'satori'
 import sharp from 'sharp'
 import React from 'react'
 import type { SentimentDataPoint } from '@/lib/types'
+import { fetchTmdbImageAsDataUri } from '@/lib/tmdb-image'
 
 export const dynamic = 'force-dynamic'
 
@@ -167,71 +168,6 @@ export async function buildSparklinePng(
   }
 }
 
-// ── Image fetching (convert to base64 data URI for satori) ──
-
-export async function fetchImageAsDataUri(url: string, filmId?: string): Promise<string | null> {
-  try {
-    // Hint Cloudflare/TMDB toward a satori-compatible format. Cloudflare may still
-    // serve WebP/AVIF if its edge cache already holds one for this URL, so the
-    // transcode below is the load-bearing safeguard.
-    const res = await fetch(url, { headers: { Accept: 'image/jpeg, image/png' } })
-    if (!res.ok) {
-      console.error('[og/list] Image fetch failed:', { url, status: res.status })
-      return null
-    }
-    const contentType = res.headers.get('content-type') || 'image/jpeg'
-
-    // Reject non-image responses (TMDB can return HTML error pages)
-    if (!contentType.startsWith('image/')) {
-      console.error('[og/list] Non-image content-type, skipping:', { url, contentType })
-      return null
-    }
-
-    const buf = await res.arrayBuffer()
-
-    // Satori requires SVGs to have a viewBox — inject one if missing
-    if (contentType.includes('svg') || url.endsWith('.svg')) {
-      let svg = Buffer.from(buf).toString('utf-8')
-      if (!svg.includes('viewBox')) {
-        const wMatch = svg.match(/width="([^"]+)"/)
-        const hMatch = svg.match(/height="([^"]+)"/)
-        if (wMatch && hMatch) {
-          const w = parseFloat(wMatch[1])
-          const h = parseFloat(hMatch[1])
-          if (w && h) {
-            svg = svg.replace('<svg', `<svg viewBox="0 0 ${w} ${h}"`)
-          }
-        } else {
-          return null
-        }
-      }
-      const base64 = Buffer.from(svg).toString('base64')
-      return `data:image/svg+xml;base64,${base64}`
-    }
-
-    // Satori cannot decode WebP or AVIF (its image handler throws "u is not iterable").
-    // Transcode anything other than JPEG/PNG to JPEG before embedding.
-    if (contentType !== 'image/jpeg' && contentType !== 'image/png') {
-      const original = Buffer.from(buf)
-      const transcoded = await sharp(original).jpeg({ quality: 85 }).toBuffer()
-      console.log('[og/list] Transcoded non-JPEG image to JPEG for satori compatibility:', {
-        url,
-        filmId: filmId ?? null,
-        originalContentType: contentType,
-        originalBytes: original.length,
-        transcodedBytes: transcoded.length,
-      })
-      return `data:image/jpeg;base64,${transcoded.toString('base64')}`
-    }
-
-    const base64 = Buffer.from(buf).toString('base64')
-    return `data:${contentType};base64,${base64}`
-  } catch (err) {
-    console.error('[og/list] Image fetch error:', { url, error: String(err) })
-    return null
-  }
-}
-
 // ── Fetch TMDB logo for a film ──
 
 async function fetchTmdbLogo(tmdbId: number, filmId?: string): Promise<string | null> {
@@ -246,7 +182,7 @@ async function fetchTmdbLogo(tmdbId: number, filmId?: string): Promise<string | 
     if (!logos || logos.length === 0) return null
     // Prefer English logo, fall back to first
     const enLogo = logos.find((l) => l.iso_639_1 === 'en') ?? logos[0]
-    return fetchImageAsDataUri(`https://image.tmdb.org/t/p/w300${enLogo.file_path}`, filmId)
+    return fetchTmdbImageAsDataUri(`https://image.tmdb.org/t/p/w300${enLogo.file_path}`, { filmId })
   } catch {
     return null
   }
@@ -324,7 +260,7 @@ export async function GET(request: NextRequest) {
           : null
       if (bgUrl) {
         tasks.push(
-          fetchImageAsDataUri(bgUrl, film.id).then((uri) => {
+          fetchTmdbImageAsDataUri(bgUrl, { filmId: film.id }).then((uri) => {
             backdropCache.set(film.id, uri)
           })
         )
