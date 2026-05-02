@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import satori from 'satori'
 import sharp from 'sharp'
 import React from 'react'
+import { fetchTmdbImageAsDataUri } from '@/lib/tmdb-image'
 
 export const dynamic = 'force-dynamic'
 
@@ -564,18 +565,51 @@ export async function GET(
     const username = review.user.name || review.user.email.split('@')[0]
     const beatRatings = review.beatRatings as Record<string, number> | null
     const graphLabels = (review.film.sentimentGraph?.dataPoints as { label: string; score: number }[]) || []
-    // Use portrait poster (2:3 ratio)
-    const posterUrl = review.film.posterUrl
-      ? `https://image.tmdb.org/t/p/w780${review.film.posterUrl}`
-      : null
+    // Pre-fetch poster + backdrop as data URIs. Satori cannot decode WebP/AVIF
+    // (its image handler throws "u is not iterable"), and TMDB serves WebP based
+    // on Cloudflare cache state, so we hand satori bytes directly rather than
+    // letting it fetch the URLs itself.
+    let posterUrl: string | null = null
+    if (review.film.posterUrl) {
+      try {
+        posterUrl = await fetchTmdbImageAsDataUri(
+          `https://image.tmdb.org/t/p/w780${review.film.posterUrl}`,
+          { filmId: review.filmId },
+        )
+      } catch (err) {
+        console.error('Share image: poster fetch failed:', err)
+      }
+    }
+
+    let backdropDataUri: string | null = null
+    if (review.film.backdropUrl) {
+      try {
+        backdropDataUri = await fetchTmdbImageAsDataUri(
+          `https://image.tmdb.org/t/p/w1280${review.film.backdropUrl}`,
+          { filmId: review.filmId },
+        )
+      } catch (err) {
+        console.error('Share image: backdrop fetch failed:', err)
+      }
+    }
+    // Backdrop falls back to poster when missing or its fetch failed (preserves
+    // the prior URL-level fallback at the data-URI level).
+    const backdropSrc = backdropDataUri ?? posterUrl
+
+    // If we attempted both fetches and both failed, the rendered poster would
+    // be all gray fallback boxes — better to surface a 500 via the existing
+    // catch than ship an image with no film visual.
+    if (
+      review.film.posterUrl &&
+      posterUrl === null &&
+      review.film.backdropUrl &&
+      backdropDataUri === null
+    ) {
+      throw new Error('Both poster and backdrop fetches failed; cannot generate share image')
+    }
 
     const userPoints = buildUserDataPoints(beatRatings, graphLabels)
     const hasGraph = userPoints.length >= 2
-
-    // Backdrop for cinematic style (landscape backdrop, fall back to poster)
-    const backdropSrc = review.film.backdropUrl
-      ? `https://image.tmdb.org/t/p/w1280${review.film.backdropUrl}`
-      : posterUrl
 
     const fonts = await loadFonts()
     const satoriFonts = [
