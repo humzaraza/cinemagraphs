@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Resvg } from '@resvg/resvg-js'
 
+import { fetchTmdbImageAsBuffer } from '@/lib/tmdb-image'
 import { dotRadiusFor, marginsFor, renderGraph, type DataPoint } from './graph-renderer'
 import { makePolylineSampler, type SamplerPoint } from './polyline-sampler'
 
@@ -594,6 +595,23 @@ async function resolveBackground(
 ): Promise<Buffer | null> {
   if (input === undefined) return null
   if (Buffer.isBuffer(input)) return input
+
+  // TMDB serves WebP/AVIF via Cloudflare content negotiation. Resvg 2.6.2
+  // silently drops <image> hrefs whose data is WebP/AVIF, leaving slides with
+  // a dark base fill where the backdrop should appear. Route TMDB URLs
+  // through the shared helper so bytes arrive as JPEG/PNG/SVG (formats Resvg
+  // supports) before they reach the SVG.
+  let isTmdbImage = false
+  try {
+    isTmdbImage = new URL(input).hostname === 'image.tmdb.org'
+  } catch {
+    // Not a parseable URL — fall through to the bare fetch path, which will
+    // throw on invalid input the same way it always has.
+  }
+  if (isTmdbImage) {
+    return fetchTmdbImageAsBuffer(input)
+  }
+
   const resp = await fetch(input)
   if (!resp.ok) {
     throw new Error(`slide-composer: failed to fetch background image (${resp.status})`)
