@@ -55,3 +55,6 @@ graph-renderer-output/
 slide-composer-output/
 test-horizontal.webm
 test-vertical.webm
+
+# Local-only diagnostic scripts (already-tracked files in this dir remain tracked)
+scripts/diagnostic/
