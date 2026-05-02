@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
+import { withDerivedFields } from '@/lib/films'
 
 export async function GET(request: NextRequest) {
   try {
@@ -83,7 +84,7 @@ export async function GET(request: NextRequest) {
       const films = allMatches.slice(skip, skip + limit)
 
       return Response.json({
-        films,
+        films: films.map(withDerivedFields),
         pagination: {
           page,
           limit,
@@ -109,7 +110,7 @@ export async function GET(request: NextRequest) {
     ])
 
     return Response.json({
-      films,
+      films: films.map(withDerivedFields),
       pagination: {
         page,
         limit,
