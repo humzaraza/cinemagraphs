@@ -1,10 +1,12 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider   = "postgresql"
+  extensions = [pg_trgm]
 }
 
 enum UserRole {
@@ -147,6 +149,7 @@ model Film {
   status               FilmStatus            @default(ACTIVE)
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
+  searchVector         Unsupported("tsvector")?
   sentimentGraph       SentimentGraph?
   filmBeats            FilmBeats?
   reviews              Review[]
@@ -162,6 +165,7 @@ model Film {
 
   @@index([tmdbId])
   @@index([title])
+  @@index([searchVector], type: Gin)
 }
 
 model SentimentGraph {
