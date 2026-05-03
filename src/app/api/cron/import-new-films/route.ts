@@ -271,6 +271,29 @@ export async function GET(request: Request) {
       `TMDB sync complete: ${imported} films added, ${skipCounts.total} films skipped (${skipCounts.lowVotes} low votes, ${skipCounts.lowPopularity} low popularity, ${skipCounts.excludedGenre} excluded genre)`
     )
 
+    // Health check: detect if the search vector trigger has been dropped.
+    // If any ACTIVE film has a NULL searchVector, new films won't appear
+    // in search. This is silent degradation; log loudly so we catch it.
+    try {
+      const result = await prisma.$queryRaw<[{ count: bigint }]>`
+        SELECT COUNT(*)::bigint as count
+        FROM "Film"
+        WHERE status = 'ACTIVE' AND "searchVector" IS NULL
+      `
+      const nullVectorCount = Number(result[0]?.count ?? 0)
+      if (nullVectorCount > 0) {
+        cronLogger.error(
+          { nullVectorCount },
+          'Film.searchVector NULL on active rows. Search trigger may be dropped. Recovery: re-run trigger SQL from migration add_film_search_vector and UPDATE "Film" SET title = title WHERE "searchVector" IS NULL.',
+        )
+      }
+    } catch (healthErr) {
+      cronLogger.error(
+        { err: healthErr instanceof Error ? healthErr.message : 'Unknown' },
+        'Failed to run searchVector health check',
+      )
+    }
+
     return Response.json({ imported, skipped: skipCounts.total, skipCounts, failed, nowPlayingRefreshed: nowPlayingIds.size, durationMs })
   } catch (err) {
     cronLogger.error({ err, durationMs: Date.now() - startTime }, 'Import cron failed')
