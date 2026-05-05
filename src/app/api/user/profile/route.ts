@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
+import { buildProfileResponse } from '@/lib/profile-response'
 import type { Prisma } from '@/generated/prisma/client'
 
 export async function GET() {
@@ -11,79 +12,15 @@ export async function GET() {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 
-    const userId = session.user.id
-
-    console.error('[profile] Looking up user', { userId })
-
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: profileSelect,
-    })
-
-    if (!user) {
-      console.error('[profile] User not found — returning 404', { userId })
+    const payload = await buildProfileResponse(session.user.id)
+    if (!payload) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
-
-    console.error('[profile] User found', { id: user.id, email: user.email })
-    return buildProfileResponse(user)
+    return NextResponse.json(payload)
   } catch (err) {
     apiLogger.error({ err }, 'Failed to fetch user profile')
     return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
   }
-}
-
-const profileSelect = {
-  id: true,
-  name: true,
-  username: true,
-  bio: true,
-  image: true,
-  email: true,
-  role: true,
-  createdAt: true,
-  _count: {
-    select: {
-      userReviews: true,
-      watchlistItems: true,
-      lists: true,
-      following: true,
-      followers: true,
-    },
-  },
-} as const
-
-function buildProfileResponse(user: {
-  id: string
-  name: string | null
-  username: string | null
-  bio: string | null
-  image: string | null
-  email: string
-  role: string
-  createdAt: Date
-  _count: { userReviews: number; watchlistItems: number; lists: number; following: number; followers: number }
-}) {
-  return NextResponse.json({
-    user: {
-      id: user.id,
-      name: user.name,
-      username: user.username,
-      bio: user.bio,
-      image: user.image,
-      email: user.email,
-      role: user.role,
-      createdAt: user.createdAt,
-    },
-    stats: {
-      reviewCount: user._count.userReviews,
-      watchedCount: user._count.userReviews,
-      watchlistCount: user._count.watchlistItems,
-      listCount: user._count.lists,
-      followingCount: user._count.following,
-      followerCount: user._count.followers,
-    },
-  })
 }
 
 export async function PATCH(request: NextRequest) {
