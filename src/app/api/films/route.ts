@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
     const q = searchParams.get('q')?.trim().slice(0, 200) || ''
     const nowPlaying = searchParams.get('nowPlaying') === 'true'
     const ticker = searchParams.get('ticker') === 'true'
+    const hasBackdrop = searchParams.get('hasBackdrop') === 'true'
 
     // Build where clause
     const where: Record<string, unknown> = { status: 'ACTIVE' }
@@ -28,6 +29,9 @@ export async function GET(request: NextRequest) {
     }
     if (ticker) {
       where.tickerOverride = 'force_show'
+    }
+    if (hasBackdrop) {
+      where.backdropUrl = { not: null }
     }
 
     // Build orderBy
@@ -46,6 +50,11 @@ export async function GET(request: NextRequest) {
         break
       case 'recent':
         orderBy = { createdAt: 'desc' }
+        break
+      case 'popular':
+        // imdbVotes proxies popularity for the banner-backdrop picker.
+        // Prisma orders nulls last by default on Postgres for desc.
+        orderBy = [{ imdbVotes: { sort: 'desc', nulls: 'last' } }, { title: 'asc' }]
         break
       case 'az':
       default:
