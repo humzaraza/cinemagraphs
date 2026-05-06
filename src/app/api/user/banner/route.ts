@@ -3,6 +3,7 @@ import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
 import { buildProfileResponse } from '@/lib/profile-response'
+import { deleteUserBannerBlob, validateBannerBlobPath } from '@/lib/banner-blob'
 
 const VALID_GRADIENT_KEYS = [
   'midnight',
@@ -43,22 +44,37 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'bannerValue must be a non-empty string' }, { status: 400 })
     }
 
-    if (bannerType === 'PHOTO' || bannerType === 'BACKDROP') {
-      return NextResponse.json(
-        { error: `bannerType '${bannerType}' is not yet implemented. Only GRADIENT is supported in PR 1a.` },
-        { status: 501 }
-      )
+    if (bannerType === 'GRADIENT') {
+      if (!VALID_GRADIENT_KEYS.includes(bannerValue as (typeof VALID_GRADIENT_KEYS)[number])) {
+        return NextResponse.json(
+          {
+            error: 'Invalid GRADIENT bannerValue.',
+            validKeys: VALID_GRADIENT_KEYS,
+          },
+          { status: 400 }
+        )
+      }
+    } else if (bannerType === 'BACKDROP') {
+      const film = await prisma.film.findUnique({ where: { id: bannerValue }, select: { id: true } })
+      if (!film) {
+        return NextResponse.json(
+          { error: `BACKDROP bannerValue must be the id of an existing film. '${bannerValue}' was not found.` },
+          { status: 400 }
+        )
+      }
+    } else if (bannerType === 'PHOTO') {
+      if (!validateBannerBlobPath(bannerValue)) {
+        return NextResponse.json(
+          { error: "PHOTO bannerValue must be a blob path under the 'banners/' namespace." },
+          { status: 400 }
+        )
+      }
     }
 
-    if (!VALID_GRADIENT_KEYS.includes(bannerValue as (typeof VALID_GRADIENT_KEYS)[number])) {
-      return NextResponse.json(
-        {
-          error: 'Invalid GRADIENT bannerValue.',
-          validKeys: VALID_GRADIENT_KEYS,
-        },
-        { status: 400 }
-      )
-    }
+    const previous = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { bannerType: true, bannerValue: true },
+    })
 
     await prisma.user.update({
       where: { id: session.user.id },
@@ -67,6 +83,21 @@ export async function PATCH(request: NextRequest) {
         bannerValue,
       },
     })
+
+    if (previous?.bannerType === 'PHOTO') {
+      try {
+        await deleteUserBannerBlob({
+          id: session.user.id,
+          bannerType: previous.bannerType,
+          bannerValue: previous.bannerValue,
+        })
+      } catch (cleanupErr) {
+        apiLogger.warn(
+          { err: cleanupErr, userId: session.user.id },
+          'Banner blob cleanup raised after update'
+        )
+      }
+    }
 
     const payload = await buildProfileResponse(session.user.id)
     if (!payload) {
