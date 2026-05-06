@@ -50,6 +50,9 @@ model User {
   image                String?
   bio                  String?
   favoriteGenres       String[]
+  favoriteFilms        String[]              @default([])
+  bannerType           BannerType            @default(GRADIENT)
+  bannerValue          String                @default("midnight")
   password             String?
   role                 UserRole              @default(USER)
   suspendedUntil       DateTime?
@@ -445,4 +448,10 @@ model SentimentGraphDriftLog {
 
   @@index([filmId])
   @@index([occurredAt])
+}
+
+enum BannerType {
+  GRADIENT
+  PHOTO
+  BACKDROP
 }
