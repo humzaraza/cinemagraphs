@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
 import { buildProfileResponse } from '@/lib/profile-response'
 import { deleteUserBannerBlob, validateBannerBlobPath } from '@/lib/banner-blob'
+import { parseBackdropBannerValue, encodeBackdropBannerValue } from '@/lib/banner-validation'
 
 const VALID_GRADIENT_KEYS = [
   'midnight',
@@ -40,12 +41,20 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    if (typeof bannerValue !== 'string' || bannerValue.length === 0) {
-      return NextResponse.json({ error: 'bannerValue must be a non-empty string' }, { status: 400 })
+    // GRADIENT and PHOTO require a non-empty string bannerValue (unchanged
+    // contract). BACKDROP accepts string OR object so we skip the type
+    // assertion for it and validate inside the BACKDROP branch.
+    if (bannerType !== 'BACKDROP') {
+      if (typeof bannerValue !== 'string' || bannerValue.length === 0) {
+        return NextResponse.json({ error: 'bannerValue must be a non-empty string' }, { status: 400 })
+      }
     }
 
+    let persistedBannerValue: string
+
     if (bannerType === 'GRADIENT') {
-      if (!VALID_GRADIENT_KEYS.includes(bannerValue as (typeof VALID_GRADIENT_KEYS)[number])) {
+      const value = bannerValue as string
+      if (!VALID_GRADIENT_KEYS.includes(value as (typeof VALID_GRADIENT_KEYS)[number])) {
         return NextResponse.json(
           {
             error: 'Invalid GRADIENT bannerValue.',
@@ -54,21 +63,35 @@ export async function PATCH(request: NextRequest) {
           { status: 400 }
         )
       }
+      persistedBannerValue = value
     } else if (bannerType === 'BACKDROP') {
-      const film = await prisma.film.findUnique({ where: { id: bannerValue }, select: { id: true } })
+      const parsed = parseBackdropBannerValue(bannerValue)
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 })
+      }
+      const film = await prisma.film.findUnique({
+        where: { id: parsed.value.filmId },
+        select: { id: true },
+      })
       if (!film) {
         return NextResponse.json(
-          { error: `BACKDROP bannerValue must be the id of an existing film. '${bannerValue}' was not found.` },
+          {
+            error: `BACKDROP bannerValue must be the id of an existing film. '${parsed.value.filmId}' was not found.`,
+          },
           { status: 400 }
         )
       }
-    } else if (bannerType === 'PHOTO') {
-      if (!validateBannerBlobPath(bannerValue)) {
+      persistedBannerValue = encodeBackdropBannerValue(parsed.value)
+    } else {
+      // PHOTO
+      const value = bannerValue as string
+      if (!validateBannerBlobPath(value)) {
         return NextResponse.json(
           { error: "PHOTO bannerValue must be a blob path under the 'banners/' namespace." },
           { status: 400 }
         )
       }
+      persistedBannerValue = value
     }
 
     const previous = await prisma.user.findUnique({
@@ -80,7 +103,7 @@ export async function PATCH(request: NextRequest) {
       where: { id: session.user.id },
       data: {
         bannerType: bannerType as BannerTypeLiteral,
-        bannerValue,
+        bannerValue: persistedBannerValue,
       },
     })
 

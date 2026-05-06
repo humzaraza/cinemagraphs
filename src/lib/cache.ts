@@ -24,6 +24,9 @@ export const KEYS = {
   tmdbNowPlaying: (region: string) => `tmdb:now_playing:${region}`,
   tmdbImages: (tmdbId: number, lang?: string) =>
     lang ? `tmdb:images:${tmdbId}:${lang}` : `tmdb:images:${tmdbId}`,
+  // Filtered/sorted/capped backdrops for the banner picker, keyed by
+  // internal Cinemagraphs filmId so we can invalidate by our own id.
+  tmdbBackdrops: (filmId: string) => `tmdb:backdrops:${filmId}`,
   omdb: (imdbId: string) => `omdb:${imdbId}`,
   person: (tmdbPersonId: number) => `person:${tmdbPersonId}`,
 } as const

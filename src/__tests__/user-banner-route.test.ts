@@ -107,7 +107,7 @@ describe('PATCH /api/user/banner', () => {
   })
 
   describe('BACKDROP', () => {
-    it('persists when the filmId exists in the catalog', async () => {
+    it('legacy string filmId: validates against catalog and persists as JSON-encoded object with null backdropPath', async () => {
       mocks.prisma.film.findUnique.mockResolvedValue({ id: 'film_godfather' })
       const { PATCH } = await import('@/app/api/user/banner/route')
       const res = await PATCH(patchRequest({ bannerType: 'BACKDROP', bannerValue: 'film_godfather' }))
@@ -118,17 +118,138 @@ describe('PATCH /api/user/banner', () => {
       })
       expect(mocks.prisma.user.update).toHaveBeenCalledWith({
         where: { id: USER_ID },
-        data: { bannerType: 'BACKDROP', bannerValue: 'film_godfather' },
+        data: {
+          bannerType: 'BACKDROP',
+          bannerValue: JSON.stringify({ filmId: 'film_godfather', backdropPath: null }),
+        },
       })
     })
 
-    it('returns 400 when the filmId does not exist', async () => {
+    it('object shape with backdropPath null: persists as JSON-encoded object', async () => {
+      mocks.prisma.film.findUnique.mockResolvedValue({ id: 'film_godfather' })
+      const { PATCH } = await import('@/app/api/user/banner/route')
+      const res = await PATCH(
+        patchRequest({
+          bannerType: 'BACKDROP',
+          bannerValue: { filmId: 'film_godfather', backdropPath: null },
+        })
+      )
+      expect(res.status).toBe(200)
+      expect(mocks.prisma.user.update).toHaveBeenCalledWith({
+        where: { id: USER_ID },
+        data: {
+          bannerType: 'BACKDROP',
+          bannerValue: JSON.stringify({ filmId: 'film_godfather', backdropPath: null }),
+        },
+      })
+    })
+
+    it('object shape with non-null backdropPath: persists exactly as supplied', async () => {
+      mocks.prisma.film.findUnique.mockResolvedValue({ id: 'film_godfather' })
+      const { PATCH } = await import('@/app/api/user/banner/route')
+      const res = await PATCH(
+        patchRequest({
+          bannerType: 'BACKDROP',
+          bannerValue: { filmId: 'film_godfather', backdropPath: '/abc123.jpg' },
+        })
+      )
+      expect(res.status).toBe(200)
+      expect(mocks.prisma.user.update).toHaveBeenCalledWith({
+        where: { id: USER_ID },
+        data: {
+          bannerType: 'BACKDROP',
+          bannerValue: JSON.stringify({
+            filmId: 'film_godfather',
+            backdropPath: '/abc123.jpg',
+          }),
+        },
+      })
+    })
+
+    it('returns 400 when the filmId does not exist (legacy string input)', async () => {
       mocks.prisma.film.findUnique.mockResolvedValue(null)
       const { PATCH } = await import('@/app/api/user/banner/route')
       const res = await PATCH(patchRequest({ bannerType: 'BACKDROP', bannerValue: 'film_unknown' }))
       expect(res.status).toBe(400)
       const body = await res.json()
       expect(body.error).toContain('film_unknown')
+      expect(mocks.prisma.user.update).not.toHaveBeenCalled()
+    })
+
+    it('returns 400 when the filmId does not exist (object input)', async () => {
+      mocks.prisma.film.findUnique.mockResolvedValue(null)
+      const { PATCH } = await import('@/app/api/user/banner/route')
+      const res = await PATCH(
+        patchRequest({
+          bannerType: 'BACKDROP',
+          bannerValue: { filmId: 'film_unknown', backdropPath: null },
+        })
+      )
+      expect(res.status).toBe(400)
+      const body = await res.json()
+      expect(body.error).toContain('film_unknown')
+      expect(mocks.prisma.user.update).not.toHaveBeenCalled()
+    })
+
+    it('returns 400 when bannerValue is an object missing filmId', async () => {
+      const { PATCH } = await import('@/app/api/user/banner/route')
+      const res = await PATCH(
+        patchRequest({ bannerType: 'BACKDROP', bannerValue: { backdropPath: '/abc.jpg' } })
+      )
+      expect(res.status).toBe(400)
+      expect(mocks.prisma.film.findUnique).not.toHaveBeenCalled()
+      expect(mocks.prisma.user.update).not.toHaveBeenCalled()
+    })
+
+    it('returns 400 when bannerValue.backdropPath is a number', async () => {
+      const { PATCH } = await import('@/app/api/user/banner/route')
+      const res = await PATCH(
+        patchRequest({
+          bannerType: 'BACKDROP',
+          bannerValue: { filmId: 'film_godfather', backdropPath: 42 },
+        })
+      )
+      expect(res.status).toBe(400)
+      expect(mocks.prisma.user.update).not.toHaveBeenCalled()
+    })
+
+    it('returns 400 when bannerValue.backdropPath is an empty string', async () => {
+      const { PATCH } = await import('@/app/api/user/banner/route')
+      const res = await PATCH(
+        patchRequest({
+          bannerType: 'BACKDROP',
+          bannerValue: { filmId: 'film_godfather', backdropPath: '' },
+        })
+      )
+      expect(res.status).toBe(400)
+      expect(mocks.prisma.user.update).not.toHaveBeenCalled()
+    })
+
+    it('returns 400 when bannerValue.backdropPath does not start with "/"', async () => {
+      const { PATCH } = await import('@/app/api/user/banner/route')
+      const res = await PATCH(
+        patchRequest({
+          bannerType: 'BACKDROP',
+          bannerValue: { filmId: 'film_godfather', backdropPath: 'abc.jpg' },
+        })
+      )
+      expect(res.status).toBe(400)
+      expect(mocks.prisma.user.update).not.toHaveBeenCalled()
+    })
+
+    it('returns 400 when bannerValue is an array', async () => {
+      const { PATCH } = await import('@/app/api/user/banner/route')
+      const res = await PATCH(
+        patchRequest({ bannerType: 'BACKDROP', bannerValue: ['film_godfather'] })
+      )
+      expect(res.status).toBe(400)
+      expect(mocks.prisma.user.update).not.toHaveBeenCalled()
+    })
+
+    it('returns 400 when bannerValue is null', async () => {
+      const { PATCH } = await import('@/app/api/user/banner/route')
+      const res = await PATCH(patchRequest({ bannerType: 'BACKDROP', bannerValue: null }))
+      expect(res.status).toBe(400)
       expect(mocks.prisma.user.update).not.toHaveBeenCalled()
     })
   })
