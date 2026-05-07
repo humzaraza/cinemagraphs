@@ -1,6 +1,11 @@
 import { prisma } from './prisma'
 import { cachedQuery, KEYS, TTL } from './cache'
 
+// Re-export the pure URL helper so callers can keep `import { getBackdropUrl } from '@/lib/tmdb'`
+// while client components avoid pulling in the prisma-touching surface
+// of this file by importing from '@/lib/tmdb-url' directly.
+export { getBackdropUrl } from './tmdb-url'
+
 const TMDB_API_KEY = process.env.TMDB_API_KEY!
 const TMDB_BASE_URL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3'
 

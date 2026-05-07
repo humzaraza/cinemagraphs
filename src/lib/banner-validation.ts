@@ -31,14 +31,34 @@ export type BackdropParseResult =
   | { ok: false; error: string }
 
 /**
- * Normalize a BACKDROP bannerValue payload from either shape into the
- * canonical { filmId, backdropPath } object. Does NOT verify the filmId
- * exists in the catalog. Caller is responsible for that check.
+ * Normalize a BACKDROP bannerValue payload into the canonical
+ * { filmId, backdropPath } object. Does NOT verify the filmId exists
+ * in the catalog. Caller is responsible for that check.
+ *
+ * Accepts three input shapes:
+ *   1. JS object { filmId, backdropPath } - new PATCH request body
+ *   2. JSON-encoded string of the above object - the DB-stored shape
+ *      after PR 1c (post-migration)
+ *   3. Plain filmId string (legacy) - pre-PR-1c clients still in the
+ *      wild and pre-migration DB rows
+ *
+ * The string heuristic: any string starting with '{' is treated as the
+ * JSON-encoded shape and JSON.parse'd. A parse failure on such input
+ * is treated as malformed (returns ok:false) rather than falling
+ * through to legacy interpretation, so callers can fall back safely
+ * (e.g., the profile renderer collapses to a default gradient).
  */
 export function parseBackdropBannerValue(input: unknown): BackdropParseResult {
   if (typeof input === 'string') {
     if (input.length === 0) {
       return { ok: false, error: 'BACKDROP bannerValue string must be non-empty.' }
+    }
+    if (input.startsWith('{')) {
+      try {
+        return parseBackdropBannerValue(JSON.parse(input))
+      } catch {
+        return { ok: false, error: 'BACKDROP bannerValue: malformed JSON.' }
+      }
     }
     return { ok: true, value: { filmId: input, backdropPath: null } }
   }

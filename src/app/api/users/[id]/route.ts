@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
+import { parseBackdropBannerValue } from '@/lib/banner-validation'
 
 export async function GET(
   _request: NextRequest,
@@ -19,6 +20,8 @@ export async function GET(
         bio: true,
         createdAt: true,
         isPublic: true,
+        bannerType: true,
+        bannerValue: true,
         userReviews: {
           where: { status: 'approved' },
           orderBy: { createdAt: 'desc' },
@@ -103,6 +106,22 @@ export async function GET(
       },
     })
 
+    // Hydrate the BACKDROP fallback film: when bannerType is BACKDROP and
+    // the parsed backdropPath is null (legacy / migrated rows), the renderer
+    // needs the Film's default backdropUrl. Resolving server-side avoids a
+    // second client round trip. Anything else (parse failure, non-BACKDROP)
+    // returns null and the renderer falls back to a gradient.
+    let bannerFilm: { backdropUrl: string | null } | null = null
+    if (user.bannerType === 'BACKDROP') {
+      const parsed = parseBackdropBannerValue(user.bannerValue)
+      if (parsed.ok && parsed.value.backdropPath === null) {
+        bannerFilm = await prisma.film.findUnique({
+          where: { id: parsed.value.filmId },
+          select: { backdropUrl: true },
+        })
+      }
+    }
+
     // Derive a display name: name > username > 'User'
     const displayName = user.name || user.username || 'User'
 
@@ -138,6 +157,9 @@ export async function GET(
         createdAt: user.createdAt,
         followerCount,
         followingCount,
+        bannerType: user.bannerType,
+        bannerValue: user.bannerValue,
+        bannerFilm,
       },
       stats: {
         totalReviews,

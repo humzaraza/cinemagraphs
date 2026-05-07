@@ -27,7 +27,7 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {},
 }))
 
-import { getMovieImages, type TMDBImagesResponse } from '@/lib/tmdb'
+import { getMovieImages, getBackdropUrl, type TMDBImagesResponse } from '@/lib/tmdb'
 import { KEYS } from '@/lib/cache'
 
 const sampleResponse: TMDBImagesResponse = {
@@ -112,5 +112,24 @@ describe('KEYS.tmdbImages', () => {
 
   it('with lang: produces tmdb:images:{id}:{lang}', () => {
     expect(KEYS.tmdbImages(123, 'en')).toBe('tmdb:images:123:en')
+  })
+})
+
+describe('getBackdropUrl', () => {
+  it('defaults to w1280 size', () => {
+    expect(getBackdropUrl('/abc.jpg')).toBe('https://image.tmdb.org/t/p/w1280/abc.jpg')
+  })
+
+  it('respects an explicit size argument', () => {
+    expect(getBackdropUrl('/abc.jpg', 'original')).toBe(
+      'https://image.tmdb.org/t/p/original/abc.jpg'
+    )
+    expect(getBackdropUrl('/abc.jpg', 'w780')).toBe('https://image.tmdb.org/t/p/w780/abc.jpg')
+  })
+
+  it('preserves leading slash on file path', () => {
+    expect(getBackdropUrl('/path/to/file.jpg')).toBe(
+      'https://image.tmdb.org/t/p/w1280/path/to/file.jpg'
+    )
   })
 })

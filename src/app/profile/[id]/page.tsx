@@ -8,6 +8,7 @@ import Link from 'next/link'
 import ShareModal from '@/components/ShareModal'
 import EditProfileModal from '@/components/EditProfileModal'
 import NewListModal from '@/components/NewListModal'
+import ProfileBanner from '@/components/ProfileBanner'
 
 interface FilmData {
   id: string
@@ -63,6 +64,9 @@ interface ProfileData {
     createdAt: string
     followerCount: number
     followingCount: number
+    bannerType: 'GRADIENT' | 'PHOTO' | 'BACKDROP' | null
+    bannerValue: string | null
+    bannerFilm: { backdropUrl: string | null } | null
   }
   stats: { totalReviews: number; avgRating: number; graphsContributed: number; filmsReacted: number }
   reviews: ReviewData[]
@@ -172,7 +176,8 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="max-w-5xl mx-auto px-4 py-12">
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        <ProfileBanner loading={true} bannerType={null} bannerValue={null} bannerFilm={null} />
         <div className="animate-pulse space-y-6">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-full bg-cinema-card" />
@@ -217,6 +222,12 @@ export default function ProfilePage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
+      <ProfileBanner
+        loading={false}
+        bannerType={user.bannerType}
+        bannerValue={user.bannerValue}
+        bannerFilm={user.bannerFilm}
+      />
       {/* Profile Header */}
       <div className="flex items-center gap-4 mb-2">
         {user.image ? (
