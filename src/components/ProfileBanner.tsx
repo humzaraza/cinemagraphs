@@ -14,8 +14,10 @@
  *     pathname; the public CDN URL is constructed via getBannerPhotoUrl.
  *
  * Aspect: 16:9 to preserve the user's WYSIWYG crop choice from mobile.
- * On viewports >=768px, capped at max-h-[360px] to keep the banner from
- * dominating the desktop layout.
+ * On viewports >=768px, capped at max-h-[280px] (~3.5:1 letterbox at the
+ * page's max-w-5xl content width) so the banner doesn't visually
+ * dominate the desktop layout. Mobile keeps the full 16:9 because that
+ * is what the user sees in the picker.
  *
  * Any failure mode (missing env, parse error, missing CDN URL, missing
  * fallback film) collapses to a default GRADIENT to avoid leaving an
@@ -39,7 +41,7 @@ const GRADIENT_PRESETS: Record<string, string> = {
 const DEFAULT_GRADIENT = GRADIENT_PRESETS.midnight
 
 const BANNER_FRAME_CLASS =
-  'w-full aspect-[16/9] md:max-h-[360px] overflow-hidden rounded-lg mb-6 bg-cinema-darker'
+  'w-full aspect-[16/9] md:max-h-[280px] overflow-hidden rounded-lg mb-6 bg-cinema-darker'
 
 interface ProfileBannerProps {
   loading: boolean
