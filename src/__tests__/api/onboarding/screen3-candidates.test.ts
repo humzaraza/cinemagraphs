@@ -48,20 +48,20 @@ beforeEach(() => {
 
 describe('POST /api/onboarding/screen3-candidates', () => {
   describe('exact-match path', () => {
-    it('returns 12 films with fallback="exact" when era + genre intersection is dense', async () => {
-      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(12))
+    it('returns 18 films with fallback="exact" when era + genre intersection is dense', async () => {
+      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(18))
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       const res = await POST(postRequest({ eras: ['era_2010s'], genres: ['genre_scifi'] }))
       expect(res.status).toBe(200)
       const body = await res.json()
       expect(body.fallback).toBe('exact')
-      expect(body.films).toHaveLength(12)
+      expect(body.films).toHaveLength(18)
       expect(mocks.prisma.film.findMany).toHaveBeenCalledTimes(1)
     })
 
     it('builds the exact-match query with era yearRange (no expansion) and the selected genre tag', async () => {
-      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(12))
+      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(18))
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       await POST(postRequest({ eras: ['era_2010s'], genres: ['genre_scifi'] }))
@@ -82,7 +82,7 @@ describe('POST /api/onboarding/screen3-candidates', () => {
     })
 
     it('maps the mobile "Sci-fi" label to the DB tag "Science Fiction"', async () => {
-      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(12))
+      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(18))
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       await POST(postRequest({ eras: [], genres: ['genre_scifi'] }))
@@ -92,16 +92,16 @@ describe('POST /api/onboarding/screen3-candidates', () => {
   })
 
   describe('adjacent-decade fallback', () => {
-    it('expands each era by ±10 years when the exact pass returns <12', async () => {
+    it('expands each era by ±10 years when the exact pass returns <18', async () => {
       mocks.prisma.film.findMany
         .mockResolvedValueOnce(makeFilms(5)) // exact
-        .mockResolvedValueOnce(makeFilms(12, 100)) // adjacent
+        .mockResolvedValueOnce(makeFilms(18, 100)) // adjacent
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       const res = await POST(postRequest({ eras: ['era_1980s'], genres: ['genre_horror'] }))
       const body = await res.json()
       expect(body.fallback).toBe('adjacent')
-      expect(body.films).toHaveLength(12)
+      expect(body.films).toHaveLength(18)
 
       expect(mocks.prisma.film.findMany).toHaveBeenCalledTimes(2)
       const adjacentArgs = mocks.prisma.film.findMany.mock.calls[1][0]
@@ -126,13 +126,13 @@ describe('POST /api/onboarding/screen3-candidates', () => {
       mocks.prisma.film.findMany
         .mockResolvedValueOnce(makeFilms(2)) // exact
         .mockResolvedValueOnce(makeFilms(5)) // adjacent
-        .mockResolvedValueOnce(makeFilms(12, 200)) // genre-dropped
+        .mockResolvedValueOnce(makeFilms(18, 200)) // genre-dropped
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       const res = await POST(postRequest({ eras: ['era_2020s'], genres: ['genre_horror'] }))
       const body = await res.json()
       expect(body.fallback).toBe('genre-dropped')
-      expect(body.films).toHaveLength(12)
+      expect(body.films).toHaveLength(18)
 
       expect(mocks.prisma.film.findMany).toHaveBeenCalledTimes(3)
       const droppedArgs = mocks.prisma.film.findMany.mock.calls[2][0]
@@ -153,18 +153,18 @@ describe('POST /api/onboarding/screen3-candidates', () => {
   })
 
   describe('top-global fallback', () => {
-    it('returns top-global when all earlier passes return <12', async () => {
+    it('returns top-global when all earlier passes return <18', async () => {
       mocks.prisma.film.findMany
         .mockResolvedValueOnce(makeFilms(0)) // exact
         .mockResolvedValueOnce(makeFilms(0)) // adjacent
         .mockResolvedValueOnce(makeFilms(3)) // genre-dropped
-        .mockResolvedValueOnce(makeFilms(12, 300)) // top-global
+        .mockResolvedValueOnce(makeFilms(18, 300)) // top-global
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       const res = await POST(postRequest({ eras: ['era_1920s_30s'], genres: ['genre_thriller'] }))
       const body = await res.json()
       expect(body.fallback).toBe('top-global')
-      expect(body.films).toHaveLength(12)
+      expect(body.films).toHaveLength(18)
 
       expect(mocks.prisma.film.findMany).toHaveBeenCalledTimes(4)
       const globalArgs = mocks.prisma.film.findMany.mock.calls[3][0]
@@ -197,7 +197,7 @@ describe('POST /api/onboarding/screen3-candidates', () => {
 
   describe('unknown ID handling', () => {
     it('silently drops unknown era IDs and falls through to top-global when all are unknown', async () => {
-      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(12))
+      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(18))
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       const res = await POST(postRequest({ eras: ['era_NOT_REAL', 'era_also_fake'], genres: [] }))
@@ -208,7 +208,7 @@ describe('POST /api/onboarding/screen3-candidates', () => {
     })
 
     it('silently drops unknown genre IDs and uses only the recognized ones', async () => {
-      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(12))
+      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(18))
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       await POST(postRequest({ eras: [], genres: ['genre_drama', 'genre_NOT_REAL'] }))
@@ -219,7 +219,7 @@ describe('POST /api/onboarding/screen3-candidates', () => {
 
   describe('mosaic exclusion', () => {
     it('passes the 57 mosaic posterPaths to a notIn clause on posterUrl', async () => {
-      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(12))
+      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(18))
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       await POST(postRequest({ eras: ['era_2010s'], genres: ['genre_scifi'] }))
@@ -234,7 +234,7 @@ describe('POST /api/onboarding/screen3-candidates', () => {
     })
 
     it('always filters status=ACTIVE and releaseDate not null', async () => {
-      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(12))
+      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(18))
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       await POST(postRequest({ eras: [], genres: [] }))
@@ -245,8 +245,8 @@ describe('POST /api/onboarding/screen3-candidates', () => {
   })
 
   describe('sort order', () => {
-    it('orders by imdbVotes desc nulls last with title asc tiebreaker', async () => {
-      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(12))
+    it('orders by imdbVotes desc nulls last with title asc tiebreaker, take=18 in single-query path', async () => {
+      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(18))
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       await POST(postRequest({ eras: ['era_2010s'], genres: ['genre_scifi'] }))
@@ -255,7 +255,7 @@ describe('POST /api/onboarding/screen3-candidates', () => {
         { imdbVotes: { sort: 'desc', nulls: 'last' } },
         { title: 'asc' },
       ])
-      expect(args.take).toBe(12)
+      expect(args.take).toBe(18)
     })
 
     it('shapes the response correctly: id, tmdbId, title, year (from releaseDate), posterPath (from posterUrl)', async () => {
@@ -301,7 +301,7 @@ describe('POST /api/onboarding/screen3-candidates', () => {
     })
 
     it('cache miss queries the DB and writes the result with TTL 86400', async () => {
-      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(12))
+      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(18))
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       await POST(postRequest({ eras: ['era_2020s'], genres: ['genre_action'] }))
@@ -316,7 +316,7 @@ describe('POST /api/onboarding/screen3-candidates', () => {
     })
 
     it('different selection orders collapse to the same cache key', async () => {
-      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(12))
+      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(18))
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       await POST(postRequest({ eras: ['era_2020s', 'era_2010s'], genres: ['genre_thriller', 'genre_action'] }))
@@ -334,7 +334,7 @@ describe('POST /api/onboarding/screen3-candidates', () => {
 
     it('Redis unreachable on GET: query proceeds, no 500', async () => {
       mocks.redis.get.mockRejectedValue(new Error('ECONNREFUSED'))
-      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(12))
+      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(18))
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       const res = await POST(postRequest({ eras: ['era_2020s'], genres: [] }))
@@ -346,7 +346,7 @@ describe('POST /api/onboarding/screen3-candidates', () => {
 
     it('Redis unreachable on SET: response still succeeds', async () => {
       mocks.redis.set.mockRejectedValue(new Error('ECONNREFUSED'))
-      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(12))
+      mocks.prisma.film.findMany.mockResolvedValue(makeFilms(18))
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       const res = await POST(postRequest({ eras: ['era_2020s'], genres: [] }))
@@ -355,10 +355,11 @@ describe('POST /api/onboarding/screen3-candidates', () => {
   })
 
   describe('multi-era stratification (2+ eras)', () => {
-    it('round-robin merges 2 eras: positions 0 and 1 come from different eras', async () => {
+    it('round-robin merges 2 eras: 9 from each era, alternating, fills the 18 slots', async () => {
       // Era 1 (era_2010s) returns ids film_1..film_12; Era 2 (era_2020s)
-      // returns ids film_101..film_112. Promise.all preserves array order
-      // so the first findMany call corresponds to selectedEras[0].
+      // returns ids film_101..film_112. Per-era take with 2 eras is 12
+      // (ceil(18/2) + buffer 3). Promise.all preserves array order so
+      // the first findMany call corresponds to selectedEras[0].
       mocks.prisma.film.findMany
         .mockResolvedValueOnce(makeFilms(12, 1)) // era_2010s
         .mockResolvedValueOnce(makeFilms(12, 101)) // era_2020s
@@ -367,21 +368,35 @@ describe('POST /api/onboarding/screen3-candidates', () => {
       const res = await POST(postRequest({ eras: ['era_2010s', 'era_2020s'], genres: ['genre_thriller'] }))
       const body = await res.json()
       expect(body.fallback).toBe('exact')
-      expect(body.films).toHaveLength(12)
+      expect(body.films).toHaveLength(18)
       expect(body.films[0].id).toBe('film_1')
       expect(body.films[1].id).toBe('film_101')
       // Round-robin pattern: era1, era2, era1, era2, ...
       expect(body.films[2].id).toBe('film_2')
       expect(body.films[3].id).toBe('film_102')
+      // 9 from each era when both are dense enough.
+      const ids = body.films.map((f: { id: string }) => f.id)
+      const era1Count = ids.filter((id: string) => {
+        const n = parseInt(id.split('_')[1])
+        return n >= 1 && n <= 12
+      }).length
+      const era2Count = ids.filter((id: string) => {
+        const n = parseInt(id.split('_')[1])
+        return n >= 101 && n <= 112
+      }).length
+      expect(era1Count).toBe(9)
+      expect(era2Count).toBe(9)
 
       expect(mocks.prisma.film.findMany).toHaveBeenCalledTimes(2)
     })
 
-    it('round-robin with 3 eras: positions 0, 1, 2 come from different eras', async () => {
+    it('round-robin with 3 eras: 6 films from each era, total 18, per-era take is 9', async () => {
+      // Per-era take with 3 eras is 9 (ceil(18/3) + buffer 3). Mocks
+      // return 6 films per era, so all 18 are filled by stratification.
       mocks.prisma.film.findMany
-        .mockResolvedValueOnce(makeFilms(12, 1)) // era_2000s
-        .mockResolvedValueOnce(makeFilms(12, 101)) // era_2010s
-        .mockResolvedValueOnce(makeFilms(12, 201)) // era_2020s
+        .mockResolvedValueOnce(makeFilms(6, 1)) // era_2000s
+        .mockResolvedValueOnce(makeFilms(6, 101)) // era_2010s
+        .mockResolvedValueOnce(makeFilms(6, 201)) // era_2020s
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       const res = await POST(
@@ -389,14 +404,36 @@ describe('POST /api/onboarding/screen3-candidates', () => {
       )
       const body = await res.json()
       expect(body.fallback).toBe('exact')
-      expect(body.films).toHaveLength(12)
+      expect(body.films).toHaveLength(18)
       expect(body.films[0].id).toBe('film_1')
       expect(body.films[1].id).toBe('film_101')
       expect(body.films[2].id).toBe('film_201')
       expect(body.films[3].id).toBe('film_2')
+
+      // Each era contributes exactly 6 films.
+      const ids = body.films.map((f: { id: string }) => f.id)
+      const era1Count = ids.filter((id: string) => {
+        const n = parseInt(id.split('_')[1])
+        return n >= 1 && n <= 6
+      }).length
+      const era2Count = ids.filter((id: string) => {
+        const n = parseInt(id.split('_')[1])
+        return n >= 101 && n <= 106
+      }).length
+      const era3Count = ids.filter((id: string) => {
+        const n = parseInt(id.split('_')[1])
+        return n >= 201 && n <= 206
+      }).length
+      expect(era1Count).toBe(6)
+      expect(era2Count).toBe(6)
+      expect(era3Count).toBe(6)
+
+      // Per-era take is 9 in the actual Prisma call.
+      const era1Args = mocks.prisma.film.findMany.mock.calls[0][0]
+      expect(era1Args.take).toBe(9)
     })
 
-    it('issues one parallel query per era, each scoped to that era only', async () => {
+    it('issues one parallel query per era, each scoped to that era only, take=12 with 2 eras', async () => {
       mocks.prisma.film.findMany
         .mockResolvedValueOnce(makeFilms(12, 1))
         .mockResolvedValueOnce(makeFilms(12, 101))
@@ -420,6 +457,7 @@ describe('POST /api/onboarding/screen3-candidates', () => {
         },
         { genres: { hasSome: ['Thriller'] } },
       ])
+      // Per-era take with 2 eras: ceil(18/2) + buffer 3 = 12.
       expect(era1Args.take).toBe(12)
 
       const era2Args = mocks.prisma.film.findMany.mock.calls[1][0]
@@ -440,7 +478,10 @@ describe('POST /api/onboarding/screen3-candidates', () => {
     })
 
     it('sparse era contributes everything it has, dense era fills the rest', async () => {
-      // Era 1 (1920s thrillers) is sparse (2 films); era 2 (2020s) is dense.
+      // Era 1 (1920s thrillers) is sparse (2 films); era 2 (2020s) returns
+      // up to its take of 12. Round-robin yields 2 + 12 = 14 films, less
+      // than the 18 limit, so the fallback chain runs but contributes
+      // nothing (default mock returns []), leaving fallback='exact'.
       mocks.prisma.film.findMany
         .mockResolvedValueOnce(makeFilms(2, 1)) // sparse era
         .mockResolvedValueOnce(makeFilms(12, 101)) // dense era
@@ -451,15 +492,18 @@ describe('POST /api/onboarding/screen3-candidates', () => {
       )
       const body = await res.json()
       expect(body.fallback).toBe('exact')
-      expect(body.films).toHaveLength(12)
+      expect(body.films).toHaveLength(14)
 
       // Both sparse-era films should be present.
       const ids = body.films.map((f: { id: string }) => f.id)
       expect(ids).toContain('film_1')
       expect(ids).toContain('film_2')
-      // 10 dense-era films fill the gap.
-      const denseCount = ids.filter((id: string) => id.startsWith('film_1') && id !== 'film_1').length
-      expect(denseCount).toBe(10)
+      // 12 dense-era films fill the rest (all of dense's available pool).
+      const denseCount = ids.filter((id: string) => {
+        const n = parseInt(id.split('_')[1])
+        return n >= 101 && n <= 112
+      }).length
+      expect(denseCount).toBe(12)
 
       // Round-robin order: positions 0 and 1 alternate eras until sparse runs out.
       expect(body.films[0].id).toBe('film_1') // sparse[0]
@@ -468,12 +512,16 @@ describe('POST /api/onboarding/screen3-candidates', () => {
       expect(body.films[3].id).toBe('film_102') // dense[1]
     })
 
-    it('4 eras with strong genre filter: round-robin picks from each in turn', async () => {
+    it('4 eras with strong genre filter: round-robin yields 5+5+4+4=18 with take=8 per era', async () => {
+      // Per-era take with 4 eras: ceil(18/4) + buffer 3 = 8. Mocks
+      // return 5 films per era. Round-robin distributes 5+5+4+4=18:
+      // depths 0-3 give 4 each (16), depth 4 gives e1[4] and e2[4]
+      // before the cap kicks in.
       mocks.prisma.film.findMany
-        .mockResolvedValueOnce(makeFilms(3, 1)) // era_1990s
-        .mockResolvedValueOnce(makeFilms(3, 101)) // era_2000s
-        .mockResolvedValueOnce(makeFilms(3, 201)) // era_2010s
-        .mockResolvedValueOnce(makeFilms(3, 301)) // era_2020s
+        .mockResolvedValueOnce(makeFilms(5, 1)) // era_1990s
+        .mockResolvedValueOnce(makeFilms(5, 101)) // era_2000s
+        .mockResolvedValueOnce(makeFilms(5, 201)) // era_2010s
+        .mockResolvedValueOnce(makeFilms(5, 301)) // era_2020s
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       const res = await POST(
@@ -484,42 +532,49 @@ describe('POST /api/onboarding/screen3-candidates', () => {
       )
       const body = await res.json()
       expect(body.fallback).toBe('exact')
-      expect(body.films).toHaveLength(12)
+      expect(body.films).toHaveLength(18)
 
-      // Each era should contribute exactly 3 films.
+      // Each era contributes per the round-robin cap pattern: 5+5+4+4.
       const ids = body.films.map((f: { id: string }) => f.id)
-      const era1Count = ids.filter((id: string) => /^film_[1-9]$|^film_1[0-2]$/.test(id) && parseInt(id.split('_')[1]) < 100).length
+      const era1Count = ids.filter((id: string) => {
+        const n = parseInt(id.split('_')[1])
+        return n >= 1 && n <= 5
+      }).length
       const era2Count = ids.filter((id: string) => {
         const n = parseInt(id.split('_')[1])
-        return n >= 101 && n <= 112
+        return n >= 101 && n <= 105
       }).length
       const era3Count = ids.filter((id: string) => {
         const n = parseInt(id.split('_')[1])
-        return n >= 201 && n <= 212
+        return n >= 201 && n <= 205
       }).length
       const era4Count = ids.filter((id: string) => {
         const n = parseInt(id.split('_')[1])
-        return n >= 301 && n <= 312
+        return n >= 301 && n <= 305
       }).length
-      expect(era1Count).toBe(3)
-      expect(era2Count).toBe(3)
-      expect(era3Count).toBe(3)
-      expect(era4Count).toBe(3)
+      expect(era1Count).toBe(5)
+      expect(era2Count).toBe(5)
+      expect(era3Count).toBe(4)
+      expect(era4Count).toBe(4)
 
       // First 4 positions: one from each era, in selectedEras order.
       expect(body.films[0].id).toBe('film_1')
       expect(body.films[1].id).toBe('film_101')
       expect(body.films[2].id).toBe('film_201')
       expect(body.films[3].id).toBe('film_301')
+
+      // Per-era take with 4 eras is 8.
+      const era1Args = mocks.prisma.film.findMany.mock.calls[0][0]
+      expect(era1Args.take).toBe(8)
     })
 
-    it('falls through to adjacent fallback when round-robin returns <12, preserving stratified picks', async () => {
+    it('falls through to adjacent fallback when round-robin returns <18, preserving stratified picks', async () => {
       // Both eras yield only 2 films each. Round-robin produces 4 films,
-      // then adjacent fills the rest.
+      // then adjacent fills the remaining 14.
       mocks.prisma.film.findMany
         .mockResolvedValueOnce(makeFilms(2, 1)) // era_2010s
         .mockResolvedValueOnce(makeFilms(2, 101)) // era_2020s
-        .mockResolvedValueOnce(makeFilms(12, 500)) // adjacent fallback
+        .mockResolvedValueOnce(makeFilms(18, 500)) // adjacent fallback
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       const res = await POST(
@@ -527,16 +582,16 @@ describe('POST /api/onboarding/screen3-candidates', () => {
       )
       const body = await res.json()
       expect(body.fallback).toBe('adjacent')
-      expect(body.films).toHaveLength(12)
+      expect(body.films).toHaveLength(18)
 
       // Round-robin picks survive at the front.
       expect(body.films[0].id).toBe('film_1')
       expect(body.films[1].id).toBe('film_101')
       expect(body.films[2].id).toBe('film_2')
       expect(body.films[3].id).toBe('film_102')
-      // Adjacent appends 8 films from the fallback.
+      // Adjacent appends 14 films from the fallback.
       expect(body.films[4].id).toBe('film_500')
-      expect(body.films[11].id).toBe('film_507')
+      expect(body.films[17].id).toBe('film_513')
 
       // Adjacent query should include excluded ids (the 4 round-robin picks).
       const adjacentArgs = mocks.prisma.film.findMany.mock.calls[2][0]
@@ -552,7 +607,7 @@ describe('POST /api/onboarding/screen3-candidates', () => {
         .mockResolvedValueOnce(makeFilms(1, 101)) // era_2020s
         .mockResolvedValueOnce(makeFilms(0)) // adjacent: 0 new
         .mockResolvedValueOnce(makeFilms(0)) // drop-genre: 0 new
-        .mockResolvedValueOnce(makeFilms(12, 800)) // top-global
+        .mockResolvedValueOnce(makeFilms(16, 800)) // top-global
       const { POST } = await import('@/app/api/onboarding/screen3-candidates/route')
 
       const res = await POST(
@@ -560,10 +615,10 @@ describe('POST /api/onboarding/screen3-candidates', () => {
       )
       const body = await res.json()
       expect(body.fallback).toBe('top-global')
-      expect(body.films).toHaveLength(12)
+      expect(body.films).toHaveLength(18)
       expect(body.films[0].id).toBe('film_1')
       expect(body.films[1].id).toBe('film_101')
-      // top-global appends 10 unique films.
+      // top-global appends 16 unique films.
       expect(body.films[2].id).toBe('film_800')
 
       expect(mocks.prisma.film.findMany).toHaveBeenCalledTimes(5)

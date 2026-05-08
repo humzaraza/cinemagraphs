@@ -1,7 +1,7 @@
 /**
  * POST /api/onboarding/screen3-candidates
  *
- * Returns up to 12 film candidates for Screen 3 of the mobile onboarding
+ * Returns up to 18 film candidates for Screen 3 of the mobile onboarding
  * flow, based on era and genre block selections from the prior screens.
  *
  * Request:
@@ -19,10 +19,16 @@
  *   - 2+ eras selected: stratify. Run one parallel query per era and
  *     round-robin merge the per-era results so each era is represented
  *     in the early slots. This avoids imdbVotes-desc bias crowding out
- *     older eras with modern blockbusters. If round-robin reaches 12,
+ *     older eras with modern blockbusters. If round-robin reaches 18,
  *     fallback = 'exact'. Otherwise the existing fallback chain runs
  *     and APPENDS new (non-overlapping) films to fill the gap; the
  *     fallback name reflects the last stage that contributed.
+ *
+ *     Per-era query limit: ceil(RESULT_LIMIT / numEras) + PER_ERA_BUFFER.
+ *     The buffer lets dense eras pull more candidates when sparse eras
+ *     exhaust early. With 4 eras and PER_ERA_BUFFER=3 the per-era take
+ *     is 8, so a sparse era returning 1 film can be backfilled by
+ *     denser eras up to their per-era cap.
  *   - 0 or 1 era: single-query path (unioned year filter + genres).
  *     Unchanged from before this refactor.
  *
@@ -47,9 +53,14 @@ import {
   type EraBlock,
 } from '@/data/onboardingCuration'
 
-const RESULT_LIMIT = 12
+const RESULT_LIMIT = 18
+const PER_ERA_BUFFER = 3
 const CACHE_TTL = 60 * 60 * 24
 const ADJACENT_DECADE_EXPANSION = 10
+
+function perEraTake(numEras: number): number {
+  return Math.ceil(RESULT_LIMIT / numEras) + PER_ERA_BUFFER
+}
 
 type Fallback = 'exact' | 'adjacent' | 'genre-dropped' | 'top-global'
 
@@ -119,7 +130,8 @@ const SELECT_FIELDS = {
 async function queryFilms(
   yearFilter: ReturnType<typeof buildEraFilter>,
   genreTags: string[],
-  excludedIds: readonly string[] = []
+  excludedIds: readonly string[] = [],
+  take: number = RESULT_LIMIT
 ): Promise<ResponseFilm[]> {
   const andClauses: Record<string, unknown>[] = []
   if (yearFilter) andClauses.push(yearFilter)
@@ -141,7 +153,7 @@ async function queryFilms(
     where,
     select: SELECT_FIELDS,
     orderBy: ORDER_BY,
-    take: RESULT_LIMIT,
+    take,
   })
 
   return rows.map(toResponseFilm).filter((f): f is ResponseFilm => f !== null)
@@ -208,11 +220,14 @@ export async function POST(request: NextRequest) {
       }
 
       // Stratification path: 2+ eras. Per-era queries in parallel,
-      // round-robin merge so older eras aren't crowded out.
+      // round-robin merge so older eras aren't crowded out. Per-era
+      // take is sized to the merged limit divided across eras, plus
+      // a buffer so dense eras can fill in for sparse ones.
       if (selectedEras.length >= 2) {
+        const eraTake = perEraTake(selectedEras.length)
         const perEra = await Promise.all(
           selectedEras.map((era) =>
-            queryFilms(buildEraFilter([era], 0), selectedGenreTags)
+            queryFilms(buildEraFilter([era], 0), selectedGenreTags, [], eraTake)
           )
         )
 
@@ -290,8 +305,8 @@ export async function POST(request: NextRequest) {
         if (dropped.length >= RESULT_LIMIT) return { films: dropped, fallback: 'genre-dropped' }
       }
 
-      // Step 4: top-global. Always returns; up to 12 films from the
-      // top-rated set, still excluding the 57 mosaic films.
+      // Step 4: top-global. Always returns; up to RESULT_LIMIT films
+      // from the top-rated set, still excluding the 57 mosaic films.
       const global = await queryFilms(null, [])
       return { films: global, fallback: 'top-global' }
     })
