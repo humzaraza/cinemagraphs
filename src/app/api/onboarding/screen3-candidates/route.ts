@@ -15,7 +15,18 @@
  *     fallback: 'exact' | 'adjacent' | 'genre-dropped' | 'top-global'
  *   }
  *
- * Fallback chain:
+ * Algorithm:
+ *   - 2+ eras selected: stratify. Run one parallel query per era and
+ *     round-robin merge the per-era results so each era is represented
+ *     in the early slots. This avoids imdbVotes-desc bias crowding out
+ *     older eras with modern blockbusters. If round-robin reaches 12,
+ *     fallback = 'exact'. Otherwise the existing fallback chain runs
+ *     and APPENDS new (non-overlapping) films to fill the gap; the
+ *     fallback name reflects the last stage that contributed.
+ *   - 0 or 1 era: single-query path (unioned year filter + genres).
+ *     Unchanged from before this refactor.
+ *
+ * Fallback chain (single-query mode, or stratified fill):
  *   1. exact         year + genre + NOT IN 57 mosaic films
  *   2. adjacent      same as 1, but each era's range expanded by ±10y
  *   3. genre-dropped year filter only (still expanded if eras present)
@@ -107,7 +118,8 @@ const SELECT_FIELDS = {
 
 async function queryFilms(
   yearFilter: ReturnType<typeof buildEraFilter>,
-  genreTags: string[]
+  genreTags: string[],
+  excludedIds: readonly string[] = []
 ): Promise<ResponseFilm[]> {
   const andClauses: Record<string, unknown>[] = []
   if (yearFilter) andClauses.push(yearFilter)
@@ -117,6 +129,9 @@ async function queryFilms(
     status: 'ACTIVE',
     releaseDate: { not: null },
     posterUrl: { notIn: EXCLUSION_POSTER_PATHS },
+  }
+  if (excludedIds.length > 0) {
+    where.id = { notIn: excludedIds }
   }
   if (andClauses.length > 0) {
     where.AND = andClauses
@@ -130,6 +145,23 @@ async function queryFilms(
   })
 
   return rows.map(toResponseFilm).filter((f): f is ResponseFilm => f !== null)
+}
+
+function roundRobinMerge(perEra: ResponseFilm[][], limit: number): ResponseFilm[] {
+  const merged: ResponseFilm[] = []
+  const seen = new Set<string>()
+  const maxDepth = perEra.reduce((m, list) => Math.max(m, list.length), 0)
+  for (let depth = 0; depth < maxDepth && merged.length < limit; depth++) {
+    for (const list of perEra) {
+      if (merged.length >= limit) break
+      if (depth >= list.length) continue
+      const film = list[depth]
+      if (seen.has(film.id)) continue
+      seen.add(film.id)
+      merged.push(film)
+    }
+  }
+  return merged
 }
 
 export async function POST(request: NextRequest) {
@@ -174,6 +206,65 @@ export async function POST(request: NextRequest) {
         const films = await queryFilms(null, [])
         return { films, fallback: 'top-global' }
       }
+
+      // Stratification path: 2+ eras. Per-era queries in parallel,
+      // round-robin merge so older eras aren't crowded out.
+      if (selectedEras.length >= 2) {
+        const perEra = await Promise.all(
+          selectedEras.map((era) =>
+            queryFilms(buildEraFilter([era], 0), selectedGenreTags)
+          )
+        )
+
+        const merged = roundRobinMerge(perEra, RESULT_LIMIT)
+        if (merged.length >= RESULT_LIMIT) {
+          return { films: merged, fallback: 'exact' }
+        }
+
+        // Fall through to the fallback chain, APPENDING new (non-
+        // overlapping) films so the round-robin picks are preserved.
+        const seenIds = new Set(merged.map((f) => f.id))
+        let fallback: Fallback = 'exact'
+
+        const append = (results: ResponseFilm[], stage: Fallback) => {
+          let added = 0
+          for (const f of results) {
+            if (merged.length >= RESULT_LIMIT) break
+            if (seenIds.has(f.id)) continue
+            seenIds.add(f.id)
+            merged.push(f)
+            added++
+          }
+          if (added > 0) fallback = stage
+        }
+
+        // Step 2: adjacent decades.
+        const adjacent = await queryFilms(
+          buildEraFilter(selectedEras, ADJACENT_DECADE_EXPANSION),
+          selectedGenreTags,
+          Array.from(seenIds)
+        )
+        append(adjacent, 'adjacent')
+        if (merged.length >= RESULT_LIMIT) return { films: merged, fallback }
+
+        // Step 3: drop genre. Only meaningful if a genre was applied.
+        if (selectedGenreTags.length > 0) {
+          const dropped = await queryFilms(
+            buildEraFilter(selectedEras, ADJACENT_DECADE_EXPANSION),
+            [],
+            Array.from(seenIds)
+          )
+          append(dropped, 'genre-dropped')
+          if (merged.length >= RESULT_LIMIT) return { films: merged, fallback }
+        }
+
+        // Step 4: top-global.
+        const global = await queryFilms(null, [], Array.from(seenIds))
+        append(global, 'top-global')
+        return { films: merged, fallback }
+      }
+
+      // Single-query path: 0 or 1 era. Unchanged from before this refactor.
 
       // Step 1: exact.
       const exactYear = buildEraFilter(selectedEras, 0)
