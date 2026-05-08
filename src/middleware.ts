@@ -51,8 +51,13 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const ip = getClientIp(request)
 
-  // --- Block suspicious User-Agents on API routes (exempt auth callbacks) ---
-  if (pathname.startsWith('/api/') && !pathname.startsWith('/api/auth/')) {
+  // --- Block suspicious User-Agents on API routes (exempt auth callbacks
+  // and onboarding, which runs pre-account on mobile) ---
+  if (
+    pathname.startsWith('/api/') &&
+    !pathname.startsWith('/api/auth/') &&
+    !pathname.startsWith('/api/onboarding/')
+  ) {
     const ua = request.headers.get('user-agent') || ''
     if (!ua || BLOCKED_UA_PATTERN.test(ua)) {
       return NextResponse.json(
@@ -62,8 +67,13 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  // --- CORS restriction on API routes (exempt auth callbacks) ---
-  if (pathname.startsWith('/api/') && !pathname.startsWith('/api/auth/')) {
+  // --- CORS restriction on API routes (exempt auth callbacks and
+  // onboarding, which runs pre-account on mobile) ---
+  if (
+    pathname.startsWith('/api/') &&
+    !pathname.startsWith('/api/auth/') &&
+    !pathname.startsWith('/api/onboarding/')
+  ) {
     const origin = request.headers.get('origin')
     // If there's an Origin header (cross-origin request), validate it
     if (origin && !ALLOWED_ORIGINS.includes(origin)) {
