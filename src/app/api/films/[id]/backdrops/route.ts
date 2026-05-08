@@ -26,9 +26,8 @@
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
 import { cachedQuery, KEYS, TTL } from '@/lib/cache'
-import { getMovieImages } from '@/lib/tmdb'
+import { getQualityBackdrops } from '@/lib/backdrop-selector'
 
-const MIN_WIDTH = 1280
 const MAX_RESULTS = 20
 
 interface BackdropProjection {
@@ -62,21 +61,18 @@ export async function GET(
         cacheKey,
         TTL.TMDB_IMAGES,
         async () => {
-          const data = await getMovieImages(film.tmdbId)
-          return data.backdrops
-            .filter((b) => b.width >= MIN_WIDTH && b.iso_639_1 === null)
-            .sort(
-              (a, b) =>
-                b.vote_count - a.vote_count || b.vote_average - a.vote_average
-            )
-            .slice(0, MAX_RESULTS)
-            .map((b) => ({
-              file_path: b.file_path,
-              width: b.width,
-              height: b.height,
-              vote_count: b.vote_count,
-              vote_average: b.vote_average,
-            }))
+          // Filter and sort live in @/lib/backdrop-selector so the
+          // /api/onboarding/select-banner cascade can reuse them. This
+          // route still owns the slice + projection caching layer at
+          // tmdb:backdrops:<filmId>.
+          const qualifying = await getQualityBackdrops(film.tmdbId)
+          return qualifying.slice(0, MAX_RESULTS).map((b) => ({
+            file_path: b.file_path,
+            width: b.width,
+            height: b.height,
+            vote_count: b.vote_count,
+            vote_average: b.vote_average,
+          }))
         }
       )
       return Response.json({ backdrops })
