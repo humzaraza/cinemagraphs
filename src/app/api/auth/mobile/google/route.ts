@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { OAuth2Client } from 'google-auth-library'
 import { prisma } from '@/lib/prisma'
-import { signMobileToken } from '@/lib/mobile-auth'
+import { signAccessToken, issueRefreshToken } from '@/lib/mobile-auth'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { apiLogger } from '@/lib/logger'
 
@@ -81,16 +81,18 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const token = signMobileToken({
+    const accessToken = signAccessToken({
       id: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
       picture: user.image,
     })
+    const refreshToken = await issueRefreshToken(user.id)
 
     return NextResponse.json({
-      token,
+      accessToken,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,

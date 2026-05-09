@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { signMobileToken } from '@/lib/mobile-auth'
+import { signAccessToken, issueRefreshToken } from '@/lib/mobile-auth'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { apiLogger } from '@/lib/logger'
 
@@ -54,17 +54,19 @@ export async function POST(request: NextRequest) {
 
     // For mobile clients, return a JWT so the user is logged in immediately
     if (mobile) {
-      const mobileToken = signMobileToken({
+      const accessToken = signAccessToken({
         id: verifiedUser.id,
         email: verifiedUser.email,
         name: verifiedUser.name,
         role: verifiedUser.role,
         picture: verifiedUser.image,
       })
+      const refreshToken = await issueRefreshToken(verifiedUser.id)
 
       return NextResponse.json({
         message: 'Email verified successfully',
-        token: mobileToken,
+        accessToken,
+        refreshToken,
         user: {
           id: verifiedUser.id,
           email: verifiedUser.email,
