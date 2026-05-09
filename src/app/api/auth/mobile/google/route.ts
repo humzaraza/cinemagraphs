@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { OAuth2Client } from 'google-auth-library'
 import { prisma } from '@/lib/prisma'
 import { signAccessToken, issueRefreshToken } from '@/lib/mobile-auth'
+import { findUserByAnyEmail } from '@/lib/user-lookup'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { apiLogger } from '@/lib/logger'
 
@@ -45,10 +46,7 @@ export async function POST(request: NextRequest) {
     const image = payload.picture || null
 
     // Find or create user
-    let user = await prisma.user.findUnique({
-      where: { email },
-      select: { id: true, email: true, name: true, image: true, role: true },
-    })
+    let user = await findUserByAnyEmail(email)
 
     if (!user) {
       user = await prisma.user.create({

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { sendPasswordResetEmail } from '@/lib/email'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { apiLogger } from '@/lib/logger'
+import { findUserByAnyEmail } from '@/lib/user-lookup'
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,10 +29,13 @@ export async function POST(request: NextRequest) {
     const emailLower = email.toLowerCase().trim()
 
     // Always return success to avoid leaking account existence
-    const user = await prisma.user.findUnique({
-      where: { email: emailLower },
-      select: { id: true, password: true },
-    })
+    const identity = await findUserByAnyEmail(emailLower)
+    const user = identity
+      ? await prisma.user.findUnique({
+          where: { id: identity.id },
+          select: { id: true, password: true },
+        })
+      : null
 
     if (user?.password) {
       // Generate secure token
