@@ -1,35 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-/**
- * In-memory rate limiter for edge middleware.
- * Separate from the Node.js rate limiter since middleware runs in the edge runtime.
- */
-const signInAttempts = new Map<string, number[]>()
-const accountCreations = new Map<string, number[]>()
-const publicApiRequests = new Map<string, number[]>()
-
-function isRateLimited(
-  store: Map<string, number[]>,
-  key: string,
-  maxRequests: number,
-  windowMs: number
-): { limited: boolean; retryAfterMs: number } {
-  const now = Date.now()
-  const windowStart = now - windowMs
-
-  let timestamps = store.get(key) || []
-  timestamps = timestamps.filter((t) => t > windowStart)
-
-  if (timestamps.length >= maxRequests) {
-    const retryAfterMs = timestamps[0] + windowMs - now
-    store.set(key, timestamps)
-    return { limited: true, retryAfterMs }
-  }
-
-  timestamps.push(now)
-  store.set(key, timestamps)
-  return { limited: false, retryAfterMs: 0 }
-}
+import { checkRateLimit } from './lib/rate-limit'
 
 function getClientIp(request: NextRequest): string {
   return (
@@ -47,7 +17,7 @@ const ALLOWED_ORIGINS = [
 
 const BLOCKED_UA_PATTERN = /curl|python|scrapy|wget|bot/i
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const ip = getClientIp(request)
 
@@ -107,8 +77,8 @@ export function middleware(request: NextRequest) {
 
     // --- Rate limit public API routes: 60 per IP per minute ---
     if (pathname.startsWith('/api/films')) {
-      const { limited, retryAfterMs } = isRateLimited(
-        publicApiRequests,
+      const { limited, retryAfterMs } = await checkRateLimit(
+        'public-api',
         ip,
         60,
         60 * 1000 // 1 minute
@@ -129,8 +99,8 @@ export function middleware(request: NextRequest) {
 
     // Rate limit sign-in attempts: 10 per IP per 15 minutes
     if (pathname.startsWith('/api/auth/signin') || pathname.startsWith('/api/auth/callback')) {
-      const { limited, retryAfterMs } = isRateLimited(
-        signInAttempts,
+      const { limited, retryAfterMs } = await checkRateLimit(
+        'signin',
         ip,
         10,
         15 * 60 * 1000
@@ -149,8 +119,8 @@ export function middleware(request: NextRequest) {
 
     // Rate limit account creation: 3 per IP per hour
     if (pathname.startsWith('/api/auth/callback/google')) {
-      const { limited, retryAfterMs } = isRateLimited(
-        accountCreations,
+      const { limited, retryAfterMs } = await checkRateLimit(
+        'account-creation',
         ip,
         3,
         60 * 60 * 1000

@@ -124,7 +124,8 @@ let originalNextAuthUrl: string | undefined
 beforeEach(() => {
   vi.clearAllMocks()
   // Default: rate limit allows the request through.
-  mockCheckRateLimit.mockReturnValue({ limited: false, remaining: 5, retryAfterMs: 0 })
+  // checkRateLimit is now async (Chunk 5), so resolve a Promise.
+  mockCheckRateLimit.mockResolvedValue({ limited: false, remaining: 5, retryAfterMs: 0 })
   originalNextAuthUrl = process.env.NEXTAUTH_URL
 })
 
@@ -267,7 +268,7 @@ describe('POST /api/auth/change-password', () => {
     mockGetMobileOrServerSession.mockResolvedValue({
       user: { id: 'u-1', role: 'USER', name: null, email: 'a@b.com', image: null },
     })
-    mockCheckRateLimit.mockReturnValue({ limited: true, remaining: 0, retryAfterMs: 60_000 })
+    mockCheckRateLimit.mockResolvedValue({ limited: true, remaining: 0, retryAfterMs: 60_000 })
 
     const res = await changePasswordPOST(
       buildRequest({ currentPassword: 'old-pass', newPassword: 'new-password-1' })

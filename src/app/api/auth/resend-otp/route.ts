@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
       request.headers.get('x-real-ip') ||
       'unknown'
 
-    const { limited } = checkRateLimit('resend-otp', ip, 3, 5 * 60 * 1000)
+    const { limited } = await checkRateLimit('resend-otp', ip, 3, 5 * 60 * 1000)
     if (limited) {
       return NextResponse.json(
         { error: 'Too many attempts. Please wait before requesting another code.' },

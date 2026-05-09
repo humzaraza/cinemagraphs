@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
       request.headers.get('x-real-ip') ||
       'unknown'
 
-    const { limited } = checkRateLimit('mobile-google', ip, 10, 15 * 60 * 1000)
+    const { limited } = await checkRateLimit('mobile-google', ip, 10, 15 * 60 * 1000)
     if (limited) {
       return NextResponse.json(
         { error: 'Too many attempts. Please try again later.' },

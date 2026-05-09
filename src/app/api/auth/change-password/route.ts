@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 
-    const { limited } = checkRateLimit('change-password', session.user.id, 5, 60 * 60 * 1000)
+    const { limited } = await checkRateLimit('change-password', session.user.id, 5, 60 * 60 * 1000)
     if (limited) {
       return NextResponse.json(
         { error: 'Too many attempts. Please try again later.' },
