@@ -89,4 +89,36 @@ describe('logger redact config', () => {
     expect(out.email).toBe('a@b.com')
     expect(out.family).toBe('fam-xyz')
   })
+
+  // Top-level redaction (Chunk 6b). Pino's `*.field` only matches one
+  // level of nesting; bare path entries are required to catch direct
+  // logging like apiLogger.info({ password: 'x' }).
+
+  it('redacts top-level password', () => {
+    testLogger.info({ password: 'super-secret' }, 'login attempt')
+
+    const out = lastLogged()
+    expect(out.password).toBe('[Redacted]')
+  })
+
+  it('redacts top-level token', () => {
+    testLogger.info({ token: 'jwt-bytes' }, 'token check')
+
+    const out = lastLogged()
+    expect(out.token).toBe('[Redacted]')
+  })
+
+  it('redacts top-level accessToken', () => {
+    testLogger.info({ accessToken: 'access-jwt' }, 'session check')
+
+    const out = lastLogged()
+    expect(out.accessToken).toBe('[Redacted]')
+  })
+
+  it('redacts top-level refresh_token (snake_case OAuth variant)', () => {
+    testLogger.info({ refresh_token: 'oauth-refresh' }, 'oauth callback')
+
+    const out = lastLogged()
+    expect(out.refresh_token).toBe('[Redacted]')
+  })
 })

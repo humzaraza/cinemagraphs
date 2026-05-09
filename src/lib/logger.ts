@@ -6,6 +6,15 @@ import pino from 'pino'
 // the log record root (e.g. the metadata object passed as the first arg).
 export const redactConfig = {
   paths: [
+    // Top-level (catches direct logging of these fields)
+    'password',
+    'token',
+    'accessToken',
+    'refreshToken',
+    'idToken',
+    'identityToken',
+    'tokenHash',
+    // One level deep (catches common wrapper objects)
     '*.password',
     '*.token',
     '*.accessToken',
@@ -13,14 +22,19 @@ export const redactConfig = {
     '*.idToken',
     '*.identityToken',
     '*.tokenHash',
+    // Specific known nested paths
     'req.headers.authorization',
     'req.headers.cookie',
     'headers.authorization',
     'headers.cookie',
     'authorization',
+    // OAuth provider field names (snake_case variants)
     '*.id_token',
     '*.access_token',
     '*.refresh_token',
+    'id_token',
+    'access_token',
+    'refresh_token',
   ],
   censor: '[Redacted]',
 }
