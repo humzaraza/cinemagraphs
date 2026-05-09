@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcrypt'
 import { prisma } from '@/lib/prisma'
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
+import { checkRateLimit } from '@/lib/rate-limit'
 import { apiLogger } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
@@ -9,6 +10,14 @@ export async function POST(request: NextRequest) {
     const session = await getMobileOrServerSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+
+    const { limited } = checkRateLimit('change-password', session.user.id, 5, 60 * 60 * 1000)
+    if (limited) {
+      return NextResponse.json(
+        { error: 'Too many attempts. Please try again later.' },
+        { status: 429 }
+      )
     }
 
     const { currentPassword, newPassword } = await request.json()

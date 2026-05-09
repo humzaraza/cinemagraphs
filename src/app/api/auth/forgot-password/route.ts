@@ -51,7 +51,8 @@ export async function POST(request: NextRequest) {
         data: { email: emailLower, token, expires },
       })
 
-      const resetUrl = `https://cinemagraphs.ca/auth/reset-password?token=${token}`
+      const baseUrl = process.env.NEXTAUTH_URL || 'https://cinemagraphs.ca'
+      const resetUrl = `${baseUrl}/auth/reset-password?token=${token}`
       await sendPasswordResetEmail(emailLower, resetUrl)
     }
 

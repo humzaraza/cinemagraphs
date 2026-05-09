@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     })
 
     const payload = ticket.getPayload()
-    if (!payload?.email) {
+    if (!payload?.email || payload.email_verified !== true) {
       return NextResponse.json({ error: 'Invalid Google token' }, { status: 401 })
     }
 

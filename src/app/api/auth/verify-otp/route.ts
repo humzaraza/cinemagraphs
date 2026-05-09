@@ -28,15 +28,34 @@ export async function POST(request: NextRequest) {
 
     const emailLower = email.toLowerCase().trim()
 
-    const token = await prisma.verificationToken.findFirst({
-      where: {
-        identifier: emailLower,
-        token: code,
-        expires: { gt: new Date() },
-      },
+    // Look up the active token for this identifier (regardless of code value).
+    // Tracking attempts requires finding the active token even when the user
+    // submits the wrong code.
+    const activeToken = await prisma.verificationToken.findFirst({
+      where: { identifier: emailLower, expires: { gt: new Date() } },
     })
 
-    if (!token) {
+    if (!activeToken) {
+      return NextResponse.json({ error: 'Invalid or expired code' }, { status: 400 })
+    }
+
+    if (activeToken.token !== code) {
+      const newAttempts = activeToken.attempts + 1
+
+      if (newAttempts >= 5) {
+        // Too many wrong codes. Invalidate the token; user must request a new one.
+        await prisma.verificationToken.deleteMany({ where: { identifier: emailLower } })
+        return NextResponse.json(
+          { error: 'Too many invalid attempts. Please request a new code.' },
+          { status: 400 }
+        )
+      }
+
+      await prisma.verificationToken.update({
+        where: { token: activeToken.token },
+        data: { attempts: newAttempts },
+      })
+
       return NextResponse.json({ error: 'Invalid or expired code' }, { status: 400 })
     }
 
