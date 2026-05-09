@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
 
     if (stored) {
       await revokeRefreshTokenFamily(stored.family)
-      apiLogger.info({ userId: stored.userId, family: stored.family }, 'User signed out, family revoked')
+      apiLogger.debug({ family: stored.family }, 'User signed out, family revoked')
     }
 
     return NextResponse.json({ message: 'Logged out' })

@@ -9,7 +9,7 @@ import { apiLogger } from './logger'
 import type { Adapter } from 'next-auth/adapters'
 
 export const authOptions: NextAuthOptions = {
-  debug: true,
+  debug: process.env.NODE_ENV !== 'production',
   logger: {
     error(code, metadata) {
       apiLogger.error({ code, ...metadata }, 'NextAuth error')
@@ -55,23 +55,23 @@ export const authOptions: NextAuthOptions = {
   cookies: {
     pkceCodeVerifier: {
       name: '__Secure-next-auth.pkce.code_verifier',
-      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
     },
     state: {
       name: '__Secure-next-auth.state',
-      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
     },
     nonce: {
       name: '__Secure-next-auth.nonce',
-      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
     },
     callbackUrl: {
       name: '__Secure-next-auth.callback-url',
-      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
     },
     csrfToken: {
       name: '__Host-next-auth.csrf-token',
-      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
     },
   },
   session: {
