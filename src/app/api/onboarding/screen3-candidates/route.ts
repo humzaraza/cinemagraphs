@@ -47,8 +47,8 @@ import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
 import { cachedQuery } from '@/lib/cache'
 import {
-  ALL_BLOCKS,
   ERA_BLOCKS,
+  EXCLUSION_POSTER_PATHS,
   GENRE_BLOCKS,
   type EraBlock,
 } from '@/data/onboardingCuration'
@@ -79,10 +79,6 @@ type Screen3Response = {
 
 const ERA_BY_ID = new Map(ERA_BLOCKS.map((b) => [b.id, b]))
 const GENRE_BY_ID = new Map(GENRE_BLOCKS.map((b) => [b.id, b]))
-
-const EXCLUSION_POSTER_PATHS: readonly string[] = Array.from(
-  new Set(ALL_BLOCKS.flatMap((b) => b.films.map((f) => f.posterPath)))
-)
 
 const ORDER_BY = [
   { imdbVotes: { sort: 'desc' as const, nulls: 'last' as const } },
