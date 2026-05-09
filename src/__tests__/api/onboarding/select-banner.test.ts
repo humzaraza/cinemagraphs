@@ -90,15 +90,17 @@ describe('POST /api/onboarding/select-banner', () => {
       expect(mocks.pickBestBackdrop).toHaveBeenCalledTimes(2)
     })
 
-    it('falls through to step 2 (genres) when none of the screen3 films have backdrops', async () => {
+    it('falls through to genre when none of the screen3 films have backdrops and no era is selected', async () => {
+      // No eras → intersection skipped, era step skipped. Cascade goes
+      // screen3 → genre.
       mocks.prisma.film.findMany
         .mockResolvedValueOnce([
           makeFilm('film_a', 100, 'A'),
           makeFilm('film_b', 200, 'B'),
-        ]) // step 1 query
+        ]) // step 1 (screen3) query
         .mockResolvedValueOnce([
           makeFilm('film_genre', 700, 'GenreFilm'),
-        ]) // step 2 query
+        ]) // step 4 (genre) query
       mocks.pickBestBackdrop
         .mockResolvedValueOnce(null) // film_a
         .mockResolvedValueOnce(null) // film_b
@@ -132,7 +134,176 @@ describe('POST /api/onboarding/select-banner', () => {
     })
   })
 
-  describe('step 2: genre cascade', () => {
+  describe('step 2: era + genre intersection', () => {
+    it('returns BACKDROP/source=era-genre-intersection when catalog has a matching film with a backdrop', async () => {
+      mocks.prisma.film.findMany.mockResolvedValueOnce([
+        makeFilm('film_intersect', 999, 'IntersectionFilm'),
+      ])
+      mocks.pickBestBackdrop.mockResolvedValueOnce('/intersect.jpg')
+      const { POST } = await import('@/app/api/onboarding/select-banner/route')
+
+      const res = await POST(
+        postRequest({ filmIds: [], genres: ['genre_romance'], eras: ['era_1980s'] })
+      )
+      const body = await res.json()
+      expect(body).toEqual({
+        bannerType: 'BACKDROP',
+        bannerValue: { filmId: 'film_intersect', backdropPath: '/intersect.jpg' },
+        source: 'era-genre-intersection',
+      })
+
+      // Single Prisma call with the catalog intersection shape.
+      expect(mocks.prisma.film.findMany).toHaveBeenCalledTimes(1)
+      const args = mocks.prisma.film.findMany.mock.calls[0][0]
+      expect(args.where.status).toBe('ACTIVE')
+      expect(args.where.OR).toEqual([
+        {
+          releaseDate: {
+            gte: new Date('1980-01-01T00:00:00.000Z'),
+            lt: new Date('1990-01-01T00:00:00.000Z'),
+          },
+        },
+      ])
+      expect(args.where.genres).toEqual({ hasSome: ['Romance'] })
+      // Mosaic films are excluded so this is real catalog discovery.
+      expect(args.where.posterUrl).toMatchObject({ notIn: expect.any(Array) })
+      expect((args.where.posterUrl.notIn as string[]).length).toBe(57)
+      expect(args.take).toBe(10)
+      expect(args.orderBy).toEqual([
+        { imdbRating: { sort: 'desc', nulls: 'last' } },
+        { imdbVotes: { sort: 'desc', nulls: 'last' } },
+        { title: 'asc' },
+      ])
+    })
+
+    it('falls through to era when intersection returns no rows', async () => {
+      mocks.prisma.film.findMany
+        .mockResolvedValueOnce([]) // intersection: empty
+        .mockResolvedValueOnce([makeFilm('film_e', 800, 'EraFilm')]) // era step
+      mocks.pickBestBackdrop.mockResolvedValueOnce('/era.jpg')
+      const { POST } = await import('@/app/api/onboarding/select-banner/route')
+
+      const res = await POST(
+        postRequest({ filmIds: [], genres: ['genre_horror'], eras: ['era_2020s'] })
+      )
+      const body = await res.json()
+      expect(body.source).toBe('era')
+      expect(body.bannerValue).toEqual({ filmId: 'film_e', backdropPath: '/era.jpg' })
+      expect(mocks.prisma.film.findMany).toHaveBeenCalledTimes(2)
+    })
+
+    it('falls through to era when intersection has rows but none have a quality backdrop', async () => {
+      mocks.prisma.film.findMany
+        .mockResolvedValueOnce([
+          makeFilm('film_i1', 901, 'I1'),
+          makeFilm('film_i2', 902, 'I2'),
+          makeFilm('film_i3', 903, 'I3'),
+        ]) // intersection: 3 films, no backdrops
+        .mockResolvedValueOnce([makeFilm('film_e', 800, 'EraFilm')]) // era step
+      mocks.pickBestBackdrop
+        .mockResolvedValueOnce(null) // film_i1
+        .mockResolvedValueOnce(null) // film_i2
+        .mockResolvedValueOnce(null) // film_i3
+        .mockResolvedValueOnce('/era.jpg') // film_e
+      const { POST } = await import('@/app/api/onboarding/select-banner/route')
+
+      const res = await POST(
+        postRequest({ filmIds: [], genres: ['genre_horror'], eras: ['era_2020s'] })
+      )
+      const body = await res.json()
+      expect(body.source).toBe('era')
+      expect(mocks.prisma.film.findMany).toHaveBeenCalledTimes(2)
+      expect(mocks.pickBestBackdrop).toHaveBeenCalledTimes(4)
+    })
+
+    it('skips intersection when only genres are present (no eras)', async () => {
+      mocks.prisma.film.findMany.mockResolvedValueOnce([
+        makeFilm('film_genre', 700, 'GenreFilm'),
+      ])
+      mocks.pickBestBackdrop.mockResolvedValueOnce('/genre.jpg')
+      const { POST } = await import('@/app/api/onboarding/select-banner/route')
+
+      const res = await POST(
+        postRequest({ filmIds: [], genres: ['genre_thriller'], eras: [] })
+      )
+      const body = await res.json()
+      expect(body.source).toBe('genre')
+      // Single query: the genre-block step. Intersection skipped because
+      // eras is empty.
+      expect(mocks.prisma.film.findMany).toHaveBeenCalledTimes(1)
+      const args = mocks.prisma.film.findMany.mock.calls[0][0]
+      // Genre-block query uses posterUrl IN, not the intersection shape.
+      expect(args.where.posterUrl).toMatchObject({ in: expect.any(Array) })
+    })
+
+    it('skips intersection when only eras are present (no genres)', async () => {
+      mocks.prisma.film.findMany.mockResolvedValueOnce([makeFilm('film_e', 800, 'EraFilm')])
+      mocks.pickBestBackdrop.mockResolvedValueOnce('/era.jpg')
+      const { POST } = await import('@/app/api/onboarding/select-banner/route')
+
+      const res = await POST(postRequest({ filmIds: [], genres: [], eras: ['era_2020s'] }))
+      const body = await res.json()
+      expect(body.source).toBe('era')
+      expect(mocks.prisma.film.findMany).toHaveBeenCalledTimes(1)
+    })
+
+    it('unions multiple eras and multiple genre tags in the intersection query', async () => {
+      mocks.prisma.film.findMany.mockResolvedValueOnce([])
+      const { POST } = await import('@/app/api/onboarding/select-banner/route')
+
+      await POST(
+        postRequest({
+          filmIds: [],
+          genres: ['genre_scifi', 'genre_drama'],
+          eras: ['era_1980s', 'era_2020s'],
+        })
+      )
+
+      const args = mocks.prisma.film.findMany.mock.calls[0][0]
+      expect(args.where.OR).toEqual([
+        {
+          releaseDate: {
+            gte: new Date('1980-01-01T00:00:00.000Z'),
+            lt: new Date('1990-01-01T00:00:00.000Z'),
+          },
+        },
+        {
+          releaseDate: {
+            gte: new Date('2020-01-01T00:00:00.000Z'),
+            lt: new Date('2030-01-01T00:00:00.000Z'),
+          },
+        },
+      ])
+      // Sci-fi maps to "Science Fiction" via the genre block's genreTag.
+      const tags = args.where.genres.hasSome as string[]
+      expect(tags).toContain('Drama')
+      expect(tags).toContain('Science Fiction')
+    })
+  })
+
+  describe('step 3: era cascade', () => {
+    it('queries era-block posterPaths and returns BACKDROP/source=era', async () => {
+      mocks.prisma.film.findMany.mockResolvedValueOnce([makeFilm('film_e', 800, 'EraFilm')])
+      mocks.pickBestBackdrop.mockResolvedValueOnce('/era.jpg')
+      const { POST } = await import('@/app/api/onboarding/select-banner/route')
+
+      const res = await POST(postRequest({ filmIds: [], genres: [], eras: ['era_2020s'] }))
+      const body = await res.json()
+      expect(body).toEqual({
+        bannerType: 'BACKDROP',
+        bannerValue: { filmId: 'film_e', backdropPath: '/era.jpg' },
+        source: 'era',
+      })
+
+      const args = mocks.prisma.film.findMany.mock.calls[0][0]
+      const paths = args.where.posterUrl.in as string[]
+      // 2020s era curated posters.
+      expect(paths).toContain('/1g0dhYtq4irTY1GPXvft6k4YLjm.jpg') // Spider-Man: NWH
+      expect(paths).toContain('/gDzOcq0pfeCeqMBwKIJlSmQpjkZ.jpg') // Dune
+    })
+  })
+
+  describe('step 4: genre cascade', () => {
     it('queries genre-block film posterPaths and returns BACKDROP/source=genre', async () => {
       mocks.prisma.film.findMany.mockResolvedValueOnce([
         makeFilm('film_genre', 700, 'GenreFilm'),
@@ -163,43 +334,23 @@ describe('POST /api/onboarding/select-banner', () => {
       ])
     })
 
-    it('falls through to step 3 (eras) when none of the genre films have backdrops', async () => {
+    it('falls through to gradient when both era step and genre step have no backdrop and intersection failed too', async () => {
+      // intersection: 0 rows; era: 1 film with no backdrop; genre: 1 film with no backdrop.
       mocks.prisma.film.findMany
-        .mockResolvedValueOnce([makeFilm('film_g', 700, 'GenreFilm')])
-        .mockResolvedValueOnce([makeFilm('film_e', 800, 'EraFilm')])
+        .mockResolvedValueOnce([]) // intersection
+        .mockResolvedValueOnce([makeFilm('film_e', 800, 'EraFilm')]) // era
+        .mockResolvedValueOnce([makeFilm('film_g', 700, 'GenreFilm')]) // genre
       mocks.pickBestBackdrop
-        .mockResolvedValueOnce(null) // genre film: no backdrop
-        .mockResolvedValueOnce('/era.jpg') // era film: has one
+        .mockResolvedValueOnce(null) // era film
+        .mockResolvedValueOnce(null) // genre film
       const { POST } = await import('@/app/api/onboarding/select-banner/route')
 
       const res = await POST(
         postRequest({ filmIds: [], genres: ['genre_horror'], eras: ['era_2020s'] })
       )
       const body = await res.json()
-      expect(body.source).toBe('era')
-      expect(body.bannerValue).toEqual({ filmId: 'film_e', backdropPath: '/era.jpg' })
-    })
-  })
-
-  describe('step 3: era cascade', () => {
-    it('queries era-block posterPaths and returns BACKDROP/source=era', async () => {
-      mocks.prisma.film.findMany.mockResolvedValueOnce([makeFilm('film_e', 800, 'EraFilm')])
-      mocks.pickBestBackdrop.mockResolvedValueOnce('/era.jpg')
-      const { POST } = await import('@/app/api/onboarding/select-banner/route')
-
-      const res = await POST(postRequest({ filmIds: [], genres: [], eras: ['era_2020s'] }))
-      const body = await res.json()
-      expect(body).toEqual({
-        bannerType: 'BACKDROP',
-        bannerValue: { filmId: 'film_e', backdropPath: '/era.jpg' },
-        source: 'era',
-      })
-
-      const args = mocks.prisma.film.findMany.mock.calls[0][0]
-      const paths = args.where.posterUrl.in as string[]
-      // 2020s era curated posters.
-      expect(paths).toContain('/1g0dhYtq4irTY1GPXvft6k4YLjm.jpg') // Spider-Man: NWH
-      expect(paths).toContain('/gDzOcq0pfeCeqMBwKIJlSmQpjkZ.jpg') // Dune
+      expect(body.source).toBe('gradient-fallback')
+      expect(mocks.prisma.film.findMany).toHaveBeenCalledTimes(3)
     })
   })
 
@@ -251,21 +402,41 @@ describe('POST /api/onboarding/select-banner', () => {
       )
       const body = await res.json()
       expect(body.source).toBe('screen3')
-      // Genre and era queries must NOT have run.
+      // Intersection, era, and genre queries must NOT have run.
       expect(mocks.prisma.film.findMany).toHaveBeenCalledTimes(1)
     })
 
-    it('tries genres before eras when filmIds is empty', async () => {
-      mocks.prisma.film.findMany.mockResolvedValueOnce([makeFilm('film_g', 700, 'GenreFilm')])
-      mocks.pickBestBackdrop.mockResolvedValueOnce('/from-genre.jpg')
+    it('tries intersection before era-block, and era-block before genre-block, when filmIds is empty', async () => {
+      // Intersection returns a film with a backdrop on the first call.
+      // Era and genre block queries must NOT run.
+      mocks.prisma.film.findMany.mockResolvedValueOnce([
+        makeFilm('film_intersect', 999, 'I'),
+      ])
+      mocks.pickBestBackdrop.mockResolvedValueOnce('/from-intersection.jpg')
       const { POST } = await import('@/app/api/onboarding/select-banner/route')
 
       const res = await POST(
         postRequest({ filmIds: [], genres: ['genre_horror'], eras: ['era_2020s'] })
       )
       const body = await res.json()
-      expect(body.source).toBe('genre')
+      expect(body.source).toBe('era-genre-intersection')
       expect(mocks.prisma.film.findMany).toHaveBeenCalledTimes(1)
+    })
+
+    it('after intersection fails, tries era before genre', async () => {
+      mocks.prisma.film.findMany
+        .mockResolvedValueOnce([]) // intersection: empty
+        .mockResolvedValueOnce([makeFilm('film_e', 800, 'EraFilm')]) // era: hits
+      mocks.pickBestBackdrop.mockResolvedValueOnce('/from-era.jpg')
+      const { POST } = await import('@/app/api/onboarding/select-banner/route')
+
+      const res = await POST(
+        postRequest({ filmIds: [], genres: ['genre_horror'], eras: ['era_2020s'] })
+      )
+      const body = await res.json()
+      expect(body.source).toBe('era')
+      // Genre-block query must NOT run because era succeeded.
+      expect(mocks.prisma.film.findMany).toHaveBeenCalledTimes(2)
     })
   })
 
@@ -354,7 +525,7 @@ describe('POST /api/onboarding/select-banner', () => {
       expect(mocks.redis.set).toHaveBeenCalledTimes(1)
       const [key, value, opts] = mocks.redis.set.mock.calls[0]
       expect(key).toBe(
-        'onboarding:banner:film_a,film_z:genre_horror,genre_thriller:era_2010s,era_2020s'
+        'onboarding:banner:v2:film_a,film_z:genre_horror,genre_thriller:era_2010s,era_2020s'
       )
       expect(opts).toEqual({ ex: 86400 })
       expect((value as { source: string }).source).toBe('gradient-fallback')

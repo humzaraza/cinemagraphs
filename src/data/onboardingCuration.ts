@@ -252,3 +252,13 @@ export const GENRE_BLOCKS: readonly GenreBlock[] = [
 ]
 
 export const ALL_BLOCKS: readonly OnboardingBlock[] = [...ERA_BLOCKS, ...GENRE_BLOCKS]
+
+/**
+ * Deduped list of all 57 curation poster paths. Endpoints that query
+ * the broader catalog (Screen 3 candidates, banner cascade intersection
+ * step) exclude these so the user gets actual catalog discovery rather
+ * than the same curated films they already saw on the mosaic screens.
+ */
+export const EXCLUSION_POSTER_PATHS: readonly string[] = Array.from(
+  new Set(ALL_BLOCKS.flatMap((b) => b.films.map((f) => f.posterPath)))
+)
