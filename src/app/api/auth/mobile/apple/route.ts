@@ -28,9 +28,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Apple identity token is required' }, { status: 400 })
     }
 
-    // Verify the Apple identity token
+    // Mobile native Apple Sign In issues id_tokens with aud set to the iOS
+    // bundle ID, while the web Services ID flow uses a different aud. Accept
+    // both so a single endpoint can verify tokens from either client.
+    const audiences = [
+      process.env.APPLE_BUNDLE_ID ?? 'ca.cinemagraphs.app',
+      process.env.APPLE_ID ?? 'ca.cinemagraphs.web',
+    ]
     const applePayload = await appleSignin.verifyIdToken(identityToken, {
-      audience: process.env.APPLE_ID,
+      audience: audiences,
     })
 
     if (!applePayload.email) {
