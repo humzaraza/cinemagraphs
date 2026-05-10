@@ -9,7 +9,7 @@ import { apiLogger } from './logger'
 import type { Adapter } from 'next-auth/adapters'
 
 export const authOptions: NextAuthOptions = {
-  debug: true,
+  debug: process.env.NODE_ENV !== 'production',
   logger: {
     error(code, metadata) {
       apiLogger.error({ code, ...metadata }, 'NextAuth error')
@@ -55,23 +55,23 @@ export const authOptions: NextAuthOptions = {
   cookies: {
     pkceCodeVerifier: {
       name: '__Secure-next-auth.pkce.code_verifier',
-      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
     },
     state: {
       name: '__Secure-next-auth.state',
-      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
     },
     nonce: {
       name: '__Secure-next-auth.nonce',
-      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
     },
     callbackUrl: {
       name: '__Secure-next-auth.callback-url',
-      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
     },
     csrfToken: {
       name: '__Host-next-auth.csrf-token',
-      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
     },
   },
   session: {
@@ -81,13 +81,13 @@ export const authOptions: NextAuthOptions = {
     signIn: '/auth/signin',
   },
   events: {
-    async signIn({ user, account, profile }) {
-      apiLogger.info({ provider: account?.provider, userId: user?.id, email: user?.email, profile }, 'Sign-in event')
+    async signIn({ user, account }) {
+      apiLogger.debug({ provider: account?.provider, userId: user?.id }, 'Sign-in event')
     },
   },
   callbacks: {
     async signIn({ user, account }) {
-      apiLogger.info({ provider: account?.provider, userId: user?.id, email: user?.email }, 'signIn callback triggered')
+      apiLogger.debug({ provider: account?.provider, userId: user?.id }, 'signIn callback triggered')
 
       // Auto-link OAuth accounts to existing users with the same email
       if (account && account.provider !== 'credentials' && user?.email) {
@@ -118,7 +118,7 @@ export const authOptions: NextAuthOptions = {
                 id_token: account.id_token as string | undefined,
               },
             })
-            apiLogger.info({ provider: account.provider, email: user.email }, 'Linked OAuth account to existing user')
+            apiLogger.info({ provider: account.provider, userId: existingUser.id }, 'Linked OAuth account to existing user')
           }
         }
       }

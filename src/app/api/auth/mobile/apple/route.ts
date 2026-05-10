@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import appleSignin from 'apple-signin-auth'
 import { prisma } from '@/lib/prisma'
-import { signMobileToken } from '@/lib/mobile-auth'
+import { signAccessToken, issueRefreshToken } from '@/lib/mobile-auth'
+import { findUserByAnyEmail } from '@/lib/user-lookup'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { apiLogger } from '@/lib/logger'
 
@@ -12,7 +13,7 @@ export async function POST(request: NextRequest) {
       request.headers.get('x-real-ip') ||
       'unknown'
 
-    const { limited } = checkRateLimit('mobile-apple', ip, 10, 15 * 60 * 1000)
+    const { limited } = await checkRateLimit('mobile-apple', ip, 10, 15 * 60 * 1000)
     if (limited) {
       return NextResponse.json(
         { error: 'Too many attempts. Please try again later.' },
@@ -27,9 +28,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Apple identity token is required' }, { status: 400 })
     }
 
-    // Verify the Apple identity token
+    // Mobile native Apple Sign In issues id_tokens with aud set to the iOS
+    // bundle ID, while the web Services ID flow uses a different aud. Accept
+    // both so a single endpoint can verify tokens from either client.
+    const audiences = [
+      process.env.APPLE_BUNDLE_ID ?? 'ca.cinemagraphs.app',
+      process.env.APPLE_ID ?? 'ca.cinemagraphs.web',
+    ]
     const applePayload = await appleSignin.verifyIdToken(identityToken, {
-      audience: process.env.APPLE_ID,
+      audience: audiences,
     })
 
     if (!applePayload.email) {
@@ -45,10 +52,7 @@ export async function POST(request: NextRequest) {
       : null
 
     // Find or create user
-    let user = await prisma.user.findUnique({
-      where: { email },
-      select: { id: true, email: true, name: true, image: true, role: true },
-    })
+    let user = await findUserByAnyEmail(email)
 
     if (!user) {
       user = await prisma.user.create({
@@ -87,16 +91,18 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const token = signMobileToken({
+    const accessToken = signAccessToken({
       id: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
       picture: user.image,
     })
+    const refreshToken = await issueRefreshToken(user.id)
 
     return NextResponse.json({
-      token,
+      accessToken,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,

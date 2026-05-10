@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { sendPasswordResetEmail } from '@/lib/email'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { apiLogger } from '@/lib/logger'
+import { findUserByAnyEmail } from '@/lib/user-lookup'
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,7 +13,7 @@ export async function POST(request: NextRequest) {
       request.headers.get('x-real-ip') ||
       'unknown'
 
-    const { limited } = checkRateLimit('forgot-password', ip, 3, 15 * 60 * 1000)
+    const { limited } = await checkRateLimit('forgot-password', ip, 3, 15 * 60 * 1000)
     if (limited) {
       return NextResponse.json(
         { error: 'Too many attempts. Please try again later.' },
@@ -28,10 +29,13 @@ export async function POST(request: NextRequest) {
     const emailLower = email.toLowerCase().trim()
 
     // Always return success to avoid leaking account existence
-    const user = await prisma.user.findUnique({
-      where: { email: emailLower },
-      select: { id: true, password: true },
-    })
+    const identity = await findUserByAnyEmail(emailLower)
+    const user = identity
+      ? await prisma.user.findUnique({
+          where: { id: identity.id },
+          select: { id: true, password: true },
+        })
+      : null
 
     if (user?.password) {
       // Generate secure token
@@ -47,7 +51,8 @@ export async function POST(request: NextRequest) {
         data: { email: emailLower, token, expires },
       })
 
-      const resetUrl = `https://cinemagraphs.ca/auth/reset-password?token=${token}`
+      const baseUrl = process.env.NEXTAUTH_URL || 'https://cinemagraphs.ca'
+      const resetUrl = `${baseUrl}/auth/reset-password?token=${token}`
       await sendPasswordResetEmail(emailLower, resetUrl)
     }
 

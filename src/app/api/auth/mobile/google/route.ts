@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { OAuth2Client } from 'google-auth-library'
 import { prisma } from '@/lib/prisma'
-import { signMobileToken } from '@/lib/mobile-auth'
+import { signAccessToken, issueRefreshToken } from '@/lib/mobile-auth'
+import { findUserByAnyEmail } from '@/lib/user-lookup'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { apiLogger } from '@/lib/logger'
 
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
       request.headers.get('x-real-ip') ||
       'unknown'
 
-    const { limited } = checkRateLimit('mobile-google', ip, 10, 15 * 60 * 1000)
+    const { limited } = await checkRateLimit('mobile-google', ip, 10, 15 * 60 * 1000)
     if (limited) {
       return NextResponse.json(
         { error: 'Too many attempts. Please try again later.' },
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
     })
 
     const payload = ticket.getPayload()
-    if (!payload?.email) {
+    if (!payload?.email || payload.email_verified !== true) {
       return NextResponse.json({ error: 'Invalid Google token' }, { status: 401 })
     }
 
@@ -45,10 +46,7 @@ export async function POST(request: NextRequest) {
     const image = payload.picture || null
 
     // Find or create user
-    let user = await prisma.user.findUnique({
-      where: { email },
-      select: { id: true, email: true, name: true, image: true, role: true },
-    })
+    let user = await findUserByAnyEmail(email)
 
     if (!user) {
       user = await prisma.user.create({
@@ -81,16 +79,18 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const token = signMobileToken({
+    const accessToken = signAccessToken({
       id: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
       picture: user.image,
     })
+    const refreshToken = await issueRefreshToken(user.id)
 
     return NextResponse.json({
-      token,
+      accessToken,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,

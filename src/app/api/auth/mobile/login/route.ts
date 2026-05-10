@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcrypt'
 import { prisma } from '@/lib/prisma'
-import { signMobileToken } from '@/lib/mobile-auth'
+import { signAccessToken, issueRefreshToken } from '@/lib/mobile-auth'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { apiLogger } from '@/lib/logger'
 
@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
       request.headers.get('x-real-ip') ||
       'unknown'
 
-    const { limited } = checkRateLimit('mobile-login', ip, 10, 15 * 60 * 1000)
+    const { limited } = await checkRateLimit('mobile-login', ip, 10, 15 * 60 * 1000)
     if (limited) {
       return NextResponse.json(
         { error: 'Too many attempts. Please try again later.' },
@@ -47,16 +47,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
     }
 
-    const token = signMobileToken({
+    const accessToken = signAccessToken({
       id: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
       picture: user.image,
     })
+    const refreshToken = await issueRefreshToken(user.id)
 
     return NextResponse.json({
-      token,
+      accessToken,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,

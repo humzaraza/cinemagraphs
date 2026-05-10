@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
       request.headers.get('x-real-ip') ||
       'unknown'
 
-    const { limited } = checkRateLimit('register', ip, 5, 15 * 60 * 1000)
+    const { limited } = await checkRateLimit('register', ip, 5, 15 * 60 * 1000)
     if (limited) {
       return NextResponse.json(
         { error: 'Too many attempts. Please try again later.' },
@@ -42,45 +42,40 @@ export async function POST(request: NextRequest) {
       select: { id: true, password: true, emailVerified: true },
     })
 
-    // If user exists with a verified email and password, don't allow re-registration
-    if (existingUser?.password && existingUser.emailVerified) {
-      return NextResponse.json({ error: 'Unable to create account. Try signing in instead.' }, { status: 409 })
-    }
-
-    // If user exists but is unverified (stuck registration), delete and start fresh
-    if (existingUser && !existingUser.emailVerified && existingUser.password) {
-      await prisma.verificationToken.deleteMany({ where: { identifier: emailLower } })
-      await prisma.user.delete({ where: { id: existingUser.id } })
+    if (existingUser?.emailVerified && existingUser.password) {
+      // Case A: verified account already exists. Reject.
+      return NextResponse.json(
+        { error: 'Unable to create account. Try signing in instead.' },
+        { status: 409 }
+      )
     }
 
     const hashedPassword = await bcrypt.hash(password, 12)
-
-    // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString()
-    const expires = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
+    const expires = new Date(Date.now() + 10 * 60 * 1000)
 
-    if (existingUser && !existingUser.emailVerified && !existingUser.password) {
-      // User exists via OAuth but no password — add password
+    // Clear any stale verification tokens before creating a new one.
+    await prisma.verificationToken.deleteMany({ where: { identifier: emailLower } })
+
+    if (!existingUser) {
+      // Case B: brand new user. Create.
+      await prisma.user.create({
+        data: { email: emailLower, password: hashedPassword, name: name || emailLower.split('@')[0] },
+      })
+    } else if (!existingUser.password) {
+      // Case C: OAuth-only user adding password authentication. Update in place.
       await prisma.user.update({
         where: { id: existingUser.id },
         data: { password: hashedPassword, name: name || undefined },
       })
-    } else if (!existingUser || (!existingUser.emailVerified && existingUser.password)) {
-      // Create new user
+    } else {
+      // Case D: unverified user with password. Reset by deleting and recreating.
+      // The unverified record never had verified data attached, so destruction is safe.
+      await prisma.user.delete({ where: { id: existingUser.id } })
       await prisma.user.create({
-        data: {
-          email: emailLower,
-          password: hashedPassword,
-          name: name || emailLower.split('@')[0],
-        },
+        data: { email: emailLower, password: hashedPassword, name: name || emailLower.split('@')[0] },
       })
     }
-
-    // Store OTP in VerificationToken
-    // Delete any existing tokens for this email first
-    await prisma.verificationToken.deleteMany({
-      where: { identifier: emailLower },
-    })
 
     await prisma.verificationToken.create({
       data: {
