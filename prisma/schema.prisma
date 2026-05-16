@@ -334,7 +334,7 @@ model LiveReactionSession {
   flagged        Boolean        @default(false)
   flagReason     String?
   reactions      LiveReaction[]
-  user           User           @relation(fields: [userId], references: [id])
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   film           Film           @relation(fields: [filmId], references: [id])
 
   @@index([userId, filmId])
