@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { email, password, name } = body
+    const { email, password, name, termsAccepted, termsVersion } = body
 
     if (!email || !password) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
@@ -50,6 +50,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Cases B (new user) and D (unverified, recreated) require fresh terms acceptance.
+    // Case C (OAuth-only user adding password) keeps its original consent timestamp.
+    if (!existingUser || existingUser.password) {
+      if (termsAccepted !== true) {
+        return NextResponse.json({ error: 'Terms acceptance required' }, { status: 400 })
+      }
+      if (typeof termsVersion !== 'string' || termsVersion.length === 0) {
+        return NextResponse.json({ error: 'Terms acceptance required' }, { status: 400 })
+      }
+    }
+
     const hashedPassword = await bcrypt.hash(password, 12)
     const otp = Math.floor(100000 + Math.random() * 900000).toString()
     const expires = new Date(Date.now() + 10 * 60 * 1000)
@@ -60,7 +71,13 @@ export async function POST(request: NextRequest) {
     if (!existingUser) {
       // Case B: brand new user. Create.
       await prisma.user.create({
-        data: { email: emailLower, password: hashedPassword, name: name || emailLower.split('@')[0] },
+        data: {
+          email: emailLower,
+          password: hashedPassword,
+          name: name || emailLower.split('@')[0],
+          termsAcceptedAt: new Date(),
+          termsVersion: termsVersion,
+        },
       })
     } else if (!existingUser.password) {
       // Case C: OAuth-only user adding password authentication. Update in place.
@@ -73,7 +90,13 @@ export async function POST(request: NextRequest) {
       // The unverified record never had verified data attached, so destruction is safe.
       await prisma.user.delete({ where: { id: existingUser.id } })
       await prisma.user.create({
-        data: { email: emailLower, password: hashedPassword, name: name || emailLower.split('@')[0] },
+        data: {
+          email: emailLower,
+          password: hashedPassword,
+          name: name || emailLower.split('@')[0],
+          termsAcceptedAt: new Date(),
+          termsVersion: termsVersion,
+        },
       })
     }
 
