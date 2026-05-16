@@ -984,6 +984,7 @@ function FollowModal({
   const [followingState, setFollowingState] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): fetch-on-mount pattern; revisit when migrating to Suspense or React Query
     setLoading(true)
     setUsers([])
     const endpoint = tab === 'followers'

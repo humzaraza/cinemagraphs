@@ -29,6 +29,15 @@ function toISO(date: Date | string | null | undefined): string | null {
   return typeof date === 'string' ? date : date.toISOString()
 }
 
+// Fisher-Yates in-place shuffle. Used to randomize per-request ordering of
+// the swing section on this `force-dynamic` server component.
+function shuffleInPlace<T>(items: T[]): void {
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[items[i], items[j]] = [items[j], items[i]]
+  }
+}
+
 export default async function HomePage() {
   // Load section visibility settings (lightweight, not cached)
   const cachedSections = await cacheGet<SectionVisibility>(KEYS.homepage('sections'))
@@ -308,10 +317,7 @@ export default async function HomePage() {
   const unpinnedSwings = allSwingsComputed.filter((s) => !pinnedSwingIds.has(s.film.id)).slice(0, 20)
 
   // Shuffle unpinned and pick enough to fill 10 total
-  for (let i = unpinnedSwings.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[unpinnedSwings[i], unpinnedSwings[j]] = [unpinnedSwings[j], unpinnedSwings[i]]
-  }
+  shuffleInPlace(unpinnedSwings)
   const swingFilms = [...pinnedSwingEntries, ...unpinnedSwings].slice(0, 10)
 
   // Latest trailers: films currently in theaters (TMDB now_playing, region=CA)

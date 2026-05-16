@@ -513,7 +513,7 @@ describe('computeScoreLabelPosition — achieved clearance across film fixtures'
       const labelSize = format === '4x5' ? 28 : 36
       const input = buildPickerInput(data, runtime, format, beatIdx, labelSize)
       const pos = computeScoreLabelPosition(input)
-      // eslint-disable-next-line no-console
+
       console.log(
         `[label-clearance] ${label.padEnd(28)} | clearance=${pos.clearance.toFixed(2).padStart(7)}px | angle=${String(pos.candidateAngleDeg).padStart(3)}° | offset=${String(pos.offsetDistance).padStart(2)}px | anchor=${pos.anchor}`,
       )

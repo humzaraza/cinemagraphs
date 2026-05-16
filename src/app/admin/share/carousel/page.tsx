@@ -201,6 +201,7 @@ export default function CarouselSharePage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): SSR-safe hydration pattern; lazy-init would mismatch server render. Revisit when migrating to useSyncExternalStore.
     setHelpDismissed(window.sessionStorage.getItem(HELP_DISMISSED_KEY) === '1')
   }, [])
 
@@ -211,6 +212,7 @@ export default function CarouselSharePage() {
   // Cycle loading messages every 3s while loading.
   useEffect(() => {
     if (!loading) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): sync-external-state pattern; revisit when migrating to derived state
       setLoadingMsgIdx(0)
       return
     }
@@ -224,6 +226,7 @@ export default function CarouselSharePage() {
   // and clear any lingering error pip from a prior attempt.
   useEffect(() => {
     if (data?.format) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): sync-external-state pattern; revisit when migrating to derived state
       setZipFormat(data.format)
       setZipDownloadStatus('idle')
       setZipErrorMessage(null)

@@ -230,6 +230,7 @@ export default function SentimentGraph({
   // Spoiler state from localStorage
   useEffect(() => {
     const stored = localStorage.getItem('cinemagraphs-spoilers')
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): SSR-safe hydration pattern; lazy-init would mismatch server render. Revisit when migrating to useSyncExternalStore.
     if (stored === 'true') setSpoilersRevealed(true)
   }, [])
 
@@ -261,6 +262,7 @@ export default function SentimentGraph({
   }, [filmId])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): fetch-on-mount pattern; revisit when migrating to Suspense or React Query
     fetchAudienceData()
   }, [fetchAudienceData])
 

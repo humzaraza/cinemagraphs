@@ -96,7 +96,10 @@ export default function AdminUsers() {
     }
   }, [page, search, roleFilter, sort])
 
-  useEffect(() => { fetchUsers() }, [fetchUsers])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): fetch-on-mount pattern; revisit when migrating to Suspense or React Query
+    fetchUsers()
+  }, [fetchUsers])
 
   // Debounced search
   const [searchInput, setSearchInput] = useState('')

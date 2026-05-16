@@ -37,6 +37,7 @@ export default function AddToListDropdown({ filmId }: Props) {
     if (!open || !session?.user?.id) return
     const cached = listCache.get(filmId)
     if (cached) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): fetch-on-mount pattern; revisit when migrating to Suspense or React Query
       setLists(cached)
       return
     }

@@ -43,33 +43,15 @@ export function FilmCardMiniGraph({
   const svgRef = useRef<SVGSVGElement>(null)
   const [hover, setHover] = useState<HoverInfo | null>(null)
 
-  if (!dataPoints || dataPoints.length === 0) {
-    return (
-      <div>
-        <svg
-          viewBox={`0 0 ${SVG_WIDTH} ${GRAPH_HEIGHT}`}
-          preserveAspectRatio="none"
-          className="w-full"
-          style={{ height: GRAPH_HEIGHT, display: 'block' }}
-        >
-          <line
-            x1={GRAPH_PADDING_X}
-            y1={GRAPH_HEIGHT / 2}
-            x2={SVG_WIDTH - GRAPH_PADDING_X}
-            y2={GRAPH_HEIGHT / 2}
-            stroke="#555"
-            strokeWidth={0.8}
-            strokeDasharray="4 3"
-          />
-        </svg>
-      </div>
-    )
-  }
+  const hasData = !!dataPoints && dataPoints.length > 0
 
-  const chartData = dataPoints.map((dp) => ({
+  // Derived data is computed unconditionally so the hooks below stay in a
+  // stable order across renders. The seed point in allPoints keeps every
+  // downstream calc safe when dataPoints is empty.
+  const chartData = hasData ? dataPoints.map((dp) => ({
     ...dp,
     timeMidpoint: dp.timeMidpoint ?? Math.round(((dp.timeStart ?? 0) + (dp.timeEnd ?? 0)) / 2),
-  }))
+  })) : []
 
   const allPoints: { timeMidpoint: number; score: number; label?: string }[] = [
     { timeMidpoint: 0, score: 5 },
@@ -105,7 +87,7 @@ export function FilmCardMiniGraph({
   const lastDp = chartData[chartData.length - 1]
   const endTime = runtime ?? lastDp?.timeMidpoint ?? maxTime
 
-  const gradientId = `miniGrad-${dataPoints.length}-${allPoints[1]?.timeMidpoint ?? 0}`
+  const gradientId = `miniGrad-${dataPoints?.length ?? 0}-${allPoints[1]?.timeMidpoint ?? 0}`
 
   const interpolateAtX = useCallback(
     (svgX: number): HoverInfo | null => {
@@ -140,6 +122,29 @@ export function FilmCardMiniGraph({
   )
 
   const handleMouseLeave = useCallback(() => setHover(null), [])
+
+  if (!hasData) {
+    return (
+      <div>
+        <svg
+          viewBox={`0 0 ${SVG_WIDTH} ${GRAPH_HEIGHT}`}
+          preserveAspectRatio="none"
+          className="w-full"
+          style={{ height: GRAPH_HEIGHT, display: 'block' }}
+        >
+          <line
+            x1={GRAPH_PADDING_X}
+            y1={GRAPH_HEIGHT / 2}
+            x2={SVG_WIDTH - GRAPH_PADDING_X}
+            y2={GRAPH_HEIGHT / 2}
+            stroke="#555"
+            strokeWidth={0.8}
+            strokeDasharray="4 3"
+          />
+        </svg>
+      </div>
+    )
+  }
 
   // Position tooltip inside the SVG area to avoid overflow-hidden clipping
   const hoverY = hover ? scoreToY(hover.score) : 0

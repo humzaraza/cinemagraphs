@@ -42,7 +42,7 @@ async function fetchAnchorScoresRaw(imdbId: string): Promise<AnchorScores> {
     : null
 
   let rtCriticsScore: number | null = null
-  let rtAudienceScore: number | null = null
+  const rtAudienceScore: number | null = null
 
   if (data.Ratings) {
     const rt = data.Ratings.find(r => r.Source === 'Rotten Tomatoes')

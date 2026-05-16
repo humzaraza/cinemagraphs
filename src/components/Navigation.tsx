@@ -12,6 +12,7 @@ export default function Navigation() {
 
   // Close drawer on route change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): sync-external-state pattern; revisit when migrating to derived state
     setDrawerOpen(false)
   }, [pathname])
 
