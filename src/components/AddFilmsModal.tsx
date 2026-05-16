@@ -29,6 +29,7 @@ export default function AddFilmsModal({ listId, existingFilmIds, onClose, onAdde
 
   useEffect(() => {
     if (!query.trim()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): sync-external-state pattern; revisit when migrating to derived state
       setResults([])
       return
     }
