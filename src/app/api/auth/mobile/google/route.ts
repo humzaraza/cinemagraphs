@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { idToken } = body
+    const { idToken, termsAccepted, termsVersion } = body
 
     if (!idToken) {
       return NextResponse.json({ error: 'Google ID token is required' }, { status: 400 })
@@ -49,12 +49,20 @@ export async function POST(request: NextRequest) {
     let user = await findUserByAnyEmail(email)
 
     if (!user) {
+      if (termsAccepted !== true) {
+        return NextResponse.json({ error: 'Terms acceptance required' }, { status: 400 })
+      }
+      if (typeof termsVersion !== 'string' || termsVersion.length === 0) {
+        return NextResponse.json({ error: 'Terms acceptance required' }, { status: 400 })
+      }
       user = await prisma.user.create({
         data: {
           email,
           name,
           image,
           emailVerified: new Date(),
+          termsAcceptedAt: new Date(),
+          termsVersion: termsVersion,
         },
         select: { id: true, email: true, name: true, image: true, role: true },
       })
