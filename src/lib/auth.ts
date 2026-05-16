@@ -6,6 +6,7 @@ import { PrismaAdapter } from '@auth/prisma-adapter'
 import bcrypt from 'bcrypt'
 import { prisma } from './prisma'
 import { apiLogger } from './logger'
+import { TERMS_VERSION } from '@/lib/legal/terms-version'
 import type { Adapter } from 'next-auth/adapters'
 
 export const authOptions: NextAuthOptions = {
@@ -83,6 +84,20 @@ export const authOptions: NextAuthOptions = {
   events: {
     async signIn({ user, account }) {
       apiLogger.debug({ provider: account?.provider, userId: user?.id }, 'Sign-in event')
+    },
+    async createUser({ user }) {
+      // Defensive: stamps terms acceptance on any user created via the
+      // NextAuth adapter. As of PR N-WEB no account-creation path
+      // actually routes through here (email/password and mobile OAuth
+      // both bypass NextAuth). If a web OAuth UI is added later, this
+      // hook ensures terms get stamped without separately wiring it in.
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          termsAcceptedAt: new Date(),
+          termsVersion: TERMS_VERSION,
+        },
+      })
     },
   },
   callbacks: {
