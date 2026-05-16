@@ -129,6 +129,7 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
       for (const { beat } of selectedBeats) {
         initial[beat.label] = 5.5
       }
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): sync-external-state pattern; revisit when migrating to derived state
       setBeatRatings(initial)
     }
   }, [hasBeats, selectedBeats, myReview, editing])
@@ -158,6 +159,7 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
   }, [filmId])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): fetch-on-mount pattern; revisit when migrating to Suspense or React Query
     fetchReviews(1)
   }, [fetchReviews])
 
