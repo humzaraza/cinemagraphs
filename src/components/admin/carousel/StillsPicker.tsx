@@ -50,6 +50,7 @@ export function StillsPicker(props: Props) {
   useEffect(() => {
     if (!props.isOpen) return
     let alive = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): fetch-on-mount pattern; revisit when migrating to Suspense or React Query
     setFetchState({ status: 'loading' })
     setSelectedUrl(null)
     setIsApplying(false)
