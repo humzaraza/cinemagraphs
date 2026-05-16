@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
     })
 
     const total = allUsers.length
-    let result = allUsers.slice((page - 1) * perPage, (page - 1) * perPage + perPage).map(mapUser)
+    const result = allUsers.slice((page - 1) * perPage, (page - 1) * perPage + perPage).map(mapUser)
 
     if (sort === 'reviewCount') {
       result.sort((a, b) => order === 'desc' ? b.reviewCount - a.reviewCount : a.reviewCount - b.reviewCount)
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
   ])
 
   // If sorting by reviewCount, do it in memory (Prisma doesn't support orderBy on _count in findMany with select)
-  let result = users.map(mapUser)
+  const result = users.map(mapUser)
 
   if (sort === 'reviewCount') {
     result.sort((a, b) => order === 'desc' ? b.reviewCount - a.reviewCount : a.reviewCount - b.reviewCount)

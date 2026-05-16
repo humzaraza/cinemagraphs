@@ -639,8 +639,6 @@ export async function GET(
     // ──────────────────────────────────────────────
     // Graph Hero style (9:16 vertical) — default
     // ──────────────────────────────────────────────
-    let element: React.ReactElement
-
     const graphW = W - 200
 
     // Shared poster background element
@@ -680,7 +678,7 @@ export async function GET(
 
     const graphH = 480
 
-    element = React.createElement('div', {
+    const element = React.createElement('div', {
       style: { width: W, height: H, display: 'flex', flexDirection: 'column', backgroundColor: DARK, position: 'relative' },
     },
       ...posterBg(

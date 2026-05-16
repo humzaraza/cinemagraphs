@@ -21,7 +21,7 @@ async function main() {
 
   // Step 1: OMDB scores
   const OMDB_API_KEY = process.env.OMDB_API_KEY
-  let anchorScores = {
+  const anchorScores = {
     imdbRating: film.imdbRating,
     rtCriticsScore: film.rtCriticsScore,
     rtAudienceScore: film.rtAudienceScore,
