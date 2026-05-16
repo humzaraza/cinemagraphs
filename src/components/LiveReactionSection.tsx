@@ -48,6 +48,7 @@ export default function LiveReactionSection({ filmId, runtime }: Props) {
   // Check for incomplete session on mount
   useEffect(() => {
     if (!session?.user?.id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): sync-external-state pattern; revisit when migrating to derived state
       setCheckingSession(false)
       return
     }
