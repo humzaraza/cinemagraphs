@@ -62,7 +62,8 @@ export async function middleware(request: NextRequest) {
   if (
     pathname.startsWith('/api/') &&
     !pathname.startsWith('/api/auth/') &&
-    !pathname.startsWith('/api/onboarding/')
+    !pathname.startsWith('/api/onboarding/') &&
+    !pathname.startsWith('/api/legal/')
   ) {
     const ua = request.headers.get('user-agent') || ''
     if (!ua || BLOCKED_UA_PATTERN.test(ua)) {
