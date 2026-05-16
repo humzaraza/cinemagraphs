@@ -110,7 +110,13 @@ describe('POST /api/auth/mobile/apple', () => {
     mockSignAccessToken.mockReturnValue('access-token-value')
     mockIssueRefreshToken.mockResolvedValue('refresh-token-value')
 
-    const res = await applePOST(buildRequest({ identityToken: 'fake-apple-token' }))
+    const res = await applePOST(
+      buildRequest({
+        identityToken: 'fake-apple-token',
+        termsAccepted: true,
+        termsVersion: '2026-05-15',
+      })
+    )
     const body = await res.json()
 
     expect(res.status).toBe(200)

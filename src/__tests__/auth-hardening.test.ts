@@ -177,7 +177,13 @@ describe('POST /api/auth/mobile/google', () => {
     mockSignAccessToken.mockReturnValue('access-token-value')
     mockIssueRefreshToken.mockResolvedValue('refresh-token-value')
 
-    const res = await googlePOST(buildRequest({ idToken: 'fake-google-token' }))
+    const res = await googlePOST(
+      buildRequest({
+        idToken: 'fake-google-token',
+        termsAccepted: true,
+        termsVersion: '2026-05-15',
+      })
+    )
     const body = await res.json()
 
     expect(res.status).toBe(200)
@@ -366,7 +372,13 @@ describe('POST /api/auth/register', () => {
     mockSendVerificationOTP.mockResolvedValue(undefined)
 
     const res = await registerPOST(
-      buildRequest({ email: 'a@b.com', password: 'longenoughpw', name: 'Alice' })
+      buildRequest({
+        email: 'a@b.com',
+        password: 'longenoughpw',
+        name: 'Alice',
+        termsAccepted: true,
+        termsVersion: '2026-05-15',
+      })
     )
 
     expect(res.status).toBe(201)
