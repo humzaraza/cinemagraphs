@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { requireAdmin } from '@/lib/middleware'
+import { deleteUserAndAllData } from '@/lib/user-deletion'
 
 export async function PATCH(
   request: NextRequest,
@@ -68,24 +69,12 @@ export async function DELETE(
   }
 
   // Verify user exists
-  const user = await prisma.user.findUnique({ where: { id }, select: { id: true, email: true } })
+  const user = await prisma.user.findUnique({ where: { id }, select: { id: true } })
   if (!user) {
     return Response.json({ error: 'User not found' }, { status: 404 })
   }
 
-  // Cascade delete in a transaction
-  await prisma.$transaction([
-    prisma.liveReaction.deleteMany({ where: { userId: id } }),
-    prisma.liveReactionSession.deleteMany({ where: { userId: id } }),
-    prisma.userReview.deleteMany({ where: { userId: id } }),
-    prisma.feedback.deleteMany({ where: { userId: id } }),
-    prisma.watchlist.deleteMany({ where: { userId: id } }),
-    prisma.follow.deleteMany({ where: { OR: [{ followerId: id }, { followingId: id }] } }),
-    prisma.collection.deleteMany({ where: { userId: id } }),
-    prisma.account.deleteMany({ where: { userId: id } }),
-    prisma.session.deleteMany({ where: { userId: id } }),
-    prisma.user.delete({ where: { id } }),
-  ])
+  await deleteUserAndAllData(id)
 
   return Response.json({ success: true })
 }
