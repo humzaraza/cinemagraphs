@@ -53,6 +53,8 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/bcrypt": "^6.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/jszip": "^3.4.0",
@@ -63,6 +65,7 @@
     "dotenv": "^17.4.2",
     "eslint": "^10",
     "eslint-config-next": "16.2.1",
+    "jsdom": "^29.1.1",
     "puppeteer": "^24.42.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
