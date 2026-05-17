@@ -26,7 +26,7 @@ describe('Footer', () => {
   it('exposes a mailto contact link', () => {
     render(<Footer />)
     const link = screen.getByRole('link', { name: /contact/i })
-    expect(link).toHaveAttribute('href', 'mailto:cinemagraphscorp@gmail.com')
+    expect(link).toHaveAttribute('href', 'mailto:cinemagraphs.corp@gmail.com')
   })
 
   it('renders the copyright row', () => {
