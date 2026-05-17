@@ -40,7 +40,7 @@ describe('NextAuth events.createUser', () => {
     expect(typeof authOptions.events?.createUser).toBe('function')
   })
 
-  it('calls prisma.user.update with termsAcceptedAt (Date) and termsVersion 2026-05-15', async () => {
+  it('calls prisma.user.update with termsAcceptedAt (Date) and termsVersion 2026-05-17', async () => {
     const createUser = authOptions.events!.createUser!
 
     await createUser({
@@ -58,6 +58,6 @@ describe('NextAuth events.createUser', () => {
     }
     expect(arg.where).toEqual({ id: 'test-user-id' })
     expect(arg.data.termsAcceptedAt).toBeInstanceOf(Date)
-    expect(arg.data.termsVersion).toBe('2026-05-15')
+    expect(arg.data.termsVersion).toBe('2026-05-17')
   })
 })

@@ -51,10 +51,20 @@ describe('legal markdown content safety', () => {
       expect(content).not.toContain('DO NOT INCLUDE IN PUBLIC VERSION')
     })
 
-    it('does not contain the home address', () => {
-      expect(content).not.toContain('72 Goldbrook Crescent')
-      expect(content).not.toContain('Richmond Hill')
-      expect(content).not.toContain('L4S1V3')
+    it('does not contain the home address outside the DMCA Designated Agent block', () => {
+      // The DMCA Designated Agent block publishes the registered agent's
+      // physical address as required by the U.S. Copyright Office filing
+      // (DMCA-1072856). The guard below strips that block and ensures the
+      // address does not leak into any other section.
+      expect(content).toContain('### Designated Agent')
+      expect(content).toContain('### Filing a DMCA Notice')
+      const withoutAgentBlock = content.replace(
+        /### Designated Agent[\s\S]*?(?=### Filing a DMCA Notice)/,
+        ''
+      )
+      expect(withoutAgentBlock).not.toContain('72 Goldbrook Crescent')
+      expect(withoutAgentBlock).not.toContain('Richmond Hill')
+      expect(withoutAgentBlock).not.toContain('L4S1V3')
     })
 
     it('does not contain placeholder markers', () => {

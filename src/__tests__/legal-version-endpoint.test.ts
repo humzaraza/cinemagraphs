@@ -8,6 +8,6 @@ describe('GET /api/legal/version', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toEqual({ version: '2026-05-15' })
+    expect(body).toEqual({ version: '2026-05-17' })
   })
 })

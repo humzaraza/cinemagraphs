@@ -74,7 +74,7 @@ export default function Footer() {
               </li>
               <li>
                 <a
-                  href="mailto:cinemagraphscorp@gmail.com"
+                  href="mailto:cinemagraphs.corp@gmail.com"
                   className="font-[family-name:var(--font-dm-sans)] text-sm text-cinema-cream/70 hover:text-cinema-gold transition-colors"
                 >
                   Contact
