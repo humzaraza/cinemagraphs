@@ -151,6 +151,9 @@ vi.mock('@/lib/prisma', () => ({
     userReview: {
       findMany: (...args: unknown[]) => mockReviewFindMany(...args),
     },
+    similarFilm: {
+      findMany: async () => [],
+    },
   },
 }))
 
@@ -158,6 +161,7 @@ vi.mock('@/lib/cache', () => ({
   cachedQuery: async <T>(_key: string, _ttl: number, fetchFn: () => Promise<T>) => fetchFn(),
   KEYS: {
     film: (id: string) => `film:${id}`,
+    filmSimilar: (id: string) => `film:${id}:similar`,
     graph: (id: string) => `graph:${id}`,
     homepage: (k: string) => `homepage:${k}`,
   },
