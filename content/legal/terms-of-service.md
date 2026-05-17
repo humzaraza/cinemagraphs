@@ -1,6 +1,6 @@
 # TERMS OF SERVICE
 
-**Last updated May 15, 2026**
+**Last updated May 17, 2026**
 
 ---
 
@@ -33,7 +33,7 @@ We recommend that you print a copy of these Terms for your records.
 7. USER-GENERATED CONTENT
 8. CONTRIBUTION LICENSE
 9. PROHIBITED ACTIVITIES
-10. COPYRIGHT INFRINGEMENT NOTICES
+10. COPYRIGHT AND DMCA POLICY
 11. SERVICES MANAGEMENT AND MODERATION
 12. TERM AND TERMINATION
 13. MODIFICATIONS AND INTERRUPTIONS
@@ -126,7 +126,7 @@ The Services display content that we obtain from third-party sources, including:
 - Excerpts from professional film criticism published by third-party outlets (such as The Guardian, RogerEbert.com, and other critic publications)
 - Aggregated review scores and metadata
 
-This third-party content remains the property of its respective copyright holders. Our display of such content is intended to constitute fair use for purposes of commentary, criticism, and analysis. If you are a rights holder and believe content displayed on the Services exceeds fair use or otherwise infringes your rights, please follow the procedure described in Section 10 (Copyright Infringement Notices).
+This third-party content remains the property of its respective copyright holders. Our display of such content is intended to constitute fair use for purposes of commentary, criticism, and analysis. If you are a rights holder and believe content displayed on the Services exceeds fair use or otherwise infringes your rights, please follow the procedure described in Section 10 (Copyright and DMCA Policy).
 
 We make no warranty regarding the accuracy, completeness, or reliability of any third-party content displayed on the Services.
 
@@ -207,28 +207,55 @@ As a user of the Services, you agree not to:
 
 ---
 
-## 10. COPYRIGHT INFRINGEMENT NOTICES
+## 10. COPYRIGHT AND DMCA POLICY
 
-We respect the intellectual property rights of others. If you believe that any content on the Services infringes a copyright that you own or control, you may submit a notice to us by emailing cinemagraphscorp@gmail.com.
+Cinemagraphs respects intellectual property rights and complies with the United States Digital Millennium Copyright Act (DMCA). If you believe that content on Cinemagraphs infringes a copyright you own or control, you may submit a notice of claimed infringement to our designated agent.
 
-Your notice should include:
+### Designated Agent
 
-1. A physical or electronic signature of the copyright owner or a person authorized to act on their behalf
-2. Identification of the copyrighted work claimed to have been infringed
-3. Identification of the material claimed to be infringing, with information reasonably sufficient to permit us to locate it on the Services (such as a URL or screenshot)
-4. Your contact information, including address, telephone number, and email address
-5. A statement that you have a good faith belief that the use of the material is not authorized by the copyright owner, its agent, or the law
-6. A statement, under penalty of perjury, that the information in the notice is accurate and that you are authorized to act on behalf of the copyright owner
+Cinemagraphs has designated the following agent to receive notifications of claimed copyright infringement. The Designated Agent is registered with the U.S. Copyright Office.
 
-Upon receipt of a valid notice, we will:
+**Humza Raza**, Designated Agent  
+Cinemagraphs Corp  
+72 Goldbrook Crescent  
+Richmond Hill, ON L4S 1V3  
+Canada  
+Email: cinemagraphs.corp@gmail.com  
+Phone: +1 647-786-6492
 
-- Promptly remove or disable access to the allegedly infringing material
-- Notify the user who submitted the material of the takedown
-- Provide the user an opportunity to submit a counter-notice
+U.S. Copyright Office DMCA Agent Registration Number: DMCA-1072856
 
-Repeat infringers will have their accounts terminated.
+### Filing a DMCA Notice
 
-Submitting a false or knowingly misleading copyright infringement notice may result in liability for damages under applicable law (including 17 U.S.C. § 512(f) in the United States).
+To submit a valid takedown notice under 17 U.S.C. § 512(c)(3), your notice must include all of the following:
+
+1. A physical or electronic signature of the copyright owner, or a person authorized to act on the owner's behalf.
+2. Identification of the copyrighted work that you claim has been infringed, or a representative list of works if multiple works are involved.
+3. Identification of the material on Cinemagraphs that you claim is infringing, with enough detail (such as the URL) for us to locate it.
+4. Your contact information: name, mailing address, telephone number, and email address.
+5. A statement that you have a good faith belief that the use of the material is not authorized by the copyright owner, its agent, or the law.
+6. A statement, under penalty of perjury, that the information in your notice is accurate and that you are the copyright owner or are authorized to act on behalf of the owner.
+
+Notices that do not include all six elements may be invalid and may not result in any action. Send your notice to the Designated Agent at the contact information above.
+
+### Counter-Notification
+
+If your content was removed in response to a DMCA notice and you believe the removal was the result of mistake or misidentification, you may submit a counter-notification under 17 U.S.C. § 512(g). A valid counter-notification must include:
+
+1. Your physical or electronic signature.
+2. Identification of the material that was removed and the location at which it appeared before removal.
+3. A statement, under penalty of perjury, that you have a good faith belief that the material was removed or disabled as a result of mistake or misidentification.
+4. Your name, address, and telephone number, a statement consenting to the jurisdiction of the U.S. federal court for the judicial district in which your address is located (or, if outside the United States, for any judicial district in which Cinemagraphs may be found), and a statement that you will accept service of process from the person who provided the original takedown notice or their agent.
+
+Send counter-notifications to the Designated Agent at the contact information above.
+
+### Repeat Infringer Policy
+
+Cinemagraphs will, in appropriate circumstances, terminate the accounts of users who are determined to be repeat infringers of copyright.
+
+### Misrepresentation
+
+Under 17 U.S.C. § 512(f), any person who knowingly materially misrepresents that material is infringing, or that material was removed or disabled by mistake or misidentification, may be liable for damages, including costs and attorneys' fees, incurred by the alleged infringer, by any copyright owner or its authorized licensee, or by Cinemagraphs.
 
 ---
 
