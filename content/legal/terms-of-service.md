@@ -10,7 +10,7 @@ We are Cinemagraphs Corp ("Company," "we," "us," "our"), a corporation organized
 
 We operate the website at https://cinemagraphs.ca and the Cinemagraphs mobile application for iOS and Android, as well as any other related products and services that refer or link to these Terms of Service (the "Terms") (collectively, the "Services"). The Services provide a film sentiment analysis platform that visualizes critic reception as beat-by-beat emotional arc graphs across a film's runtime.
 
-You can contact us by email at cinemagraphscorp@gmail.com.
+You can contact us by email at cinemagraphs.corp@gmail.com.
 
 These Terms constitute a legally binding agreement made between you, whether personally or on behalf of an entity ("you"), and Cinemagraphs Corp, concerning your access to and use of the Services. By accessing or using the Services, you confirm that you have read, understood, and agree to be bound by these Terms.
 
@@ -76,7 +76,7 @@ You agree to:
 - Provide accurate, current, and complete information during registration
 - Maintain and promptly update your account information
 - Keep your password confidential and secure
-- Notify us promptly at cinemagraphscorp@gmail.com of any unauthorized access to or use of your account
+- Notify us promptly at cinemagraphs.corp@gmail.com of any unauthorized access to or use of your account
 - Take responsibility for all activities that occur under your account
 
 You may not transfer your account to another person or allow another person to use your account.
@@ -238,6 +238,8 @@ To submit a valid takedown notice under 17 U.S.C. § 512(c)(3), your notice must
 
 Notices that do not include all six elements may be invalid and may not result in any action. Send your notice to the Designated Agent at the contact information above.
 
+Upon receipt of a valid DMCA notice, Cinemagraphs will promptly remove or disable access to the allegedly infringing material, notify the user who provided the material of the takedown, and inform that user of their right to submit a counter-notification.
+
 ### Counter-Notification
 
 If your content was removed in response to a DMCA notice and you believe the removal was the result of mistake or misidentification, you may submit a counter-notification under 17 U.S.C. § 512(g). A valid counter-notification must include:
@@ -281,7 +283,7 @@ These Terms remain in full force and effect while you use the Services.
 
 ### Termination by you
 
-You may terminate your account at any time by using the account deletion option within the Services or by contacting us at cinemagraphscorp@gmail.com. Account deletion is irreversible. Upon termination, your personal information will be handled in accordance with our Privacy Policy.
+You may terminate your account at any time by using the account deletion option within the Services or by contacting us at cinemagraphs.corp@gmail.com. Account deletion is irreversible. Upon termination, your personal information will be handled in accordance with our Privacy Policy.
 
 ### Termination by us
 
@@ -398,7 +400,7 @@ The United Nations Convention on Contracts for the International Sale of Goods d
 
 ### Informal Negotiations
 
-To expedite resolution and control the cost of any dispute, controversy, or claim related to these Terms (a "Dispute"), you and we agree to first attempt to negotiate any Dispute informally for at least thirty (30) days before initiating arbitration. Such informal negotiations commence upon written notice from one party to the other. You may send such a notice by email to cinemagraphscorp@gmail.com.
+To expedite resolution and control the cost of any dispute, controversy, or claim related to these Terms (a "Dispute"), you and we agree to first attempt to negotiate any Dispute informally for at least thirty (30) days before initiating arbitration. Such informal negotiations commence upon written notice from one party to the other. You may send such a notice by email to cinemagraphs.corp@gmail.com.
 
 ### Binding Arbitration
 
@@ -462,4 +464,4 @@ You waive any defenses you may have based on the electronic form of these Terms 
 To resolve a complaint regarding the Services or to receive further information regarding use of the Services, please contact us at:
 
 **Cinemagraphs Corp**
-Email: cinemagraphscorp@gmail.com
+Email: cinemagraphs.corp@gmail.com
