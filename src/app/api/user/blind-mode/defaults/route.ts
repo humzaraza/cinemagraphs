@@ -15,17 +15,25 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
     }
 
-    const { blindUnwatchedDefault, blindReviewedDefault } = body as {
+    const { blindUnwatchedDefault, blindReviewedDefault, hasSeenBlindModeTooltip } = body as {
       blindUnwatchedDefault?: unknown
       blindReviewedDefault?: unknown
+      hasSeenBlindModeTooltip?: unknown
     }
 
-    const data: { blindUnwatchedDefault?: boolean; blindReviewedDefault?: boolean } = {}
+    const data: {
+      blindUnwatchedDefault?: boolean
+      blindReviewedDefault?: boolean
+      hasSeenBlindModeTooltip?: boolean
+    } = {}
     if (typeof blindUnwatchedDefault === 'boolean') {
       data.blindUnwatchedDefault = blindUnwatchedDefault
     }
     if (typeof blindReviewedDefault === 'boolean') {
       data.blindReviewedDefault = blindReviewedDefault
+    }
+    if (typeof hasSeenBlindModeTooltip === 'boolean') {
+      data.hasSeenBlindModeTooltip = hasSeenBlindModeTooltip
     }
 
     if (Object.keys(data).length === 0) {
@@ -38,6 +46,7 @@ export async function PATCH(request: NextRequest) {
       select: {
         blindUnwatchedDefault: true,
         blindReviewedDefault: true,
+        hasSeenBlindModeTooltip: true,
       },
     })
 
