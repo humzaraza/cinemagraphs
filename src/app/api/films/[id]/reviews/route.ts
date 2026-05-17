@@ -210,6 +210,7 @@ export async function GET(
     const url = new URL(request.url)
     const page = parseInt(url.searchParams.get('page') || '1')
     const limit = 5
+    const excludeCurrentUser = url.searchParams.get('excludeCurrentUser') === 'true'
 
     // Check if current user has a review (any status)
     const session = await getMobileOrServerSession()
@@ -224,10 +225,17 @@ export async function GET(
     }
 
     const approvedFilter = { filmId, status: 'approved' }
+    // Mobile "Your review" pattern: when the caller renders the current user's
+    // review in its own section, the paginated list should omit it to avoid
+    // duplication. Unauthenticated callers get a no-op (the param is ignored).
+    const listFilter =
+      excludeCurrentUser && session?.user?.id
+        ? { ...approvedFilter, userId: { not: session.user.id } }
+        : approvedFilter
 
     const [reviews, total] = await Promise.all([
       prisma.userReview.findMany({
-        where: approvedFilter,
+        where: listFilter,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -235,7 +243,7 @@ export async function GET(
           user: { select: { id: true, name: true, image: true } },
         },
       }),
-      prisma.userReview.count({ where: approvedFilter }),
+      prisma.userReview.count({ where: listFilter }),
     ])
 
     // Community summary (approved only)

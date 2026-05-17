@@ -18,6 +18,7 @@ export async function GET() {
         select: {
           blindUnwatchedDefault: true,
           blindReviewedDefault: true,
+          hasSeenBlindModeTooltip: true,
         },
       }),
       prisma.userFilmBlindMode.findMany({
@@ -37,6 +38,7 @@ export async function GET() {
       blindUnwatchedDefault: user.blindUnwatchedDefault,
       blindReviewedDefault: user.blindReviewedDefault,
       perFilm,
+      hasSeenBlindModeTooltip: user.hasSeenBlindModeTooltip,
     })
   } catch (err) {
     apiLogger.error({ err }, 'Failed to fetch blind-mode state')

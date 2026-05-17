@@ -30,10 +30,11 @@ describe('GET /api/user/blind-mode', () => {
     expect(res.status).toBe(401)
   })
 
-  it('returns defaults and a perFilm map', async () => {
+  it('returns defaults, perFilm map, and hasSeenBlindModeTooltip', async () => {
     mocks.prisma.user.findUnique.mockResolvedValue({
       blindUnwatchedDefault: true,
       blindReviewedDefault: false,
+      hasSeenBlindModeTooltip: false,
     })
     mocks.prisma.userFilmBlindMode.findMany.mockResolvedValue([
       { filmId: 'f1', isBlind: true },
@@ -47,6 +48,15 @@ describe('GET /api/user/blind-mode', () => {
       blindUnwatchedDefault: true,
       blindReviewedDefault: false,
       perFilm: { f1: true, f2: false },
+      hasSeenBlindModeTooltip: false,
+    })
+    expect(mocks.prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { id: USER_ID },
+      select: {
+        blindUnwatchedDefault: true,
+        blindReviewedDefault: true,
+        hasSeenBlindModeTooltip: true,
+      },
     })
   })
 
@@ -79,6 +89,7 @@ describe('PATCH /api/user/blind-mode/defaults', () => {
     mocks.prisma.user.update.mockResolvedValue({
       blindUnwatchedDefault: true,
       blindReviewedDefault: false,
+      hasSeenBlindModeTooltip: false,
     })
     const { PATCH } = await import('@/app/api/user/blind-mode/defaults/route')
     const res = await PATCH(
@@ -88,7 +99,11 @@ describe('PATCH /api/user/blind-mode/defaults', () => {
     expect(mocks.prisma.user.update).toHaveBeenCalledWith({
       where: { id: USER_ID },
       data: { blindUnwatchedDefault: true },
-      select: { blindUnwatchedDefault: true, blindReviewedDefault: true },
+      select: {
+        blindUnwatchedDefault: true,
+        blindReviewedDefault: true,
+        hasSeenBlindModeTooltip: true,
+      },
     })
   })
 
@@ -114,6 +129,7 @@ describe('PATCH /api/user/blind-mode/defaults', () => {
     mocks.prisma.user.update.mockResolvedValue({
       blindUnwatchedDefault: true,
       blindReviewedDefault: true,
+      hasSeenBlindModeTooltip: false,
     })
     const { PATCH } = await import('@/app/api/user/blind-mode/defaults/route')
     const res = await PATCH(
@@ -123,8 +139,65 @@ describe('PATCH /api/user/blind-mode/defaults', () => {
     expect(mocks.prisma.user.update).toHaveBeenCalledWith({
       where: { id: USER_ID },
       data: { blindUnwatchedDefault: true, blindReviewedDefault: true },
-      select: { blindUnwatchedDefault: true, blindReviewedDefault: true },
+      select: {
+        blindUnwatchedDefault: true,
+        blindReviewedDefault: true,
+        hasSeenBlindModeTooltip: true,
+      },
     })
+  })
+
+  it('accepts hasSeenBlindModeTooltip and persists it', async () => {
+    mocks.prisma.user.update.mockResolvedValue({
+      blindUnwatchedDefault: false,
+      blindReviewedDefault: false,
+      hasSeenBlindModeTooltip: true,
+    })
+    const { PATCH } = await import('@/app/api/user/blind-mode/defaults/route')
+    const res = await PATCH(patchRequest({ hasSeenBlindModeTooltip: true }))
+    expect(res.status).toBe(200)
+    expect(mocks.prisma.user.update).toHaveBeenCalledWith({
+      where: { id: USER_ID },
+      data: { hasSeenBlindModeTooltip: true },
+      select: {
+        blindUnwatchedDefault: true,
+        blindReviewedDefault: true,
+        hasSeenBlindModeTooltip: true,
+      },
+    })
+    const body = await res.json()
+    expect(body.hasSeenBlindModeTooltip).toBe(true)
+  })
+
+  it('partial update with only hasSeenBlindModeTooltip does not clobber the other defaults', async () => {
+    mocks.prisma.user.update.mockResolvedValue({
+      blindUnwatchedDefault: true,
+      blindReviewedDefault: true,
+      hasSeenBlindModeTooltip: true,
+    })
+    const { PATCH } = await import('@/app/api/user/blind-mode/defaults/route')
+    const res = await PATCH(patchRequest({ hasSeenBlindModeTooltip: true }))
+    expect(res.status).toBe(200)
+    // The data payload contains ONLY the field that was sent — blindUnwatchedDefault
+    // and blindReviewedDefault must not appear, so Prisma leaves them untouched.
+    expect(mocks.prisma.user.update).toHaveBeenCalledWith({
+      where: { id: USER_ID },
+      data: { hasSeenBlindModeTooltip: true },
+      select: {
+        blindUnwatchedDefault: true,
+        blindReviewedDefault: true,
+        hasSeenBlindModeTooltip: true,
+      },
+    })
+    const call = mocks.prisma.user.update.mock.calls[0][0] as { data: Record<string, unknown> }
+    expect(Object.keys(call.data)).toEqual(['hasSeenBlindModeTooltip'])
+  })
+
+  it('rejects non-boolean hasSeenBlindModeTooltip and reports 400 when nothing else is valid', async () => {
+    const { PATCH } = await import('@/app/api/user/blind-mode/defaults/route')
+    const res = await PATCH(patchRequest({ hasSeenBlindModeTooltip: 'yes' }))
+    expect(res.status).toBe(400)
+    expect(mocks.prisma.user.update).not.toHaveBeenCalled()
   })
 })
 
