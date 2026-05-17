@@ -157,13 +157,29 @@ export async function getNowPlayingMovies(region: string = 'CA'): Promise<TMDBMo
   })
 }
 
+interface TMDBKeyword {
+  id: number
+  name: string
+}
+
+interface TMDBKeywordsResponse {
+  id: number
+  keywords: TMDBKeyword[]
+}
+
+export async function getMovieKeywords(tmdbId: number): Promise<string[]> {
+  const data = await tmdbFetch<TMDBKeywordsResponse>(`/movie/${tmdbId}/keywords`)
+  return data.keywords.map((k) => k.name.toLowerCase())
+}
+
 export async function importMovie(tmdbId: number) {
   const existing = await prisma.film.findUnique({ where: { tmdbId } })
   if (existing) return existing
 
-  const [movie, credits] = await Promise.all([
+  const [movie, credits, keywords] = await Promise.all([
     getMovieDetails(tmdbId),
     getMovieCredits(tmdbId),
+    getMovieKeywords(tmdbId).catch(() => [] as string[]),
   ])
 
   const director = credits.crew.find((c) => c.job === 'Director')?.name ?? null
@@ -191,6 +207,7 @@ export async function importMovie(tmdbId: number) {
       cast: topCast,
       imdbRating: movie.vote_average ?? null,
       imdbVotes: movie.vote_count ?? null,
+      keywords,
     },
   })
 
@@ -199,7 +216,20 @@ export async function importMovie(tmdbId: number) {
     const { syncFilmCredits } = await import('./person-sync')
     await syncFilmCredits(film.id, tmdbId)
   } catch {
-    // Credits sync failed — film still created successfully
+    // Credits sync failed. Film still created successfully.
+  }
+
+  // Compute top-20 similar films for the new entry, then recompute each of
+  // those 20 neighbors so the new film can also appear in their precomputed
+  // lists. Bidirectional, one level deep. Periodic full rebuilds
+  // (scripts/backfill-similar-films.ts) remain useful for the long tail of
+  // films that are not in any new film's top-20 but might still benefit from
+  // including new films in their own top-20.
+  try {
+    const { recomputeSimilarFilmsForFilm } = await import('./similar-films')
+    await recomputeSimilarFilmsForFilm(film.id)
+  } catch {
+    // Similarity compute failed. Film still created successfully.
   }
 
   return film

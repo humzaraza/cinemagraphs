@@ -18,6 +18,7 @@ export const TTL = {
 // ── Key builders ──
 export const KEYS = {
   film: (id: string) => `film:${id}`,
+  filmSimilar: (id: string) => `film:${id}:similar`,
   graph: (id: string) => `graph:${id}`,
   homepage: (section: string) => `homepage:${section}`,
   ticker: () => 'ticker:data',
@@ -95,8 +96,17 @@ export async function cachedQuery<T>(
 
 /** Invalidate all cached data for a specific film */
 export async function invalidateFilmCache(filmId: string): Promise<void> {
-  await cacheDel(KEYS.film(filmId), KEYS.graph(filmId))
+  await cacheDel(KEYS.film(filmId), KEYS.filmSimilar(filmId), KEYS.graph(filmId))
   cacheLogger.info({ filmId }, 'invalidated film cache')
+}
+
+/**
+ * Invalidate ONLY the precomputed similar-films cache for a film. Used by the
+ * bidirectional per-import recompute so neighbors don't pay an unrelated
+ * `film:${id}` / `graph:${id}` cache miss.
+ */
+export async function invalidateFilmSimilarCache(filmId: string): Promise<void> {
+  await cacheDel(KEYS.filmSimilar(filmId))
 }
 
 /** Invalidate all homepage section caches */

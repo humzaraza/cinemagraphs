@@ -125,9 +125,9 @@ describe('invalidateFilmCache', () => {
     vi.clearAllMocks()
   })
 
-  it('deletes both film and graph keys', async () => {
-    mockDel.mockResolvedValue(2)
+  it('deletes film, filmSimilar, and graph keys', async () => {
+    mockDel.mockResolvedValue(3)
     await invalidateFilmCache('abc-123')
-    expect(mockDel).toHaveBeenCalledWith('film:abc-123', 'graph:abc-123')
+    expect(mockDel).toHaveBeenCalledWith('film:abc-123', 'film:abc-123:similar', 'graph:abc-123')
   })
 })
