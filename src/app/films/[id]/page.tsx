@@ -15,8 +15,13 @@ import AddToListDropdown from '@/components/AddToListDropdown'
 import FilmCommunityTabs from '@/components/FilmCommunityTabs'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { FilmFullCast } from '@/components/FilmFullCast'
+import SimilarFilmsSection from '@/components/SimilarFilmsSection'
+import type { SimilarFilmCardProps } from '@/components/SimilarFilmCard'
 import { getFilmDisplayState } from '@/lib/film-display-state'
+import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import type { CastMember, PeakLowMoment, SentimentDataPoint } from '@/lib/types'
+
+const SIMILAR_FILMS_LIMIT = 8
 
 const CREW_ROLE_LABELS: Record<string, string> = {
   CINEMATOGRAPHER: 'Cinematography',
@@ -35,7 +40,7 @@ export default async function FilmPage({
 }) {
   const { id } = await params
 
-  const [film, userReviews] = await Promise.all([
+  const [film, userReviews, similarRaw, session] = await Promise.all([
     prisma.film.findUnique({
       where: { id },
       include: {
@@ -62,9 +67,53 @@ export default async function FilmPage({
       orderBy: { createdAt: 'desc' },
       take: 50,
     }),
+    prisma.similarFilm.findMany({
+      where: { filmId: id },
+      orderBy: { similarityScore: 'desc' },
+      take: SIMILAR_FILMS_LIMIT,
+      include: {
+        similar: {
+          select: {
+            id: true,
+            title: true,
+            releaseDate: true,
+            posterUrl: true,
+            sentimentGraph: { select: { overallScore: true } },
+          },
+        },
+      },
+    }),
+    getMobileOrServerSession().catch(() => null),
   ])
 
   if (!film) notFound()
+
+  // userHasReviewed is computed only when the viewer is authenticated. Definition
+  // mirrors the /api/films/[id] route: any UserReview row for (user, film) counts,
+  // regardless of moderation status.
+  const similarIds = similarRaw.map((row) => row.similar.id)
+  let reviewedSet = new Set<string>()
+  if (session?.user?.id && similarIds.length > 0) {
+    const reviewed = await prisma.userReview.findMany({
+      where: { userId: session.user.id, filmId: { in: similarIds } },
+      select: { filmId: true },
+    })
+    reviewedSet = new Set(reviewed.map((r) => r.filmId))
+  }
+
+  const similarFilms: SimilarFilmCardProps[] = similarRaw.map((row) => {
+    const date = row.similar.releaseDate
+    const year =
+      date && !Number.isNaN(new Date(date).getTime()) ? new Date(date).getFullYear() : null
+    return {
+      id: row.similar.id,
+      title: row.similar.title,
+      year,
+      posterUrl: row.similar.posterUrl,
+      score: row.similar.sentimentGraph?.overallScore ?? null,
+      userHasReviewed: reviewedSet.has(row.similar.id),
+    }
+  })
 
   const trailerKey = await getMovieTrailerKey(film.tmdbId)
 
@@ -409,6 +458,9 @@ export default async function FilmPage({
             runtime={film.runtime}
           />
         </div>
+
+        {/* Similar films */}
+        <SimilarFilmsSection films={similarFilms} />
 
         {/* Bottom spacer */}
         <div className="pb-12" />
