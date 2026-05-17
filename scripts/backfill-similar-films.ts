@@ -1,4 +1,5 @@
 import './_load-env'
+import './_neon-ws'
 import { PrismaClient } from '../src/generated/prisma/client'
 import { PrismaNeon } from '@prisma/adapter-neon'
 import {
