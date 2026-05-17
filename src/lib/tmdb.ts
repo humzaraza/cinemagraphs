@@ -219,10 +219,12 @@ export async function importMovie(tmdbId: number) {
     // Credits sync failed. Film still created successfully.
   }
 
-  // Compute top-20 similar films for the new entry against the existing catalog.
-  // Asymmetric on purpose: existing films' precomputed lists are NOT updated to
-  // include this new film. Periodic full rebuilds (scripts/backfill-similar-films.ts)
-  // close that gap.
+  // Compute top-20 similar films for the new entry, then recompute each of
+  // those 20 neighbors so the new film can also appear in their precomputed
+  // lists. Bidirectional, one level deep. Periodic full rebuilds
+  // (scripts/backfill-similar-films.ts) remain useful for the long tail of
+  // films that are not in any new film's top-20 but might still benefit from
+  // including new films in their own top-20.
   try {
     const { recomputeSimilarFilmsForFilm } = await import('./similar-films')
     await recomputeSimilarFilmsForFilm(film.id)

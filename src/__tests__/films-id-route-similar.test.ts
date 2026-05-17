@@ -12,7 +12,10 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/prisma', () => ({ prisma: mocks.prisma }))
-vi.mock('@/lib/logger', () => ({ apiLogger: mocks.apiLogger }))
+vi.mock('@/lib/logger', () => ({
+  apiLogger: mocks.apiLogger,
+  logger: { child: () => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
+}))
 vi.mock('@/lib/mobile-auth', () => ({ getMobileOrServerSession: mocks.getMobileOrServerSession }))
 vi.mock('@/lib/cache', () => ({
   cachedQuery: mocks.cachedQuery,

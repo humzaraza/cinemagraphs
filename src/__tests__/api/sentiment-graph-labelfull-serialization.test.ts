@@ -170,6 +170,7 @@ vi.mock('@/lib/cache', () => ({
 
 vi.mock('@/lib/logger', () => ({
   apiLogger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+  logger: { child: () => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }))
 
 vi.mock('@/lib/mobile-auth', () => ({

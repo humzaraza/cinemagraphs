@@ -1,4 +1,8 @@
 import { prisma } from './prisma'
+import { invalidateFilmSimilarCache } from './cache'
+import { logger } from './logger'
+
+const similarLogger = logger.child({ module: 'similar-films' })
 
 // Weights from the PR 4a spec. Keywords carry the most semantic information
 // (themes, narrative devices). Director and era are tiebreakers.
@@ -159,26 +163,12 @@ const SCORING_SELECT = {
 } as const
 
 /**
- * Replace the precomputed SimilarFilm rows for one source film.
- * Used by the per-import hook in importMovie(). Idempotent: clear-and-rewrite.
+ * Commit one film's top-N to the SimilarFilm table. Clear-and-rewrite in a
+ * single transaction so a reader either sees the old set or the new set,
+ * never a mid-write mix. Each call is its own transaction so the bidirectional
+ * pass does not hold long-running locks across many films.
  */
-export async function recomputeSimilarFilmsForFilm(
-  filmId: string,
-  n: number = DEFAULT_TOP_N,
-): Promise<number> {
-  const source = await prisma.film.findUnique({
-    where: { id: filmId },
-    select: SCORING_SELECT,
-  })
-  if (!source) return 0
-
-  const candidates = await prisma.film.findMany({
-    where: { id: { not: filmId } },
-    select: SCORING_SELECT,
-  })
-
-  const top = computeTopSimilarFor(source, candidates, n)
-
+async function writeTopForFilm(filmId: string, top: ScoredCandidate[]): Promise<void> {
   await prisma.$transaction([
     prisma.similarFilm.deleteMany({ where: { filmId } }),
     ...(top.length > 0
@@ -194,6 +184,55 @@ export async function recomputeSimilarFilmsForFilm(
         ]
       : []),
   ])
+}
 
-  return top.length
+/**
+ * Replace the precomputed SimilarFilm rows for one source film, and then
+ * (bidirectional update) recompute each of its top-N neighbors so the new
+ * source can also appear in their lists. One level only: neighbors of
+ * neighbors are NOT recursed. Periodic full rebuilds remain useful for the
+ * long tail of films that are not in any new film's top-N.
+ *
+ * Idempotent: clear-and-rewrite per film. Safe to call repeatedly.
+ *
+ * Ordering: the source's own top-N commits FIRST. Each neighbor's recompute
+ * then runs sequentially in its own transaction so a single slow or failing
+ * neighbor cannot poison the others or block other writers. A failure on one
+ * neighbor is logged and swallowed; the source's commit and the remaining
+ * neighbors still proceed.
+ */
+export async function recomputeSimilarFilmsForFilm(
+  filmId: string,
+  n: number = DEFAULT_TOP_N,
+): Promise<number> {
+  // Single catalog fetch reused for every recompute in this call. computeTopSimilarFor
+  // already skips the source by id, so the same array works as the candidate pool
+  // for the source AND for each of its neighbors.
+  const catalog = await prisma.film.findMany({ select: SCORING_SELECT })
+  const source = catalog.find((f) => f.id === filmId)
+  if (!source) return 0
+
+  const sourceTop = computeTopSimilarFor(source, catalog, n)
+  await writeTopForFilm(filmId, sourceTop)
+
+  // Bidirectional pass: each Xi gets its own top-N recomputed and committed
+  // independently so the source's neighbors are kept in sync with the new film
+  // entering their candidate pool. Sequential, not parallel: total work is small
+  // (~20 × catalog-traversal in JS) and serial keeps DB pressure predictable.
+  for (const candidate of sourceTop) {
+    try {
+      const neighbor = catalog.find((f) => f.id === candidate.filmId)
+      if (!neighbor) continue
+      const neighborTop = computeTopSimilarFor(neighbor, catalog, n)
+      await writeTopForFilm(neighbor.id, neighborTop)
+      await invalidateFilmSimilarCache(neighbor.id)
+    } catch (err) {
+      similarLogger.warn(
+        { err, sourceId: filmId, neighborId: candidate.filmId },
+        'bidirectional recompute failed for neighbor; continuing',
+      )
+    }
+  }
+
+  return sourceTop.length
 }

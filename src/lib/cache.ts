@@ -100,6 +100,15 @@ export async function invalidateFilmCache(filmId: string): Promise<void> {
   cacheLogger.info({ filmId }, 'invalidated film cache')
 }
 
+/**
+ * Invalidate ONLY the precomputed similar-films cache for a film. Used by the
+ * bidirectional per-import recompute so neighbors don't pay an unrelated
+ * `film:${id}` / `graph:${id}` cache miss.
+ */
+export async function invalidateFilmSimilarCache(filmId: string): Promise<void> {
+  await cacheDel(KEYS.filmSimilar(filmId))
+}
+
 /** Invalidate all homepage section caches */
 export async function invalidateHomepageCache(): Promise<void> {
   await cacheDel(
