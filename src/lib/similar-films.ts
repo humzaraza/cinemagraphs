@@ -4,11 +4,15 @@ import { logger } from './logger'
 
 const similarLogger = logger.child({ module: 'similar-films' })
 
-// Weights from the PR 4a spec. Keywords carry the most semantic information
-// (themes, narrative devices). Director and era are tiebreakers.
+// Final tuned weights after PR 4a validation. Keywords dominate the score
+// because TMDB keywords carry the most semantic information (themes, narrative
+// devices) and the cappedIntersection metric (see below) makes them legible to
+// the scorer in a way that Jaccard did not. Director and era are tiebreakers.
+// Genre weight was lowered because TMDB's coarse 3-tuple genres were causing
+// genre matches to dominate everything else (Marvel films flooding sci-fi).
 export const WEIGHTS = {
-  keywords: 0.45,
-  genres: 0.25,
+  keywords: 0.55,
+  genres: 0.15,
   director: 0.15,
   era: 0.15,
 } as const
@@ -33,7 +37,11 @@ export interface SimilarityBreakdown {
 export interface SimilarityResult {
   score: number
   signals: SimilarityBreakdown
-  /** True when keyword signal was unavailable on either side and weights were renormalized. */
+  /**
+   * True when keyword signal was unavailable on either side. The keyword
+   * contribution is zeroed and weights are NOT renormalized: the maximum
+   * possible degraded score is the sum of the non-keyword weights (0.45).
+   */
   keywordsDegraded: boolean
 }
 
@@ -47,6 +55,10 @@ export interface ScoredCandidate {
 /**
  * Jaccard similarity on two string arrays. Case sensitive (callers normalize upstream).
  * Returns 0 when either side is empty so empty inputs never spuriously match each other.
+ *
+ * Used for the genre signal. The keyword signal switched to cappedIntersection
+ * because TMDB keyword sets are too sparse for Jaccard's union penalty to make
+ * sense.
  */
 export function jaccard(a: readonly string[], b: readonly string[]): number {
   if (a.length === 0 || b.length === 0) return 0
@@ -59,6 +71,38 @@ export function jaccard(a: readonly string[], b: readonly string[]): number {
   const union = setA.size + setB.size - intersection
   if (union === 0) return 0
   return intersection / union
+}
+
+/**
+ * Capped intersection score: counts shared elements, saturating at `cap`.
+ * Returns min(|A ∩ B|, cap) / cap, in [0, 1].
+ *
+ * Used for keyword similarity instead of Jaccard. Jaccard is too punitive
+ * for TMDB-style keyword sets (10-30 elements with specific vocabulary):
+ * even genuinely-similar films share at most 3-5 keywords out of unions
+ * of 30+, scoring under 0.10. The cap-saturated metric rewards real
+ * thematic overlap (3 shared keywords = 0.6) without inflating from
+ * sparse data on either side.
+ *
+ * Future: a later PR may replace this with semantic embeddings for
+ * cross-vocabulary matching ("dream" ↔ "subconscious" etc).
+ */
+export function cappedIntersection(
+  a: readonly string[],
+  b: readonly string[],
+  cap: number = 5,
+): number {
+  if (cap <= 0) return 0
+  if (a.length === 0 || b.length === 0) return 0
+  const setA = new Set(a)
+  let count = 0
+  for (const item of new Set(b)) {
+    if (setA.has(item)) {
+      count++
+      if (count >= cap) return 1.0
+    }
+  }
+  return count / cap
 }
 
 /**
@@ -101,35 +145,30 @@ function getYear(date: Date | null): number | null {
 /**
  * Compute weighted similarity between two films.
  *
- * Degraded mode: if EITHER film has no keywords, drop the keyword weight and
- * renormalize the remaining three so they sum to 1.0. Spec: "Algorithm never
- * returns an empty list because of missing data."
+ * Keyword signal uses cappedIntersection (cap=5), not Jaccard, because TMDB
+ * keyword sets are too sparse for Jaccard to register real thematic overlap
+ * (see cappedIntersection JSDoc). Genre signal still uses Jaccard.
+ *
+ * Degraded mode: if EITHER film has no keywords, the keyword contribution is
+ * set to 0 and the remaining weights are NOT renormalized. The maximum
+ * possible degraded score is therefore the sum of the non-keyword weights
+ * (0.45), which is intentional: a candidate with missing data should rank
+ * below any well-formed candidate that scores above 0.45.
  */
 export function scorePair(source: FilmForScoring, candidate: FilmForScoring): SimilarityResult {
+  const keywordsDegraded = source.keywords.length === 0 || candidate.keywords.length === 0
   const signals: SimilarityBreakdown = {
-    keywords: jaccard(source.keywords, candidate.keywords),
+    keywords: keywordsDegraded ? 0 : cappedIntersection(source.keywords, candidate.keywords, 5),
     genres: jaccard(source.genres, candidate.genres),
     director: directorScore(source.director, candidate.director),
     era: eraScore(getYear(source.releaseDate), getYear(candidate.releaseDate)),
   }
 
-  const keywordsDegraded = source.keywords.length === 0 || candidate.keywords.length === 0
-
-  let score: number
-  if (keywordsDegraded) {
-    const remaining = WEIGHTS.genres + WEIGHTS.director + WEIGHTS.era
-    score =
-      (WEIGHTS.genres * signals.genres +
-        WEIGHTS.director * signals.director +
-        WEIGHTS.era * signals.era) /
-      remaining
-  } else {
-    score =
-      WEIGHTS.keywords * signals.keywords +
-      WEIGHTS.genres * signals.genres +
-      WEIGHTS.director * signals.director +
-      WEIGHTS.era * signals.era
-  }
+  const score =
+    WEIGHTS.keywords * signals.keywords +
+    WEIGHTS.genres * signals.genres +
+    WEIGHTS.director * signals.director +
+    WEIGHTS.era * signals.era
 
   return { score, signals, keywordsDegraded }
 }

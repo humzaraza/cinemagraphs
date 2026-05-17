@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   WEIGHTS,
   jaccard,
+  cappedIntersection,
   directorScore,
   eraScore,
   scorePair,
@@ -40,6 +41,45 @@ describe('jaccard', () => {
 
   it('treats arrays as sets (dedupes)', () => {
     expect(jaccard(['a', 'a', 'b'], ['a', 'b', 'b'])).toBe(1)
+  })
+})
+
+describe('cappedIntersection', () => {
+  it('returns 0 when either side is empty', () => {
+    expect(cappedIntersection([], ['a', 'b'])).toBe(0)
+    expect(cappedIntersection(['a'], [])).toBe(0)
+    expect(cappedIntersection([], [])).toBe(0)
+  })
+
+  it('returns 0.0 when there is no overlap', () => {
+    expect(cappedIntersection(['a', 'b'], ['c', 'd'])).toBe(0)
+  })
+
+  it('returns count/cap for shared elements below the cap', () => {
+    expect(cappedIntersection(['a'], ['a', 'x', 'y'])).toBeCloseTo(0.2)
+    expect(cappedIntersection(['a', 'b', 'c'], ['a', 'b', 'c', 'x'])).toBeCloseTo(0.6)
+  })
+
+  it('saturates at 1.0 when the intersection meets the cap exactly', () => {
+    expect(cappedIntersection(['a', 'b', 'c', 'd', 'e'], ['a', 'b', 'c', 'd', 'e'])).toBe(1)
+  })
+
+  it('clamps at 1.0 when more than `cap` elements are shared', () => {
+    expect(
+      cappedIntersection(
+        ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
+        ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
+      ),
+    ).toBe(1)
+  })
+
+  it('honors a custom cap', () => {
+    expect(cappedIntersection(['a', 'b', 'c'], ['a', 'b', 'c'], 3)).toBe(1)
+    expect(cappedIntersection(['a'], ['a', 'b'], 2)).toBe(0.5)
+  })
+
+  it('treats arrays as sets (dedupes both sides)', () => {
+    expect(cappedIntersection(['a', 'a', 'b'], ['a', 'b', 'b'])).toBeCloseTo(0.4)
   })
 })
 
@@ -110,7 +150,8 @@ describe('scorePair', () => {
     })
     const r = scorePair(inception, memento)
 
-    const expectedKw = jaccard(inception.keywords, memento.keywords)
+    // Keyword signal uses cappedIntersection (cap=5), not Jaccard.
+    const expectedKw = cappedIntersection(inception.keywords, memento.keywords, 5)
     const expectedGen = jaccard(inception.genres, memento.genres)
     const expectedEra = eraScore(2010, 2000)
     const expected =
@@ -126,7 +167,7 @@ describe('scorePair', () => {
     expect(r.score).toBeCloseTo(expected)
   })
 
-  it('renormalizes when source has no keywords (degraded mode)', () => {
+  it('zeros keyword contribution when source has no keywords (degraded, no renormalization)', () => {
     const sourceNoKw = { ...inception, keywords: [] }
     const candidate = film({
       id: 'c',
@@ -138,14 +179,33 @@ describe('scorePair', () => {
     const r = scorePair(sourceNoKw, candidate)
     expect(r.keywordsDegraded).toBe(true)
     expect(r.signals.keywords).toBe(0)
-    const remaining = WEIGHTS.genres + WEIGHTS.director + WEIGHTS.era
-    const expected =
-      (WEIGHTS.genres * 1 + WEIGHTS.director * 1 + WEIGHTS.era * 1) / remaining
+
+    // No renormalization. All non-keyword signals at max → score is the literal
+    // sum of non-keyword weights, which is the hard ceiling for any degraded
+    // candidate.
+    const expected = WEIGHTS.genres * 1 + WEIGHTS.director * 1 + WEIGHTS.era * 1
     expect(r.score).toBeCloseTo(expected)
-    expect(r.score).toBeCloseTo(1) // all remaining signals at max → normalized to 1.0
+    expect(r.score).toBeCloseTo(0.45)
   })
 
-  it('renormalizes when candidate has no keywords (degraded mode symmetric)', () => {
+  it('caps degraded score at sum of non-keyword weights regardless of signals', () => {
+    // Source has keywords, candidate does not. Candidate's other signals are
+    // all maxed out, so this exercises the upper bound of the degraded path.
+    const candidateNoKw = film({
+      id: 'maxed',
+      keywords: [],
+      genres: ['Action', 'Science Fiction', 'Adventure'],
+      director: 'Christopher Nolan',
+      releaseDate: new Date('2010-01-01'),
+    })
+    const r = scorePair(inception, candidateNoKw)
+    expect(r.keywordsDegraded).toBe(true)
+    expect(r.signals.keywords).toBe(0)
+    expect(r.score).toBeLessThanOrEqual(WEIGHTS.genres + WEIGHTS.director + WEIGHTS.era)
+    expect(r.score).toBeLessThanOrEqual(0.45 + 1e-9)
+  })
+
+  it('flags degraded when candidate has no keywords (symmetric)', () => {
     const candidateNoKw = film({
       id: 'c',
       keywords: [],
