@@ -259,3 +259,30 @@ describe('GET /api/films/[id] — similar films enrichment', () => {
     expect(res.status).toBe(404)
   })
 })
+
+describe('GET /api/films/[id]: top-level userHasReviewed', () => {
+  it('returns userHasReviewed=false when the request is unauthenticated', async () => {
+    const res = await callGET()
+    const body = await res.json()
+    expect(body.userHasReviewed).toBe(false)
+    expect(mocks.prisma.userReview.findMany).not.toHaveBeenCalled()
+  })
+
+  it('returns userHasReviewed=true when the authenticated user has reviewed this film', async () => {
+    mocks.getMobileOrServerSession.mockResolvedValue({ user: { id: 'u1', role: 'USER' } })
+    mocks.prisma.userReview.findMany.mockResolvedValue([{ filmId: FILM_ID }])
+    const res = await callGET()
+    const body = await res.json()
+    expect(body.userHasReviewed).toBe(true)
+    const findManyArgs = mocks.prisma.userReview.findMany.mock.calls[0][0]
+    expect(findManyArgs.where.filmId.in).toContain(FILM_ID)
+  })
+
+  it('returns userHasReviewed=false when the authenticated user has not reviewed this film', async () => {
+    mocks.getMobileOrServerSession.mockResolvedValue({ user: { id: 'u1', role: 'USER' } })
+    mocks.prisma.userReview.findMany.mockResolvedValue([])
+    const res = await callGET()
+    const body = await res.json()
+    expect(body.userHasReviewed).toBe(false)
+  })
+})

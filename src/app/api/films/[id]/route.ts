@@ -103,9 +103,9 @@ export async function GET(
     }
 
     let reviewedSet: Set<string> = new Set()
-    if (userId && top.length > 0) {
+    if (userId) {
       const reviewed = await prisma.userReview.findMany({
-        where: { userId, filmId: { in: top.map((t) => t.id) } },
+        where: { userId, filmId: { in: [id, ...top.map((t) => t.id)] } },
         select: { filmId: true },
       })
       reviewedSet = new Set(reviewed.map((r) => r.filmId))
@@ -128,7 +128,11 @@ export async function GET(
       return out
     })
 
-    return Response.json({ ...withDerivedFields(film), similarFilms })
+    return Response.json({
+      ...withDerivedFields(film),
+      userHasReviewed: reviewedSet.has(id),
+      similarFilms,
+    })
   } catch (err) {
     apiLogger.error({ err }, 'Failed to fetch film')
     return Response.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
