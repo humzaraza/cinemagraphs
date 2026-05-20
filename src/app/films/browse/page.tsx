@@ -47,6 +47,7 @@ function BrowseContent() {
 
   const [films, setFilms] = useState<Film[]>([])
   const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
   const [sort, setSort] = useState<string>('az')
   const [genre, setGenre] = useState(urlGenre)
   const [page, setPage] = useState(1)
@@ -70,6 +71,13 @@ function BrowseContent() {
     setPage(1)
   }, [urlGenre])
 
+  // Debounce the search query so typing fires at most one fetch per 300ms
+  // idle. Sort, genre, and page changes are not debounced.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(timer)
+  }, [query])
+
   const fetchFilms = useCallback(async () => {
     abortRef.current?.abort()
     const controller = new AbortController()
@@ -90,7 +98,7 @@ function BrowseContent() {
     }
 
     if (genre) params.set('genre', genre)
-    if (query.trim()) params.set('q', query.trim())
+    if (debouncedQuery.trim()) params.set('q', debouncedQuery.trim())
 
     try {
       const res = await fetch(`/api/films?${params}`, { signal: controller.signal })
@@ -122,7 +130,7 @@ function BrowseContent() {
     } finally {
       if (!controller.signal.aborted) setLoading(false)
     }
-  }, [query, sort, genre, page])
+  }, [debouncedQuery, sort, genre, page])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): fetch-on-mount pattern; revisit when migrating to Suspense or React Query
