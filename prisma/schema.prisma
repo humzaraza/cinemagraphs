@@ -63,7 +63,6 @@ model User {
   privateGraphs        Boolean               @default(false)
   points               Int                   @default(0)
   blindUnwatchedDefault Boolean              @default(false)
-  blindReviewedDefault  Boolean              @default(false)
   hasSeenBlindModeTooltip Boolean            @default(false)
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt

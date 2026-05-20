@@ -33,7 +33,6 @@ describe('GET /api/user/blind-mode', () => {
   it('returns defaults, perFilm map, and hasSeenBlindModeTooltip', async () => {
     mocks.prisma.user.findUnique.mockResolvedValue({
       blindUnwatchedDefault: true,
-      blindReviewedDefault: false,
       hasSeenBlindModeTooltip: false,
     })
     mocks.prisma.userFilmBlindMode.findMany.mockResolvedValue([
@@ -46,7 +45,6 @@ describe('GET /api/user/blind-mode', () => {
     const body = await res.json()
     expect(body).toEqual({
       blindUnwatchedDefault: true,
-      blindReviewedDefault: false,
       perFilm: { f1: true, f2: false },
       hasSeenBlindModeTooltip: false,
     })
@@ -54,7 +52,6 @@ describe('GET /api/user/blind-mode', () => {
       where: { id: USER_ID },
       select: {
         blindUnwatchedDefault: true,
-        blindReviewedDefault: true,
         hasSeenBlindModeTooltip: true,
       },
     })
@@ -88,22 +85,17 @@ describe('PATCH /api/user/blind-mode/defaults', () => {
   it('updates only boolean fields and ignores others', async () => {
     mocks.prisma.user.update.mockResolvedValue({
       blindUnwatchedDefault: true,
-      blindReviewedDefault: false,
       hasSeenBlindModeTooltip: false,
     })
     const { PATCH } = await import('@/app/api/user/blind-mode/defaults/route')
     const res = await PATCH(
-      patchRequest({ blindUnwatchedDefault: true, blindReviewedDefault: 'nope', somethingElse: 'x' }),
+      patchRequest({ blindUnwatchedDefault: true, somethingElse: 'x' }),
     )
     expect(res.status).toBe(200)
     expect(mocks.prisma.user.update).toHaveBeenCalledWith({
       where: { id: USER_ID },
       data: { blindUnwatchedDefault: true },
-      select: {
-        blindUnwatchedDefault: true,
-        blindReviewedDefault: true,
-        hasSeenBlindModeTooltip: true,
-      },
+      select: { blindUnwatchedDefault: true, hasSeenBlindModeTooltip: true },
     })
   })
 
@@ -125,32 +117,9 @@ describe('PATCH /api/user/blind-mode/defaults', () => {
     expect(res.status).toBe(400)
   })
 
-  it('accepts patching both fields at once', async () => {
-    mocks.prisma.user.update.mockResolvedValue({
-      blindUnwatchedDefault: true,
-      blindReviewedDefault: true,
-      hasSeenBlindModeTooltip: false,
-    })
-    const { PATCH } = await import('@/app/api/user/blind-mode/defaults/route')
-    const res = await PATCH(
-      patchRequest({ blindUnwatchedDefault: true, blindReviewedDefault: true }),
-    )
-    expect(res.status).toBe(200)
-    expect(mocks.prisma.user.update).toHaveBeenCalledWith({
-      where: { id: USER_ID },
-      data: { blindUnwatchedDefault: true, blindReviewedDefault: true },
-      select: {
-        blindUnwatchedDefault: true,
-        blindReviewedDefault: true,
-        hasSeenBlindModeTooltip: true,
-      },
-    })
-  })
-
   it('accepts hasSeenBlindModeTooltip and persists it', async () => {
     mocks.prisma.user.update.mockResolvedValue({
       blindUnwatchedDefault: false,
-      blindReviewedDefault: false,
       hasSeenBlindModeTooltip: true,
     })
     const { PATCH } = await import('@/app/api/user/blind-mode/defaults/route')
@@ -161,7 +130,6 @@ describe('PATCH /api/user/blind-mode/defaults', () => {
       data: { hasSeenBlindModeTooltip: true },
       select: {
         blindUnwatchedDefault: true,
-        blindReviewedDefault: true,
         hasSeenBlindModeTooltip: true,
       },
     })
@@ -172,20 +140,18 @@ describe('PATCH /api/user/blind-mode/defaults', () => {
   it('partial update with only hasSeenBlindModeTooltip does not clobber the other defaults', async () => {
     mocks.prisma.user.update.mockResolvedValue({
       blindUnwatchedDefault: true,
-      blindReviewedDefault: true,
       hasSeenBlindModeTooltip: true,
     })
     const { PATCH } = await import('@/app/api/user/blind-mode/defaults/route')
     const res = await PATCH(patchRequest({ hasSeenBlindModeTooltip: true }))
     expect(res.status).toBe(200)
-    // The data payload contains ONLY the field that was sent — blindUnwatchedDefault
-    // and blindReviewedDefault must not appear, so Prisma leaves them untouched.
+    // The data payload contains ONLY the field that was sent. blindUnwatchedDefault
+    // must not appear, so Prisma leaves it untouched.
     expect(mocks.prisma.user.update).toHaveBeenCalledWith({
       where: { id: USER_ID },
       data: { hasSeenBlindModeTooltip: true },
       select: {
         blindUnwatchedDefault: true,
-        blindReviewedDefault: true,
         hasSeenBlindModeTooltip: true,
       },
     })
