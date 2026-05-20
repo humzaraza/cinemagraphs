@@ -26,6 +26,10 @@ interface TmdbResult {
   existingFilmId: string | null
 }
 
+type BrowseError =
+  | { kind: 'rate_limited'; retryAfterSec: number }
+  | { kind: 'generic' }
+
 const SORT_OPTIONS = [
   { value: 'az', label: 'Alphabetical A–Z' },
   { value: 'za', label: 'Alphabetical Z–A' },
@@ -49,6 +53,7 @@ function BrowseContent() {
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<BrowseError | null>(null)
 
   // TMDB search state
   const [tmdbResults, setTmdbResults] = useState<TmdbResult[]>([])
@@ -66,6 +71,7 @@ function BrowseContent() {
 
   const fetchFilms = useCallback(async () => {
     setLoading(true)
+    setError(null)
 
     const params = new URLSearchParams()
     params.set('page', String(page))
@@ -81,13 +87,34 @@ function BrowseContent() {
     if (genre) params.set('genre', genre)
     if (query.trim()) params.set('q', query.trim())
 
-    const res = await fetch(`/api/films?${params}`)
-    const data = await res.json()
+    try {
+      const res = await fetch(`/api/films?${params}`)
 
-    setFilms(data.films || [])
-    setTotalPages(data.pagination?.totalPages || 1)
-    setTotal(data.pagination?.total || 0)
-    setLoading(false)
+      if (!res.ok) {
+        if (res.status === 429) {
+          const header = res.headers.get('Retry-After')
+          const parsed = header == null ? NaN : parseInt(header, 10)
+          const retryAfterSec = Number.isNaN(parsed) || parsed < 1 ? 30 : parsed
+          console.error('[browse] fetch failed', { status: res.status, kind: 'rate_limited' })
+          setError({ kind: 'rate_limited', retryAfterSec })
+        } else {
+          console.error('[browse] fetch failed', { status: res.status, kind: 'generic' })
+          setError({ kind: 'generic' })
+        }
+        return
+      }
+
+      const data = await res.json()
+      setError(null)
+      setFilms(data.films || [])
+      setTotalPages(data.pagination?.totalPages || 1)
+      setTotal(data.pagination?.total || 0)
+    } catch {
+      console.error('[browse] fetch failed', { status: null, kind: 'generic' })
+      setError({ kind: 'generic' })
+    } finally {
+      setLoading(false)
+    }
   }, [query, sort, genre, page])
 
   useEffect(() => {
@@ -220,7 +247,7 @@ function BrowseContent() {
       )}
 
       {/* Results count */}
-      {!loading && (
+      {!loading && !error && (
         <p className="text-sm text-cinema-muted mb-6">
           {total} {total === 1 ? 'film' : 'films'}{genre ? ` in ${genre}` : ''}{sort === 'nowPlaying' ? ' now playing' : ''}
         </p>
@@ -228,10 +255,26 @@ function BrowseContent() {
 
       {loading ? (
         <div className="text-center py-20 text-cinema-muted">Loading...</div>
+      ) : error && films.length === 0 ? (
+        <div className="text-center py-20">
+          <p className="text-cinema-cream mb-1">
+            {error.kind === 'rate_limited' ? 'Slow down a moment' : 'Couldn’t load films'}
+          </p>
+          <p className="text-sm text-cinema-muted">
+            {error.kind === 'rate_limited'
+              ? 'You’ve made a lot of requests recently. Give it a few seconds before trying again.'
+              : 'Something went wrong on our end. Check your connection and try again.'}
+          </p>
+        </div>
       ) : films.length === 0 && !query ? (
         <div className="text-center py-20 text-cinema-muted">No films available yet.</div>
       ) : (
         <>
+          {error && films.length > 0 && (
+            <p className="text-center text-sm text-cinema-muted mb-4">
+              {error.kind === 'rate_limited' ? 'Slow down a moment.' : 'Couldn’t load films.'}
+            </p>
+          )}
           {films.length === 0 && query && (
             <p className="text-center text-cinema-muted mb-4">No films match your search.</p>
           )}
