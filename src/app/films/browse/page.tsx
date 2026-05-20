@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
@@ -54,6 +54,7 @@ function BrowseContent() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<BrowseError | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   // TMDB search state
   const [tmdbResults, setTmdbResults] = useState<TmdbResult[]>([])
@@ -70,6 +71,10 @@ function BrowseContent() {
   }, [urlGenre])
 
   const fetchFilms = useCallback(async () => {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     setLoading(true)
     setError(null)
 
@@ -88,7 +93,7 @@ function BrowseContent() {
     if (query.trim()) params.set('q', query.trim())
 
     try {
-      const res = await fetch(`/api/films?${params}`)
+      const res = await fetch(`/api/films?${params}`, { signal: controller.signal })
 
       if (!res.ok) {
         if (res.status === 429) {
@@ -110,16 +115,19 @@ function BrowseContent() {
       setTotalPages(data.pagination?.totalPages || 1)
       setTotal(data.pagination?.total || 0)
     } catch {
+      // Aborted by a newer fetch or unmount; expected, so stay silent.
+      if (controller.signal.aborted) return
       console.error('[browse] fetch failed', { status: null, kind: 'generic' })
       setError({ kind: 'generic' })
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
     }
   }, [query, sort, genre, page])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): fetch-on-mount pattern; revisit when migrating to Suspense or React Query
     fetchFilms()
+    return () => abortRef.current?.abort()
   }, [fetchFilms])
 
   // Reset page and TMDB state when filters change
