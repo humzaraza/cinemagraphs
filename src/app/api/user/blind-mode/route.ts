@@ -17,7 +17,6 @@ export async function GET() {
         where: { id: userId },
         select: {
           blindUnwatchedDefault: true,
-          blindReviewedDefault: true,
           hasSeenBlindModeTooltip: true,
         },
       }),
@@ -36,7 +35,6 @@ export async function GET() {
 
     return NextResponse.json({
       blindUnwatchedDefault: user.blindUnwatchedDefault,
-      blindReviewedDefault: user.blindReviewedDefault,
       perFilm,
       hasSeenBlindModeTooltip: user.hasSeenBlindModeTooltip,
     })
