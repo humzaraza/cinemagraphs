@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import FilmCard from '@/components/FilmCard'
+import BrowseFilmsErrorState, { type BrowseError } from '@/components/BrowseFilmsErrorState'
 
 interface Film {
   id: string
@@ -25,10 +26,6 @@ interface TmdbResult {
   alreadyExists: boolean
   existingFilmId: string | null
 }
-
-type BrowseError =
-  | { kind: 'rate_limited'; retryAfterSec: number }
-  | { kind: 'generic' }
 
 const SORT_OPTIONS = [
   { value: 'az', label: 'Alphabetical A–Z' },
@@ -138,6 +135,21 @@ function BrowseContent() {
     return () => abortRef.current?.abort()
   }, [fetchFilms])
 
+  // Tick the rate-limit countdown down once per second. The interval clears
+  // itself at zero (shouldCountdown flips false) and on retry or unmount.
+  const shouldCountdown = error?.kind === 'rate_limited' && error.retryAfterSec > 0
+  useEffect(() => {
+    if (!shouldCountdown) return
+    const interval = setInterval(() => {
+      setError((prev) =>
+        prev?.kind === 'rate_limited' && prev.retryAfterSec > 0
+          ? { ...prev, retryAfterSec: prev.retryAfterSec - 1 }
+          : prev
+      )
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [shouldCountdown])
+
   // Reset page and TMDB state when filters change
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): sync-external-state pattern; revisit when migrating to derived state
@@ -209,6 +221,11 @@ function BrowseContent() {
     router.replace(`/films/browse${params.toString() ? `?${params}` : ''}`)
   }
 
+  function handleRetry() {
+    setError(null)
+    fetchFilms()
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-10">
       <h1 className="font-[family-name:var(--font-playfair)] text-3xl font-bold mb-8">
@@ -272,24 +289,13 @@ function BrowseContent() {
       {loading ? (
         <div className="text-center py-20 text-cinema-muted">Loading...</div>
       ) : error && films.length === 0 ? (
-        <div className="text-center py-20">
-          <p className="text-cinema-cream mb-1">
-            {error.kind === 'rate_limited' ? 'Slow down a moment' : 'Couldn’t load films'}
-          </p>
-          <p className="text-sm text-cinema-muted">
-            {error.kind === 'rate_limited'
-              ? 'You’ve made a lot of requests recently. Give it a few seconds before trying again.'
-              : 'Something went wrong on our end. Check your connection and try again.'}
-          </p>
-        </div>
+        <BrowseFilmsErrorState error={error} variant="full" onRetry={handleRetry} />
       ) : films.length === 0 && !query ? (
         <div className="text-center py-20 text-cinema-muted">No films available yet.</div>
       ) : (
         <>
           {error && films.length > 0 && (
-            <p className="text-center text-sm text-cinema-muted mb-4">
-              {error.kind === 'rate_limited' ? 'Slow down a moment.' : 'Couldn’t load films.'}
-            </p>
+            <BrowseFilmsErrorState error={error} variant="banner" onRetry={handleRetry} />
           )}
           {films.length === 0 && query && (
             <p className="text-center text-cinema-muted mb-4">No films match your search.</p>
