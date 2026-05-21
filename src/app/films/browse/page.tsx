@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import FilmCard from '@/components/FilmCard'
+import BrowseFilmsErrorState, { type BrowseError } from '@/components/BrowseFilmsErrorState'
 
 interface Film {
   id: string
@@ -43,12 +44,15 @@ function BrowseContent() {
 
   const [films, setFilms] = useState<Film[]>([])
   const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
   const [sort, setSort] = useState<string>('az')
   const [genre, setGenre] = useState(urlGenre)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<BrowseError | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   // TMDB search state
   const [tmdbResults, setTmdbResults] = useState<TmdbResult[]>([])
@@ -64,8 +68,20 @@ function BrowseContent() {
     setPage(1)
   }, [urlGenre])
 
+  // Debounce the search query so typing fires at most one fetch per 300ms
+  // idle. Sort, genre, and page changes are not debounced.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(timer)
+  }, [query])
+
   const fetchFilms = useCallback(async () => {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     setLoading(true)
+    setError(null)
 
     const params = new URLSearchParams()
     params.set('page', String(page))
@@ -79,21 +95,60 @@ function BrowseContent() {
     }
 
     if (genre) params.set('genre', genre)
-    if (query.trim()) params.set('q', query.trim())
+    if (debouncedQuery.trim()) params.set('q', debouncedQuery.trim())
 
-    const res = await fetch(`/api/films?${params}`)
-    const data = await res.json()
+    try {
+      const res = await fetch(`/api/films?${params}`, { signal: controller.signal })
 
-    setFilms(data.films || [])
-    setTotalPages(data.pagination?.totalPages || 1)
-    setTotal(data.pagination?.total || 0)
-    setLoading(false)
-  }, [query, sort, genre, page])
+      if (!res.ok) {
+        if (res.status === 429) {
+          const header = res.headers.get('Retry-After')
+          const parsed = header == null ? NaN : parseInt(header, 10)
+          const retryAfterSec = Number.isNaN(parsed) || parsed < 1 ? 30 : parsed
+          console.error('[browse] fetch failed', { status: res.status, kind: 'rate_limited' })
+          setError({ kind: 'rate_limited', retryAfterSec })
+        } else {
+          console.error('[browse] fetch failed', { status: res.status, kind: 'generic' })
+          setError({ kind: 'generic' })
+        }
+        return
+      }
+
+      const data = await res.json()
+      setError(null)
+      setFilms(data.films || [])
+      setTotalPages(data.pagination?.totalPages || 1)
+      setTotal(data.pagination?.total || 0)
+    } catch {
+      // Aborted by a newer fetch or unmount; expected, so stay silent.
+      if (controller.signal.aborted) return
+      console.error('[browse] fetch failed', { status: null, kind: 'generic' })
+      setError({ kind: 'generic' })
+    } finally {
+      if (!controller.signal.aborted) setLoading(false)
+    }
+  }, [debouncedQuery, sort, genre, page])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): fetch-on-mount pattern; revisit when migrating to Suspense or React Query
     fetchFilms()
+    return () => abortRef.current?.abort()
   }, [fetchFilms])
+
+  // Tick the rate-limit countdown down once per second. The interval clears
+  // itself at zero (shouldCountdown flips false) and on retry or unmount.
+  const shouldCountdown = error?.kind === 'rate_limited' && error.retryAfterSec > 0
+  useEffect(() => {
+    if (!shouldCountdown) return
+    const interval = setInterval(() => {
+      setError((prev) =>
+        prev?.kind === 'rate_limited' && prev.retryAfterSec > 0
+          ? { ...prev, retryAfterSec: prev.retryAfterSec - 1 }
+          : prev
+      )
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [shouldCountdown])
 
   // Reset page and TMDB state when filters change
   useEffect(() => {
@@ -166,6 +221,11 @@ function BrowseContent() {
     router.replace(`/films/browse${params.toString() ? `?${params}` : ''}`)
   }
 
+  function handleRetry() {
+    setError(null)
+    fetchFilms()
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-10">
       <h1 className="font-[family-name:var(--font-playfair)] text-3xl font-bold mb-8">
@@ -220,7 +280,7 @@ function BrowseContent() {
       )}
 
       {/* Results count */}
-      {!loading && (
+      {!loading && !error && (
         <p className="text-sm text-cinema-muted mb-6">
           {total} {total === 1 ? 'film' : 'films'}{genre ? ` in ${genre}` : ''}{sort === 'nowPlaying' ? ' now playing' : ''}
         </p>
@@ -228,10 +288,15 @@ function BrowseContent() {
 
       {loading ? (
         <div className="text-center py-20 text-cinema-muted">Loading...</div>
+      ) : error && films.length === 0 ? (
+        <BrowseFilmsErrorState error={error} variant="full" onRetry={handleRetry} />
       ) : films.length === 0 && !query ? (
         <div className="text-center py-20 text-cinema-muted">No films available yet.</div>
       ) : (
         <>
+          {error && films.length > 0 && (
+            <BrowseFilmsErrorState error={error} variant="banner" onRetry={handleRetry} />
+          )}
           {films.length === 0 && query && (
             <p className="text-center text-cinema-muted mb-4">No films match your search.</p>
           )}
