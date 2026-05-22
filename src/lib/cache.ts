@@ -6,6 +6,7 @@ const cacheLogger = logger.child({ module: 'cache' })
 // ── TTL constants (seconds) ──
 export const TTL = {
   FILM: 3600,           // 1 hour
+  FILM_DETAIL: 120,     // 2 minutes (detail-page public reads)
   GRAPH: 3600,          // 1 hour
   HOMEPAGE: 3600,       // 1 hour
   TICKER: 1800,         // 30 minutes
@@ -19,6 +20,15 @@ export const TTL = {
 export const KEYS = {
   film: (id: string) => `film:${id}`,
   filmSimilar: (id: string) => `film:${id}:similar`,
+  // Detail-page public reads, cached per film id. Kept separate from the
+  // `film` / `filmSimilar` keys above (used by the /api/films/[id] route)
+  // because the detail page reads different shapes (filmPersons, page-1
+  // reviews, audience aggregates, the JSON-LD review set).
+  filmDetailCore: (id: string) => `film:${id}:detail:core`,
+  filmDetailReviews: (id: string) => `film:${id}:detail:reviews`,
+  filmDetailAudience: (id: string) => `film:${id}:detail:audience`,
+  filmDetailJsonLd: (id: string) => `film:${id}:detail:jsonld`,
+  filmDetailSimilar: (id: string) => `film:${id}:detail:similar`,
   graph: (id: string) => `graph:${id}`,
   homepage: (section: string) => `homepage:${section}`,
   ticker: () => 'ticker:data',
@@ -94,9 +104,24 @@ export async function cachedQuery<T>(
 
 // ── Invalidation helpers ──
 
-/** Invalidate all cached data for a specific film */
+/**
+ * Invalidate all cached data for a specific film: the /api/films/[id]
+ * route's `film` / `filmSimilar` / `graph` entries plus every detail-page
+ * public key. Callers (admin sentiment regeneration, admin film edits,
+ * the reviews POST handler, cron jobs) therefore refresh the detail page
+ * immediately rather than waiting for the TTL.
+ */
 export async function invalidateFilmCache(filmId: string): Promise<void> {
-  await cacheDel(KEYS.film(filmId), KEYS.filmSimilar(filmId), KEYS.graph(filmId))
+  await cacheDel(
+    KEYS.film(filmId),
+    KEYS.filmSimilar(filmId),
+    KEYS.graph(filmId),
+    KEYS.filmDetailCore(filmId),
+    KEYS.filmDetailReviews(filmId),
+    KEYS.filmDetailAudience(filmId),
+    KEYS.filmDetailJsonLd(filmId),
+    KEYS.filmDetailSimilar(filmId),
+  )
   cacheLogger.info({ filmId }, 'invalidated film cache')
 }
 
