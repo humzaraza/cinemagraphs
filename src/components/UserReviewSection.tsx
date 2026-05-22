@@ -34,6 +34,13 @@ interface Props {
   hasGraph: boolean
   beats: BeatInfo[]
   beatSource: 'graph' | 'wiki' | 'none'
+  /**
+   * Page-1 reviews + community summary + the viewer's own review, fetched
+   * during the detail page's server render. When provided, the component
+   * seeds its state from it and skips the on-mount GET. "Load more" and
+   * post-mutation refetches still hit the route.
+   */
+  initialData?: UserReviewSectionInitialData
 }
 
 /** Select up to 8 beats: peak, lowest, first, last, + 4 evenly distributed.
@@ -96,7 +103,25 @@ interface ExistingReview {
   user: { id: string; name: string | null; image: string | null }
 }
 
-export default function UserReviewSection({ filmId, hasGraph, beats, beatSource }: Props) {
+/**
+ * Page-1 reviews, community summary and the viewer's own review, produced
+ * by the detail page's server render and passed down so the component can
+ * skip its on-mount fetch.
+ */
+export interface UserReviewSectionInitialData {
+  reviews: ReviewData[]
+  summary: Summary
+  totalPages: number
+  myReview: ExistingReview | null
+}
+
+export default function UserReviewSection({
+  filmId,
+  hasGraph,
+  beats,
+  beatSource,
+  initialData,
+}: Props) {
   const { data: session } = useSession()
   const [overallRating, setOverallRating] = useState(5.5)
   const [beatRatings, setBeatRatings] = useState<Record<string, number>>({})
@@ -105,17 +130,17 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Existing review state
-  const [myReview, setMyReview] = useState<ExistingReview | null>(null)
+  // Existing review state — seeded from initialData (server render) when present
+  const [myReview, setMyReview] = useState<ExistingReview | null>(initialData?.myReview ?? null)
   const [editing, setEditing] = useState(false)
 
-  // Community data
-  const [reviews, setReviews] = useState<ReviewData[]>([])
-  const [summary, setSummary] = useState<Summary | null>(null)
+  // Community data — seeded from initialData (server render) when present
+  const [reviews, setReviews] = useState<ReviewData[]>(initialData?.reviews ?? [])
+  const [summary, setSummary] = useState<Summary | null>(initialData?.summary ?? null)
   const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
+  const [totalPages, setTotalPages] = useState(initialData?.totalPages ?? 1)
   const [showAll, setShowAll] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!initialData)
 
   // Peak/lowest tagging only makes sense when beats have real NLP scores
   const taggingEnabled = beatSource === 'graph'
@@ -159,9 +184,12 @@ export default function UserReviewSection({ filmId, hasGraph, beats, beatSource 
   }, [filmId])
 
   useEffect(() => {
+    // Page-1 reviews are server-rendered via initialData; skip the on-mount
+    // fetch. "Load more" (page 2+) and post-mutation refetches still call the route.
+    if (initialData) return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): fetch-on-mount pattern; revisit when migrating to Suspense or React Query
     fetchReviews(1)
-  }, [fetchReviews])
+  }, [fetchReviews, initialData])
 
   function startEditing() {
     if (!myReview) return

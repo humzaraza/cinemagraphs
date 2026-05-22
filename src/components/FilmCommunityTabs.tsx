@@ -1,6 +1,6 @@
 'use client'
 
-import UserReviewSection from './UserReviewSection'
+import UserReviewSection, { type UserReviewSectionInitialData } from './UserReviewSection'
 // import LiveReactionSection from './LiveReactionSection' // hidden — re-enable when ready
 
 interface BeatInfo {
@@ -15,9 +15,18 @@ interface Props {
   beats: BeatInfo[]
   beatSource: 'graph' | 'wiki' | 'none'
   runtime: number | null
+  /** Page-1 reviews data from the detail page's server render; forwarded to UserReviewSection. */
+  reviewsInitialData?: UserReviewSectionInitialData
 }
 
-export default function FilmCommunityTabs({ filmId, hasGraph, beats, beatSource, runtime }: Props) {
+export default function FilmCommunityTabs({
+  filmId,
+  hasGraph,
+  beats,
+  beatSource,
+  runtime,
+  reviewsInitialData,
+}: Props) {
   return (
     <div>
       {/* Tab Headers */}
@@ -35,7 +44,13 @@ export default function FilmCommunityTabs({ filmId, hasGraph, beats, beatSource,
       </div>
 
       {/* Tab Content */}
-      <UserReviewSection filmId={filmId} hasGraph={hasGraph} beats={beats} beatSource={beatSource} />
+      <UserReviewSection
+        filmId={filmId}
+        hasGraph={hasGraph}
+        beats={beats}
+        beatSource={beatSource}
+        initialData={reviewsInitialData}
+      />
     </div>
   )
 }

@@ -38,6 +38,12 @@ interface SentimentGraphProps {
   runtime?: number | null
   filmId?: string
   generatedAt?: string | null
+  /**
+   * Audience aggregates fetched during the detail page's server render.
+   * When defined, the component seeds its state from it and skips the
+   * on-mount GET to /api/films/[id]/audience-data.
+   */
+  initialAudienceData?: AudienceData
 }
 
 // ── Helpers ─────────────────────────────────────────────
@@ -211,10 +217,23 @@ export default function SentimentGraph({
   runtime,
   filmId,
   generatedAt,
+  initialAudienceData,
 }: SentimentGraphProps) {
-  const [graphView, setGraphView] = useState<GraphView>('critics')
-  const [audienceData, setAudienceData] = useState<AudienceData | null>(null)
-  const [audienceLoaded, setAudienceLoaded] = useState(false)
+  const [graphView, setGraphView] = useState<GraphView>(() => {
+    // Mirror fetchAudienceData's default-view logic for the server-rendered
+    // case: open on "Both" when audience data exists, else "Critics".
+    if (initialAudienceData) {
+      const hasData =
+        Object.keys(initialAudienceData.beatAverages).length > 0 ||
+        initialAudienceData.liveSessionCount >= 20
+      return hasData ? 'both' : 'critics'
+    }
+    return 'critics'
+  })
+  const [audienceData, setAudienceData] = useState<AudienceData | null>(
+    initialAudienceData ?? null,
+  )
+  const [audienceLoaded, setAudienceLoaded] = useState(initialAudienceData !== undefined)
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null)
   const [spoilersRevealed, setSpoilersRevealed] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
@@ -262,9 +281,12 @@ export default function SentimentGraph({
   }, [filmId])
 
   useEffect(() => {
+    // Audience data is server-rendered via initialAudienceData; skip the
+    // on-mount fetch when it was provided.
+    if (initialAudienceData !== undefined) return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): fetch-on-mount pattern; revisit when migrating to Suspense or React Query
     fetchAudienceData()
-  }, [fetchAudienceData])
+  }, [fetchAudienceData, initialAudienceData])
 
   function toggleSpoilers() {
     const next = !spoilersRevealed

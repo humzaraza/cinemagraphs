@@ -7,20 +7,34 @@ interface Props {
   filmId: string
   size?: 'sm' | 'md'
   className?: string
+  /**
+   * Server-rendered watchlist membership for the signed-in viewer. When
+   * defined, the component seeds its state from it and skips the on-mount
+   * GET. Left undefined when the server render had no session, so a
+   * client-side sign-in still triggers the fetch.
+   */
+  initialInWatchlist?: boolean
 }
 
-export default function WatchlistButton({ filmId, size = 'md', className = '' }: Props) {
+export default function WatchlistButton({
+  filmId,
+  size = 'md',
+  className = '',
+  initialInWatchlist,
+}: Props) {
   const { data: session } = useSession()
-  const [inWatchlist, setInWatchlist] = useState(false)
+  const [inWatchlist, setInWatchlist] = useState(initialInWatchlist ?? false)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (!session?.user?.id) return
+    // Watchlist status is server-rendered via initialInWatchlist; skip the fetch.
+    if (initialInWatchlist !== undefined) return
     fetch(`/api/films/${filmId}/watchlist`)
       .then((r) => r.json())
       .then((data) => setInWatchlist(data.inWatchlist))
       .catch(() => {})
-  }, [filmId, session?.user?.id])
+  }, [filmId, session?.user?.id, initialInWatchlist])
 
   if (!session?.user?.id) return null
 
