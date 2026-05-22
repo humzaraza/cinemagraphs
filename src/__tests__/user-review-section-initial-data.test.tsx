@@ -48,7 +48,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('UserReviewSection — server-rendered initialData', () => {
+describe('UserReviewSection: server-rendered initialData', () => {
   it('does not fire the reviews GET on mount when initialData is provided', () => {
     render(
       <UserReviewSection

@@ -130,11 +130,11 @@ export default function UserReviewSection({
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Existing review state — seeded from initialData (server render) when present
+  // Existing review state, seeded from initialData (server render) when present
   const [myReview, setMyReview] = useState<ExistingReview | null>(initialData?.myReview ?? null)
   const [editing, setEditing] = useState(false)
 
-  // Community data — seeded from initialData (server render) when present
+  // Community data, seeded from initialData (server render) when present
   const [reviews, setReviews] = useState<ReviewData[]>(initialData?.reviews ?? [])
   const [summary, setSummary] = useState<Summary | null>(initialData?.summary ?? null)
   const [page, setPage] = useState(1)

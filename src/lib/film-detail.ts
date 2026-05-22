@@ -61,7 +61,7 @@ export async function getFilmReviewsPage(
     prisma.userReview.count({ where: listFilter }),
   ])
 
-  // Community summary (approved only) — computed over every approved
+  // Community summary (approved only): computed over every approved
   // review, never the per-user exclusion filter.
   const allReviews = await prisma.userReview.findMany({
     where: approvedFilter,
