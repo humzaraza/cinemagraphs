@@ -74,15 +74,59 @@ describe('middleware: lifted auth-specific protections', () => {
     expect(body).toEqual({ url: '/' })
   })
 
-  it('triggers public-api rate limit on /api/films (preserved behavior)', async () => {
-    await middleware(makeRequest('http://localhost/api/films'))
-
-    expect(mockCheckRateLimit).toHaveBeenCalledWith('public-api', '1.2.3.4', 60, 60 * 1000)
-  })
-
   it('does NOT call checkRateLimit on /api/onboarding/* paths (bypass preserved)', async () => {
     await middleware(makeRequest('http://localhost/api/onboarding/select-banner'))
 
     expect(mockCheckRateLimit).not.toHaveBeenCalled()
+  })
+})
+
+// These per-endpoint buckets replaced the single 'public-api' bucket that
+// governed every /api/films* request, so normal browsing no longer drains
+// the budget that search and detail-page reads also draw from.
+describe('middleware: /api/films rate-limit buckets', () => {
+  it('uses the films-browse bucket (limit 300) for /api/films with no q', async () => {
+    await middleware(makeRequest('http://localhost/api/films?sort=az&page=1'))
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('films-browse', '1.2.3.4', 300, 60 * 1000)
+  })
+
+  it('uses the films-search bucket (limit 60) for /api/films with a non-empty q', async () => {
+    await middleware(makeRequest('http://localhost/api/films?q=dune'))
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('films-search', '1.2.3.4', 60, 60 * 1000)
+  })
+
+  it('treats a whitespace-only q as browse, not search', async () => {
+    await middleware(makeRequest('http://localhost/api/films?q=%20%20'))
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('films-browse', '1.2.3.4', 300, 60 * 1000)
+  })
+
+  it('uses the films-search bucket for the dedicated search routes', async () => {
+    await middleware(makeRequest('http://localhost/api/films/search?q=dune'))
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('films-search', '1.2.3.4', 60, 60 * 1000)
+
+    mockCheckRateLimit.mockClear()
+    await middleware(makeRequest('http://localhost/api/films/tmdb-search?q=dune'))
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('films-search', '1.2.3.4', 60, 60 * 1000)
+  })
+
+  it('uses the films-detail bucket (limit 200) for /api/films/[id] read sub-routes', async () => {
+    await middleware(makeRequest('http://localhost/api/films/abc123'))
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('films-detail', '1.2.3.4', 200, 60 * 1000)
+
+    mockCheckRateLimit.mockClear()
+    await middleware(makeRequest('http://localhost/api/films/abc123/reviews'))
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('films-detail', '1.2.3.4', 200, 60 * 1000)
+  })
+
+  it('keeps /api/films/submit on its original public-api bucket (writes unchanged)', async () => {
+    await middleware(makeRequest('http://localhost/api/films/submit', { method: 'POST' }))
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('public-api', '1.2.3.4', 60, 60 * 1000)
+  })
+
+  it('returns 429 with a Retry-After header when a films bucket is limited', async () => {
+    mockCheckRateLimit.mockResolvedValueOnce({ limited: true, remaining: 0, retryAfterMs: 7000 })
+    const res = await middleware(makeRequest('http://localhost/api/films'))
+    expect(res?.status).toBe(429)
+    expect(res?.headers.get('Retry-After')).toBe('7')
   })
 })

@@ -17,6 +17,33 @@ const ALLOWED_ORIGINS = [
 
 const BLOCKED_UA_PATTERN = /curl|python|scrapy|wget|bot/i
 
+// Per-endpoint rate-limit buckets for /api/films*. The route previously
+// shared one "public-api" bucket, so normal browsing drained the budget
+// that detail-page fan-out and search also drew from. Each bucket is an
+// independent per-IP counter (requests per 60s).
+function filmsRateLimitBucket(
+  pathname: string,
+  searchParams: URLSearchParams,
+): { name: string; limit: number } {
+  // /api/films/submit is a write; keep its original public-api limit.
+  if (pathname === '/api/films/submit') {
+    return { name: 'public-api', limit: 60 }
+  }
+  // Dedicated search routes.
+  if (pathname === '/api/films/search' || pathname === '/api/films/tmdb-search') {
+    return { name: 'films-search', limit: 60 }
+  }
+  // The list endpoint: a non-empty q means search, otherwise browse.
+  if (pathname === '/api/films') {
+    const q = searchParams.get('q')?.trim() ?? ''
+    return q.length > 0
+      ? { name: 'films-search', limit: 60 }
+      : { name: 'films-browse', limit: 300 }
+  }
+  // Everything else under /api/films/[id]/... is a detail-page read.
+  return { name: 'films-detail', limit: 200 }
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const ip = getClientIp(request)
@@ -99,7 +126,8 @@ export async function middleware(request: NextRequest) {
     }
 
     if (pathname.startsWith('/api/films')) {
-      const { limited, retryAfterMs } = await checkRateLimit('public-api', ip, 60, 60 * 1000)
+      const bucket = filmsRateLimitBucket(pathname, request.nextUrl.searchParams)
+      const { limited, retryAfterMs } = await checkRateLimit(bucket.name, ip, bucket.limit, 60 * 1000)
       if (limited) {
         return NextResponse.json(
           { error: 'Too many requests. Please slow down.' },
