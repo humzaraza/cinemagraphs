@@ -6,6 +6,7 @@ const cacheLogger = logger.child({ module: 'cache' })
 // ── TTL constants (seconds) ──
 export const TTL = {
   FILM: 3600,           // 1 hour
+  FILMS_LIST: 120,      // 2 minutes (browse list reads)
   FILM_DETAIL: 120,     // 2 minutes (detail-page public reads)
   GRAPH: 3600,          // 1 hour
   HOMEPAGE: 3600,       // 1 hour

@@ -10,7 +10,9 @@ import { PersonBio } from '@/components/PersonBio'
 import { CompositeArcGraph } from '@/components/CompositeArcGraph'
 import { PersonFilmography } from '@/components/PersonFilmography'
 
-export const dynamic = 'force-dynamic'
+// Cache person pages with ISR; 3600s matches TTL.PERSON. Repeat visits and
+// crawler hits then serve cached HTML instead of re-querying Neon every time.
+export const revalidate = 3600
 
 type Props = { params: Promise<{ slug: string }> }
 
