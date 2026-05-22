@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
 import { withDerivedFields } from '@/lib/films'
+import { cachedQuery, TTL } from '@/lib/cache'
 
 export async function GET(request: NextRequest) {
   try {
@@ -103,30 +104,41 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const [films, total] = await Promise.all([
-      prisma.film.findMany({
-        where,
-        include: {
-          sentimentGraph: {
-            select: { overallScore: true, dataPoints: true, biggestSwing: true },
-          },
-        },
-        orderBy,
-        skip,
-        take: limit,
-      }),
-      prisma.film.count({ where }),
-    ])
+    // Cache the browse list (no q). The key covers every param that changes
+    // the result; the 120s TTL keeps newly added films visible within 2
+    // minutes without needing list-cache invalidation wired into writes.
+    const cacheKey =
+      `films-list:${encodeURIComponent(sort)}:${encodeURIComponent(genre)}` +
+      `:${page}:${limit}:${nowPlaying}:${ticker}:${hasBackdrop}`
 
-    return Response.json({
-      films: films.map(withDerivedFields),
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+    const payload = await cachedQuery(cacheKey, TTL.FILMS_LIST, async () => {
+      const [films, total] = await Promise.all([
+        prisma.film.findMany({
+          where,
+          include: {
+            sentimentGraph: {
+              select: { overallScore: true, dataPoints: true, biggestSwing: true },
+            },
+          },
+          orderBy,
+          skip,
+          take: limit,
+        }),
+        prisma.film.count({ where }),
+      ])
+
+      return {
+        films: films.map(withDerivedFields),
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      }
     })
+
+    return Response.json(payload)
   } catch (err) {
     apiLogger.error({ err }, 'Failed to fetch films')
     return Response.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })

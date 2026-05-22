@@ -10,6 +10,13 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/prisma', () => ({ prisma: mocks.prisma }))
 vi.mock('@/lib/logger', () => ({ apiLogger: mocks.apiLogger }))
+// route.ts now imports @/lib/cache to cache the browse list. Bypass the
+// cache here so these tests still exercise the query path directly:
+// cachedQuery simply runs the fetch function.
+vi.mock('@/lib/cache', () => ({
+  cachedQuery: (_key: string, _ttl: number, fetchFn: () => Promise<unknown>) => fetchFn(),
+  TTL: { FILMS_LIST: 120 },
+}))
 
 function getRequest(query: string): NextRequest {
   return new NextRequest(`http://localhost/api/films${query}`)
