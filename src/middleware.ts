@@ -23,6 +23,7 @@ const BLOCKED_UA_PATTERN = /curl|python|scrapy|wget|bot/i
 // independent per-IP counter (requests per 60s).
 function filmsRateLimitBucket(
   pathname: string,
+  method: string,
   searchParams: URLSearchParams,
 ): { name: string; limit: number } {
   // /api/films/submit is a write; keep its original public-api limit.
@@ -40,7 +41,12 @@ function filmsRateLimitBucket(
       ? { name: 'films-search', limit: 60 }
       : { name: 'films-browse', limit: 300 }
   }
-  // Everything else under /api/films/[id]/... is a detail-page read.
+  // Sub-routes under /api/films/[id]/...: GET and other reads use the
+  // detail bucket; write methods get a separate, tighter write bucket so
+  // they are not pooled with read traffic.
+  if (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') {
+    return { name: 'films-write', limit: 60 }
+  }
   return { name: 'films-detail', limit: 200 }
 }
 
@@ -126,7 +132,7 @@ export async function middleware(request: NextRequest) {
     }
 
     if (pathname.startsWith('/api/films')) {
-      const bucket = filmsRateLimitBucket(pathname, request.nextUrl.searchParams)
+      const bucket = filmsRateLimitBucket(pathname, request.method, request.nextUrl.searchParams)
       const { limited, retryAfterMs } = await checkRateLimit(bucket.name, ip, bucket.limit, 60 * 1000)
       if (limited) {
         return NextResponse.json(

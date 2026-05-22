@@ -109,7 +109,7 @@ describe('middleware: /api/films rate-limit buckets', () => {
     expect(mockCheckRateLimit).toHaveBeenCalledWith('films-search', '1.2.3.4', 60, 60 * 1000)
   })
 
-  it('uses the films-detail bucket (limit 200) for /api/films/[id] read sub-routes', async () => {
+  it('uses the films-detail bucket (limit 200) for GET /api/films/[id] read sub-routes', async () => {
     await middleware(makeRequest('http://localhost/api/films/abc123'))
     expect(mockCheckRateLimit).toHaveBeenCalledWith('films-detail', '1.2.3.4', 200, 60 * 1000)
 
@@ -118,15 +118,28 @@ describe('middleware: /api/films rate-limit buckets', () => {
     expect(mockCheckRateLimit).toHaveBeenCalledWith('films-detail', '1.2.3.4', 200, 60 * 1000)
   })
 
+  it('routes write methods on /api/films/[id] sub-routes to the films-write bucket', async () => {
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+      mockCheckRateLimit.mockClear()
+      await middleware(
+        makeRequest('http://localhost/api/films/abc123/watchlist', { method }),
+      )
+      expect(mockCheckRateLimit).toHaveBeenCalledWith('films-write', '1.2.3.4', 60, 60 * 1000)
+    }
+  })
+
   it('keeps /api/films/submit on its original public-api bucket (writes unchanged)', async () => {
     await middleware(makeRequest('http://localhost/api/films/submit', { method: 'POST' }))
     expect(mockCheckRateLimit).toHaveBeenCalledWith('public-api', '1.2.3.4', 60, 60 * 1000)
   })
 
-  it('returns 429 with a Retry-After header when a films bucket is limited', async () => {
+  it('returns the unchanged 429 shape (JSON body + Retry-After) when a write is limited', async () => {
     mockCheckRateLimit.mockResolvedValueOnce({ limited: true, remaining: 0, retryAfterMs: 7000 })
-    const res = await middleware(makeRequest('http://localhost/api/films'))
+    const res = await middleware(
+      makeRequest('http://localhost/api/films/abc123/watchlist', { method: 'POST' }),
+    )
     expect(res?.status).toBe(429)
     expect(res?.headers.get('Retry-After')).toBe('7')
+    expect(await res!.json()).toEqual({ error: 'Too many requests. Please slow down.' })
   })
 })
