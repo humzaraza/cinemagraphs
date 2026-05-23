@@ -126,7 +126,7 @@ describe('invalidateFilmCache', () => {
   })
 
   it('deletes the film, similar, graph and detail-page keys', async () => {
-    mockDel.mockResolvedValue(8)
+    mockDel.mockResolvedValue(9)
     await invalidateFilmCache('abc-123')
     expect(mockDel).toHaveBeenCalledWith(
       'film:abc-123',
@@ -137,6 +137,7 @@ describe('invalidateFilmCache', () => {
       'film:abc-123:detail:audience',
       'film:abc-123:detail:jsonld',
       'film:abc-123:detail:similar',
+      'film:abc-123:detail:trailer',
     )
   })
 })
