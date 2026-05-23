@@ -130,10 +130,10 @@ export default async function FilmPage({
   const similarIds = similarRaw.map((row) => row.similar.id)
   const viewerId = session?.user?.id ?? null
 
-  // Second fetch phase. audienceData is public and cached, fetched only
-  // when the sentiment graph will actually render. myReview, the watchlist
-  // boolean and the viewer's reviewed-similar set are per-user, so they
-  // stay direct and uncached. trailerKey is unchanged from before.
+  // Second fetch phase. audienceData and trailerKey are public and cached;
+  // audienceData only when the sentiment graph will actually render. myReview,
+  // the watchlist boolean and the viewer's reviewed-similar set are per-user,
+  // so they stay direct and uncached.
   const [audienceData, myReview, inWatchlist, reviewedRows, trailerKey] = await Promise.all([
     displayState.kind === 'graph'
       ? cachedQuery(KEYS.filmDetailAudience(id), TTL.FILM_DETAIL, () => getFilmAudienceData(id))
@@ -146,7 +146,7 @@ export default async function FilmPage({
           select: { filmId: true },
         })
       : Promise.resolve<{ filmId: string }[]>([]),
-    getMovieTrailerKey(film.tmdbId),
+    cachedQuery(KEYS.filmTrailerKey(id), TTL.FILM_DETAIL, () => getMovieTrailerKey(film.tmdbId)),
   ])
 
   // userHasReviewed mirrors the /api/films/[id] route: any UserReview row

@@ -30,6 +30,10 @@ export const KEYS = {
   filmDetailAudience: (id: string) => `film:${id}:detail:audience`,
   filmDetailJsonLd: (id: string) => `film:${id}:detail:jsonld`,
   filmDetailSimilar: (id: string) => `film:${id}:detail:similar`,
+  // TMDB trailer-key lookup result for a film. Public, detail-page only,
+  // and the TMDB result rarely changes. Kept under the same
+  // `film:<id>:detail:` namespace so invalidateFilmCache clears it too.
+  filmTrailerKey: (id: string) => `film:${id}:detail:trailer`,
   graph: (id: string) => `graph:${id}`,
   homepage: (section: string) => `homepage:${section}`,
   ticker: () => 'ticker:data',
@@ -122,6 +126,7 @@ export async function invalidateFilmCache(filmId: string): Promise<void> {
     KEYS.filmDetailAudience(filmId),
     KEYS.filmDetailJsonLd(filmId),
     KEYS.filmDetailSimilar(filmId),
+    KEYS.filmTrailerKey(filmId),
   )
   cacheLogger.info({ filmId }, 'invalidated film cache')
 }
