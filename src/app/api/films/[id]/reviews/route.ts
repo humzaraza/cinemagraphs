@@ -6,6 +6,7 @@ import { maybeBlendAndUpdate } from '@/lib/review-blender'
 import { apiLogger } from '@/lib/logger'
 import { checkSuspension } from '@/lib/middleware'
 import { invalidateFilmCache } from '@/lib/cache'
+import { getFilmReviewsPage, getUserReviewForFilm } from '@/lib/film-detail'
 
 // TEMPORARY: auto-moderation bypass per admin request. When false, every
 // new review and every edit goes live as `approved` — autoModerate() is
@@ -209,80 +210,24 @@ export async function GET(
     const { id: filmId } = await params
     const url = new URL(request.url)
     const page = parseInt(url.searchParams.get('page') || '1')
-    const limit = 5
     const excludeCurrentUser = url.searchParams.get('excludeCurrentUser') === 'true'
 
-    // Check if current user has a review (any status)
     const session = await getMobileOrServerSession()
-    let myReview = null
-    if (session?.user?.id) {
-      myReview = await prisma.userReview.findUnique({
-        where: { userId_filmId: { userId: session.user.id, filmId } },
-        include: {
-          user: { select: { id: true, name: true, image: true } },
-        },
-      })
-    }
+    const userId = session?.user?.id ?? null
 
-    const approvedFilter = { filmId, status: 'approved' }
-    // Mobile "Your review" pattern: when the caller renders the current user's
-    // review in its own section, the paginated list should omit it to avoid
-    // duplication. Unauthenticated callers get a no-op (the param is ignored).
-    const listFilter =
-      excludeCurrentUser && session?.user?.id
-        ? { ...approvedFilter, userId: { not: session.user.id } }
-        : approvedFilter
+    // Mobile "Your review" pattern: when the caller renders the current
+    // user's review in its own section, the paginated list omits it to
+    // avoid duplication. Unauthenticated callers get a no-op.
+    const excludeUserId = excludeCurrentUser && userId ? userId : null
 
-    const [reviews, total] = await Promise.all([
-      prisma.userReview.findMany({
-        where: listFilter,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: {
-          user: { select: { id: true, name: true, image: true } },
-        },
-      }),
-      prisma.userReview.count({ where: listFilter }),
+    // getFilmReviewsPage + getUserReviewForFilm are the shared source of
+    // truth, also used directly by the detail page's server render.
+    const [reviewsPage, myReview] = await Promise.all([
+      getFilmReviewsPage(filmId, page, excludeUserId),
+      userId ? getUserReviewForFilm(filmId, userId) : Promise.resolve(null),
     ])
 
-    // Community summary (approved only)
-    const allReviews = await prisma.userReview.findMany({
-      where: approvedFilter,
-      select: { overallRating: true, sentiment: true, beginning: true, middle: true, ending: true },
-    })
-
-    const avgRating =
-      allReviews.length > 0
-        ? Math.round((allReviews.reduce((sum, r) => sum + r.overallRating, 0) / allReviews.length) * 10) / 10
-        : null
-
-    const distribution = Array.from({ length: 10 }, (_, i) => ({
-      score: i + 1,
-      count: allReviews.filter((r) => Math.round(r.overallRating) === i + 1).length,
-    }))
-
-    const withBeginning = allReviews.filter((r) => r.beginning)
-    const withMiddle = allReviews.filter((r) => r.middle)
-    const withEnding = allReviews.filter((r) => r.ending)
-
-    return NextResponse.json({
-      reviews,
-      total,
-      page,
-      totalPages: Math.ceil(total / limit),
-      myReview,
-      summary: {
-        avgRating,
-        totalReviews: total,
-        distribution,
-        sectionCounts: {
-          beginning: withBeginning.length,
-          middle: withMiddle.length,
-          ending: withEnding.length,
-        },
-      },
-    })
+    return NextResponse.json({ ...reviewsPage, myReview })
   } catch (err) {
     apiLogger.error({ err }, 'Failed to fetch reviews')
     return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })

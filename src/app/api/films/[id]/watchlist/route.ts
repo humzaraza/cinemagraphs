@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
+import { getWatchlistStatus } from '@/lib/film-detail'
 
 export async function GET(
   _request: NextRequest,
@@ -14,11 +15,9 @@ export async function GET(
     }
 
     const { id } = await params
-    const item = await prisma.watchlist.findUnique({
-      where: { userId_filmId: { userId: session.user.id, filmId: id } },
+    return NextResponse.json({
+      inWatchlist: await getWatchlistStatus(id, session.user.id),
     })
-
-    return NextResponse.json({ inWatchlist: !!item })
   } catch (err) {
     apiLogger.error({ err }, 'Failed to check watchlist status')
     return NextResponse.json({ inWatchlist: false })

@@ -19,6 +19,14 @@ import SimilarFilmsSection from '@/components/SimilarFilmsSection'
 import type { SimilarFilmCardProps } from '@/components/SimilarFilmCard'
 import { getFilmDisplayState } from '@/lib/film-display-state'
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
+import {
+  getFilmReviewsPage,
+  getUserReviewForFilm,
+  getFilmAudienceData,
+  getWatchlistStatus,
+} from '@/lib/film-detail'
+import { cachedQuery, KEYS, TTL } from '@/lib/cache'
+import type { UserReviewSectionInitialData } from '@/components/UserReviewSection'
 import type { CastMember, PeakLowMoment, SentimentDataPoint } from '@/lib/types'
 
 const SIMILAR_FILMS_LIMIT = 8
@@ -40,66 +48,110 @@ export default async function FilmPage({
 }) {
   const { id } = await params
 
-  const [film, userReviews, similarRaw, session] = await Promise.all([
-    prisma.film.findUnique({
-      where: { id },
-      include: {
-        sentimentGraph: true,
-        filmBeats: true,
-        filmPersons: {
-          include: {
-            person: {
-              select: { name: true, slug: true, profilePath: true },
+  // Public detail-page reads are cached per film id (TTL.FILM_DETAIL).
+  // invalidateFilmCache clears all of these keys, so admin sentiment
+  // regeneration and newly posted reviews appear without waiting for the TTL.
+  const [filmRaw, userReviews, similarRaw, session, reviewsPublic] = await Promise.all([
+    cachedQuery(KEYS.filmDetailCore(id), TTL.FILM_DETAIL, () =>
+      prisma.film.findUnique({
+        where: { id },
+        include: {
+          sentimentGraph: true,
+          filmBeats: true,
+          filmPersons: {
+            include: {
+              person: {
+                select: { name: true, slug: true, profilePath: true },
+              },
+            },
+            orderBy: { order: 'asc' },
+          },
+        },
+      }),
+    ),
+    cachedQuery(KEYS.filmDetailJsonLd(id), TTL.FILM_DETAIL, () =>
+      prisma.userReview.findMany({
+        where: { filmId: id, status: 'approved' },
+        select: {
+          overallRating: true,
+          combinedText: true,
+          createdAt: true,
+          user: { select: { name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+    ),
+    cachedQuery(KEYS.filmDetailSimilar(id), TTL.FILM_DETAIL, () =>
+      prisma.similarFilm.findMany({
+        where: { filmId: id },
+        orderBy: { similarityScore: 'desc' },
+        take: SIMILAR_FILMS_LIMIT,
+        include: {
+          similar: {
+            select: {
+              id: true,
+              title: true,
+              releaseDate: true,
+              posterUrl: true,
+              sentimentGraph: { select: { overallScore: true } },
             },
           },
-          orderBy: { order: 'asc' },
         },
-      },
-    }),
-    prisma.userReview.findMany({
-      where: { filmId: id, status: 'approved' },
-      select: {
-        overallRating: true,
-        combinedText: true,
-        createdAt: true,
-        user: { select: { name: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    }),
-    prisma.similarFilm.findMany({
-      where: { filmId: id },
-      orderBy: { similarityScore: 'desc' },
-      take: SIMILAR_FILMS_LIMIT,
-      include: {
-        similar: {
-          select: {
-            id: true,
-            title: true,
-            releaseDate: true,
-            posterUrl: true,
-            sentimentGraph: { select: { overallScore: true } },
-          },
-        },
-      },
-    }),
+      }),
+    ),
     getMobileOrServerSession().catch(() => null),
+    // Page-1 reviews + community summary: public data, server-rendered so
+    // UserReviewSection can skip its on-mount fetch.
+    cachedQuery(KEYS.filmDetailReviews(id), TTL.FILM_DETAIL, () => getFilmReviewsPage(id)),
   ])
 
-  if (!film) notFound()
+  if (!filmRaw) notFound()
 
-  // userHasReviewed is computed only when the viewer is authenticated. Definition
-  // mirrors the /api/films/[id] route: any UserReview row for (user, film) counts,
-  // regardless of moderation status.
-  const similarIds = similarRaw.map((row) => row.similar.id)
-  let reviewedSet = new Set<string>()
-  if (session?.user?.id && similarIds.length > 0) {
-    const reviewed = await prisma.userReview.findMany({
-      where: { userId: session.user.id, filmId: { in: similarIds } },
-      select: { filmId: true },
-    })
-    reviewedSet = new Set(reviewed.map((r) => r.filmId))
+  // cachedQuery round-trips through Redis JSON, so on a cache hit Date
+  // fields arrive as ISO strings. Revive the dates the render path needs:
+  // releaseDate (display-state comparison + toISOString) and the graph's
+  // generatedAt (toISOString). Similar films and the JSON-LD reviews are
+  // handled at their use sites with new Date().
+  const film = {
+    ...filmRaw,
+    releaseDate: filmRaw.releaseDate ? new Date(filmRaw.releaseDate) : null,
+    sentimentGraph: filmRaw.sentimentGraph
+      ? { ...filmRaw.sentimentGraph, generatedAt: new Date(filmRaw.sentimentGraph.generatedAt) }
+      : null,
   }
+
+  const displayState = getFilmDisplayState(
+    film,
+    film.sentimentGraph,
+    film.sentimentGraph?.reviewCount ?? 0,
+  )
+
+  const similarIds = similarRaw.map((row) => row.similar.id)
+  const viewerId = session?.user?.id ?? null
+
+  // Second fetch phase. audienceData is public and cached, fetched only
+  // when the sentiment graph will actually render. myReview, the watchlist
+  // boolean and the viewer's reviewed-similar set are per-user, so they
+  // stay direct and uncached. trailerKey is unchanged from before.
+  const [audienceData, myReview, inWatchlist, reviewedRows, trailerKey] = await Promise.all([
+    displayState.kind === 'graph'
+      ? cachedQuery(KEYS.filmDetailAudience(id), TTL.FILM_DETAIL, () => getFilmAudienceData(id))
+      : Promise.resolve(null),
+    viewerId ? getUserReviewForFilm(id, viewerId) : Promise.resolve(null),
+    viewerId ? getWatchlistStatus(id, viewerId) : Promise.resolve(false),
+    viewerId && similarIds.length > 0
+      ? prisma.userReview.findMany({
+          where: { userId: viewerId, filmId: { in: similarIds } },
+          select: { filmId: true },
+        })
+      : Promise.resolve<{ filmId: string }[]>([]),
+    getMovieTrailerKey(film.tmdbId),
+  ])
+
+  // userHasReviewed mirrors the /api/films/[id] route: any UserReview row
+  // for (user, similar film) counts, regardless of moderation status.
+  const reviewedSet = new Set(reviewedRows.map((r) => r.filmId))
 
   const similarFilms: SimilarFilmCardProps[] = similarRaw.map((row) => {
     const date = row.similar.releaseDate
@@ -115,7 +167,17 @@ export default async function FilmPage({
     }
   })
 
-  const trailerKey = await getMovieTrailerKey(film.tmdbId)
+  // Server to Client boundary: JSON-normalize (Date to ISO string, drop
+  // undefined) so this prop is byte-identical to what UserReviewSection
+  // would otherwise fetch from /api/films/[id]/reviews.
+  const reviewsInitialData: UserReviewSectionInitialData = JSON.parse(
+    JSON.stringify({
+      reviews: reviewsPublic.reviews,
+      summary: reviewsPublic.summary,
+      totalPages: reviewsPublic.totalPages,
+      myReview,
+    }),
+  )
 
   // Derive cast/crew from FilmPerson records
   const hasFilmPersons = film.filmPersons.length > 0
@@ -169,7 +231,7 @@ export default async function FilmPage({
       .map((r) => ({
         '@type': 'Review',
         author: { '@type': 'Person', name: r.user.name || 'Anonymous' },
-        datePublished: r.createdAt.toISOString().split('T')[0],
+        datePublished: new Date(r.createdAt).toISOString().split('T')[0],
         reviewRating: {
           '@type': 'Rating',
           ratingValue: r.overallRating,
@@ -328,48 +390,41 @@ export default async function FilmPage({
                 filmId={film.id}
                 size="md"
                 className="inline-flex items-center justify-center border border-cinema-gold/30 text-cinema-gold px-3.5 py-2.5 rounded-lg hover:bg-cinema-gold/10 hover:border-cinema-gold transition-colors"
+                initialInWatchlist={viewerId ? inWatchlist : undefined}
               />
               <AddToListDropdown filmId={film.id} />
             </div>
           </div>
         </div>
 
-        {/* Sentiment Graph / Display State */}
-        {(() => {
-          const displayState = getFilmDisplayState(
-            film,
-            film.sentimentGraph,
-            film.sentimentGraph?.reviewCount ?? 0
-          )
-          return (
-            <div className="mt-10">
-              <ErrorBoundary>
-                {displayState.kind === 'graph' && (
-                  <SentimentGraph
-                    dataPoints={(displayState.sentimentGraph.dataPoints ?? []) as unknown as SentimentDataPoint[]}
-                    overallScore={displayState.sentimentGraph.overallScore}
-                    anchoredFrom={displayState.sentimentGraph.anchoredFrom}
-                    peakMoment={displayState.sentimentGraph.peakMoment as unknown as PeakLowMoment | null}
-                    lowestMoment={displayState.sentimentGraph.lowestMoment as unknown as PeakLowMoment | null}
-                    biggestSwing={displayState.sentimentGraph.biggestSwing}
-                    summary={displayState.sentimentGraph.summary}
-                    sourcesUsed={displayState.sentimentGraph.sourcesUsed}
-                    reviewCount={displayState.sentimentGraph.reviewCount}
-                    runtime={film.runtime}
-                    filmId={film.id}
-                    generatedAt={displayState.sentimentGraph.generatedAt.toISOString()}
-                  />
-                )}
-                {displayState.kind === 'not_enough_reviews' && (
-                  <NotEnoughReviewsState reviewCount={displayState.reviewCount} />
-                )}
-                {displayState.kind === 'coming_soon' && (
-                  <ComingSoonState releaseDate={displayState.releaseDate} />
-                )}
-              </ErrorBoundary>
-            </div>
-          )
-        })()}
+        {/* Sentiment Graph / Display State (displayState computed during the server fetch above) */}
+        <div className="mt-10">
+          <ErrorBoundary>
+            {displayState.kind === 'graph' && (
+              <SentimentGraph
+                dataPoints={(displayState.sentimentGraph.dataPoints ?? []) as unknown as SentimentDataPoint[]}
+                overallScore={displayState.sentimentGraph.overallScore}
+                anchoredFrom={displayState.sentimentGraph.anchoredFrom}
+                peakMoment={displayState.sentimentGraph.peakMoment as unknown as PeakLowMoment | null}
+                lowestMoment={displayState.sentimentGraph.lowestMoment as unknown as PeakLowMoment | null}
+                biggestSwing={displayState.sentimentGraph.biggestSwing}
+                summary={displayState.sentimentGraph.summary}
+                sourcesUsed={displayState.sentimentGraph.sourcesUsed}
+                reviewCount={displayState.sentimentGraph.reviewCount}
+                runtime={film.runtime}
+                filmId={film.id}
+                generatedAt={displayState.sentimentGraph.generatedAt.toISOString()}
+                initialAudienceData={audienceData ?? undefined}
+              />
+            )}
+            {displayState.kind === 'not_enough_reviews' && (
+              <NotEnoughReviewsState reviewCount={displayState.reviewCount} />
+            )}
+            {displayState.kind === 'coming_soon' && (
+              <ComingSoonState releaseDate={displayState.releaseDate} />
+            )}
+          </ErrorBoundary>
+        </div>
 
         {/* Full Cast Grid */}
         {hasFilmPersons && allCast.length > 0 ? (
@@ -456,6 +511,7 @@ export default async function FilmPage({
             })()}
             beatSource={film.sentimentGraph ? 'graph' : film.filmBeats ? 'wiki' : 'none'}
             runtime={film.runtime}
+            reviewsInitialData={reviewsInitialData}
           />
         </div>
 
