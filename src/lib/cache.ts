@@ -88,21 +88,38 @@ export async function cacheDel(...keys: string[]): Promise<void> {
 // ── cachedQuery wrapper ──
 // Checks Redis first, falls back to fetchFn, stores result.
 // Never lets a Redis failure break the site.
+//
+// Negative caching: a fetchFn returning `null` is represented in Redis by a
+// string sentinel rather than by JSON `null`. Without this, cacheGet cannot
+// tell "key holds null" apart from "key absent" (Redis GET returns the same
+// response either way), so every null result would re-run fetchFn on the next
+// view. The sentinel is a string (not an object) so it survives the Redis
+// JSON round-trip and compares by value; a reference-typed sentinel would
+// fail the equality check after a hit and silently regress the fix.
+// The literal cannot collide with any current caller's return: trailer keys
+// (the only fetchFn that returns a string) are short alphanumeric YouTube ids
+// and cannot contain `::`. The `::v1__` suffix lets us bump the sentinel if
+// the convention ever has to change.
+const CACHED_NULL_SENTINEL = '__cachedQuery::NULL::v1__'
 
 export async function cachedQuery<T>(
   key: string,
   ttlSeconds: number,
   fetchFn: () => Promise<T>,
 ): Promise<T> {
-  // Try cache first
-  const cached = await cacheGet<T>(key)
-  if (cached !== null) return cached
+  // Try cache first. The stored value is either the original T, the sentinel
+  // (when the previous fetchFn returned null), or null (key absent).
+  const cached = await cacheGet<T | string>(key)
+  if (cached === CACHED_NULL_SENTINEL) return null as T  // genuine HIT, value is null
+  if (cached !== null) return cached as T                // genuine HIT, non-null
 
-  // Cache miss or Redis down -- run the fetch function
+  // True miss (key absent in Redis, or Redis down). Run fetchFn.
   const result = await fetchFn()
 
-  // Store in cache (fire-and-forget, don't block on it)
-  cacheSet(key, result, ttlSeconds).catch(() => {})
+  // Store in cache (fire-and-forget). A null result becomes the sentinel so
+  // the next read is a HIT, not another MISS.
+  const toStore = result === null ? CACHED_NULL_SENTINEL : result
+  cacheSet(key, toStore, ttlSeconds).catch(() => {})
 
   return result
 }
