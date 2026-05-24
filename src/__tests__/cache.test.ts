@@ -141,3 +141,140 @@ describe('invalidateFilmCache', () => {
     )
   })
 })
+
+describe('cachedQuery — negative caching (null results)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  // Test 1 (the hole being closed): a fetchFn returning null is cached so
+  // the second call skips fetchFn entirely.
+  it('caches a null result and skips fetchFn on the second call', async () => {
+    mockSet.mockResolvedValue('OK')
+
+    // First call: true miss. fetchFn runs, returns null; the wrapper stores
+    // a sentinel so the next read can distinguish "cached null" from
+    // "key absent".
+    mockGet.mockResolvedValueOnce(null)
+    const fetchFn = vi.fn().mockResolvedValue(null)
+    const r1 = await cachedQuery('k', 3600, fetchFn)
+    expect(r1).toBeNull()
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+
+    // cacheSet is fire-and-forget, wait a tick before reading what it stored.
+    await new Promise((r) => setTimeout(r, 10))
+    expect(mockSet).toHaveBeenCalledTimes(1)
+    const storedSentinel = mockSet.mock.calls[0][1]
+    // The wrapper must NOT have stored literal null (that's exactly the
+    // ambiguity that defeated the cache on read).
+    expect(storedSentinel).not.toBeNull()
+
+    // Second call: cacheGet returns what Redis actually held (the sentinel).
+    mockGet.mockResolvedValueOnce(storedSentinel)
+    const r2 = await cachedQuery('k', 3600, fetchFn)
+    expect(r2).toBeNull()
+    // The hole is closed: fetchFn is not re-run.
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  // Test 2 (true-miss path): cachedQuery returns a real null to the caller,
+  // never the sentinel string.
+  it('true-miss path: returns a real null to the caller, never the sentinel string', async () => {
+    mockGet.mockResolvedValueOnce(null)
+    mockSet.mockResolvedValue('OK')
+    const result = await cachedQuery('k', 3600, vi.fn().mockResolvedValue(null))
+    expect(result).toBeNull()
+    expect(typeof result).not.toBe('string')
+  })
+
+  // Test 2 (cached-sentinel path): same assertion, second call.
+  it('cached-sentinel path: returns a real null to the caller, never the sentinel string', async () => {
+    mockSet.mockResolvedValue('OK')
+    // Trigger one store so we can capture whatever sentinel the wrapper uses
+    // (avoids hard-coding the literal string in the test, which would make
+    // the test pass even if the implementation regressed to a different
+    // sentinel that does collide with a real value).
+    mockGet.mockResolvedValueOnce(null)
+    await cachedQuery('k', 3600, vi.fn().mockResolvedValue(null))
+    await new Promise((r) => setTimeout(r, 10))
+    const sentinel = mockSet.mock.calls[0][1]
+
+    // Simulate the cached-sentinel read on a fresh wrapper call.
+    mockGet.mockResolvedValueOnce(sentinel)
+    const fetchFn = vi.fn()
+    const result = await cachedQuery('k', 3600, fetchFn)
+    expect(result).toBeNull()
+    expect(typeof result).not.toBe('string')
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
+  // Test 3: an ordinary non-null value still caches and round-trips correctly.
+  it('caches and round-trips a non-null object value', async () => {
+    mockSet.mockResolvedValue('OK')
+    mockGet.mockResolvedValueOnce(null)
+    const fetchFn = vi.fn().mockResolvedValue({ title: 'Inception' })
+
+    const r1 = await cachedQuery('k', 3600, fetchFn)
+    expect(r1).toEqual({ title: 'Inception' })
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+
+    await new Promise((r) => setTimeout(r, 10))
+    expect(mockSet).toHaveBeenCalledWith('k', { title: 'Inception' }, { ex: 3600 })
+
+    mockGet.mockResolvedValueOnce({ title: 'Inception' })
+    const r2 = await cachedQuery('k', 3600, fetchFn)
+    expect(r2).toEqual({ title: 'Inception' })
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  // Test 4: non-null falsy values still cache and return correctly. The fix
+  // must not have regressed the existing non-null handling.
+  it('returns non-null falsy values from cache without re-running fetchFn (0, "", false, [], {})', async () => {
+    const cases: { name: string; value: unknown }[] = [
+      { name: 'zero', value: 0 },
+      { name: 'empty string', value: '' },
+      { name: 'false', value: false },
+      { name: 'empty array', value: [] },
+      { name: 'empty object', value: {} },
+    ]
+    for (const { name, value } of cases) {
+      mockGet.mockResolvedValueOnce(value)
+      const fetchFn = vi.fn()
+      const result = await cachedQuery(`k:${name}`, 3600, fetchFn)
+      expect(result, `for ${name}`).toEqual(value)
+      expect(fetchFn, `for ${name}`).not.toHaveBeenCalled()
+    }
+  })
+
+  // Test 5: an ordinary string caches and returns exactly, not mistaken for
+  // the sentinel. Uses a YouTube-style trailer key (the only real string-
+  // returning fetchFn).
+  it('caches and returns an ordinary string, not mistaken for the sentinel', async () => {
+    mockSet.mockResolvedValue('OK')
+    mockGet.mockResolvedValueOnce(null)
+    const fetchFn = vi.fn().mockResolvedValue('dQw4w9WgXcQ')
+
+    const r1 = await cachedQuery('k', 3600, fetchFn)
+    expect(r1).toBe('dQw4w9WgXcQ')
+
+    await new Promise((r) => setTimeout(r, 10))
+    expect(mockSet).toHaveBeenCalledWith('k', 'dQw4w9WgXcQ', { ex: 3600 })
+
+    mockGet.mockResolvedValueOnce('dQw4w9WgXcQ')
+    const r2 = await cachedQuery('k', 3600, fetchFn)
+    expect(r2).toBe('dQw4w9WgXcQ')
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  // Test 6: a genuine miss (cacheGet returns null because no key was ever
+  // stored) still runs fetchFn.
+  it('still runs fetchFn on a genuine miss (cacheGet returns null, nothing was ever stored)', async () => {
+    mockSet.mockResolvedValue('OK')
+    mockGet.mockResolvedValueOnce(null)
+    const fetchFn = vi.fn().mockResolvedValue({ id: 'fresh' })
+
+    const result = await cachedQuery('k', 3600, fetchFn)
+    expect(result).toEqual({ id: 'fresh' })
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+})
