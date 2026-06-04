@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
 import { withDerivedFields } from '@/lib/films'
 import { cachedQuery, TTL } from '@/lib/cache'
+import { computeSwingMagnitude } from '@/lib/sentiment-metrics'
 
 export async function GET(request: NextRequest) {
   try {
@@ -45,10 +46,10 @@ export async function GET(request: NextRequest) {
         orderBy = { sentimentGraph: { overallScore: 'desc' } }
         where.sentimentGraph = { isNot: null }
         break
-      case 'swing':
-        orderBy = { sentimentGraph: { biggestSwing: 'desc' } }
-        where.sentimentGraph = { isNot: null }
-        break
+      // 'swing' intentionally has no DB orderBy. biggestSwing is a
+      // natural-language sentence, so ordering by it sorted alphabetically (the
+      // bug this replaces). Real swing magnitude is computed at query time in
+      // the dedicated branch below.
       case 'recent':
         orderBy = { createdAt: 'desc' }
         break
@@ -102,6 +103,52 @@ export async function GET(request: NextRequest) {
           totalPages: Math.ceil(total / limit),
         },
       })
+    }
+
+    // sort=swing: rank by computed swing magnitude (abs(peak - low) from the
+    // precomputed peakMoment/lowestMoment). Prisma cannot ORDER BY a
+    // JSON-derived expression, so rank in memory; at a few thousand graphed
+    // films this is cheap and mirrors the q-path's in-JS sort. Cached like the
+    // rest of the browse list.
+    if (sort === 'swing') {
+      where.sentimentGraph = { isNot: null }
+      const swingKey =
+        `films-list:swing:${encodeURIComponent(genre)}` +
+        `:${page}:${limit}:${nowPlaying}:${ticker}:${hasBackdrop}`
+      const payload = await cachedQuery(swingKey, TTL.FILMS_LIST, async () => {
+        const all = await prisma.film.findMany({
+          where,
+          include: {
+            sentimentGraph: {
+              select: {
+                overallScore: true,
+                dataPoints: true,
+                biggestSwing: true,
+                peakMoment: true,
+                lowestMoment: true,
+              },
+            },
+          },
+        })
+        const ranked = all
+          .map((f) => ({
+            f,
+            swing: computeSwingMagnitude(
+              f.sentimentGraph?.peakMoment,
+              f.sentimentGraph?.lowestMoment,
+            ),
+          }))
+          // Descending swing, then film.id ascending as a stable tiebreaker so
+          // pagination is deterministic across requests.
+          .sort((a, b) => b.swing - a.swing || a.f.id.localeCompare(b.f.id))
+        const total = ranked.length
+        const films = ranked.slice(skip, skip + limit).map((x) => withDerivedFields(x.f))
+        return {
+          films,
+          pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+        }
+      })
+      return Response.json(payload)
     }
 
     // Cache the browse list (no q). The key covers every param that changes
