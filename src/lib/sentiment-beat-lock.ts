@@ -2,6 +2,7 @@ import type { Prisma } from '@/generated/prisma/client'
 import { prisma } from './prisma'
 import { logger } from './logger'
 import type { SentimentDataPoint } from './types'
+import { classifyArcShape } from './arc-classifier'
 
 export const beatLockLogger = logger.child({ module: 'beat-lock' })
 
@@ -236,6 +237,12 @@ export async function forceOverwriteSentimentGraph(params: {
     'forceOverwriteSentimentGraph: rewriting labels + timestamps without merge'
   )
 
+  // Same classification chokepoint as writeRow. otherFields is loosely typed
+  // here, so read overallScore defensively.
+  const overallScore =
+    typeof otherFields.overallScore === 'number' ? otherFields.overallScore : null
+  const arcShape = classifyArcShape(dataPoints, overallScore)
+
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "SentimentGraph" WHERE "filmId" = ${filmId} FOR UPDATE`
     const existing = await tx.sentimentGraph.findUnique({ where: { filmId } })
@@ -243,6 +250,7 @@ export async function forceOverwriteSentimentGraph(params: {
       const updateData = {
         ...otherFields,
         dataPoints: dataPoints as unknown as Prisma.InputJsonValue,
+        arcShape,
       }
       await tx.sentimentGraph.update({
         where: { filmId },
@@ -253,6 +261,7 @@ export async function forceOverwriteSentimentGraph(params: {
         ...otherFields,
         filmId,
         dataPoints: dataPoints as unknown as Prisma.InputJsonValue,
+        arcShape,
       }
       await tx.sentimentGraph.create({
         data: createData as Prisma.SentimentGraphUncheckedCreateInput,
@@ -273,10 +282,16 @@ async function writeRow(
   }
 ) {
   const { filmId, existing, dataPoints, otherFields } = args
+  // Classify from the EXACT dataPoints being written (post-merge in the merge
+  // path) and the incoming headline score, so arcShape never desyncs from the
+  // beats it describes. This is the single chokepoint every writer funnels
+  // through, so every caller gets arcShape populated.
+  const arcShape = classifyArcShape(dataPoints, otherFields.overallScore)
   if (existing) {
     const updateData = {
       ...otherFields,
       dataPoints: dataPoints as unknown as Prisma.InputJsonValue,
+      arcShape,
     }
     await tx.sentimentGraph.update({
       where: { filmId },
@@ -287,6 +302,7 @@ async function writeRow(
       ...otherFields,
       filmId,
       dataPoints: dataPoints as unknown as Prisma.InputJsonValue,
+      arcShape,
     }
     await tx.sentimentGraph.create({
       data: createData as Prisma.SentimentGraphUncheckedCreateInput,
