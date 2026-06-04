@@ -247,6 +247,13 @@ model SentimentGraph {
   varianceSource  String   @default("external_only")
   version         Int      @default(1)
   reviewHash      String?
+  // Multi-tag arc-shape classification (slow burn, hidden peak, perfect
+  // ending, steady great, nosedive). Derived from dataPoints + overallScore
+  // by src/lib/arc-classifier.ts at write time; a film can carry several tags.
+  arcShape        String[] @default([])
+  // Last time this film was the daily Explore hero. Read only as a 14-day
+  // no-repeat filter; never feeds the same-day pick. Nullable: never featured.
+  lastFeaturedAt  DateTime?
   film            Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
 }
 
