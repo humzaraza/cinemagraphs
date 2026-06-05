@@ -86,6 +86,15 @@ function capturedDataPoints(): SentimentDataPoint[] {
   throw new Error('No sentimentGraph write happened')
 }
 
+// Helper to pull the arcShape that was written alongside the dataPoints.
+function capturedArcShape(): string[] {
+  const updateCall = mocks.tx.sentimentGraph.update.mock.calls[0]
+  if (updateCall) return updateCall[0].data.arcShape as string[]
+  const createCall = mocks.tx.sentimentGraph.create.mock.calls[0]
+  if (createCall) return createCall[0].data.arcShape as string[]
+  throw new Error('No sentimentGraph write happened')
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe('safeWriteSentimentGraph', () => {
@@ -125,6 +134,29 @@ describe('safeWriteSentimentGraph', () => {
 
     // Row-level lock was taken inside the transaction.
     expect(mocks.tx.$queryRaw).toHaveBeenCalledTimes(1)
+  })
+
+  it('A2. populates arcShape from the beats being written', async () => {
+    mocks.tx.sentimentGraph.findUnique.mockResolvedValueOnce(null)
+
+    const { safeWriteSentimentGraph } = await import('@/lib/sentiment-beat-lock')
+    // A clean nosedive: opens at the max, falls steadily to the floor.
+    const incoming = [
+      beat('Open', 0, 9),
+      beat('Slip', 15, 8),
+      beat('Slide', 30, 6),
+      beat('Sink', 45, 5),
+      beat('Floor', 60, 4),
+    ]
+    await safeWriteSentimentGraph({
+      filmId: 'film-arc',
+      incomingDataPoints: incoming,
+      otherFields: { overallScore: 6.4 },
+      callerPath: 'test',
+    })
+
+    expect(mocks.tx.sentimentGraph.create).toHaveBeenCalledTimes(1)
+    expect(capturedArcShape()).toEqual(['nosedive'])
   })
 
   it('B. exact label match — scores updated, timestamps preserved, no drift log', async () => {

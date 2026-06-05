@@ -21,6 +21,8 @@ function makeGraph(reviewCount: number): SentimentGraph {
     varianceSource: 'external_only',
     version: 1,
     reviewHash: null,
+    arcShape: [],
+    lastFeaturedAt: null,
   } as SentimentGraph
 }
 
