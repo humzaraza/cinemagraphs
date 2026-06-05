@@ -1,0 +1,78 @@
+import { prisma } from '@/lib/prisma'
+import { apiLogger } from '@/lib/logger'
+import { withDerivedFields } from '@/lib/films'
+import { cachedQuery, TTL } from '@/lib/cache'
+import {
+  fetchHeroCandidates,
+  pickDailyHero,
+  stampHeroFeatured,
+  heroDateParts,
+} from '@/lib/hero'
+
+// The pick depends on the wall-clock date, so never prerender this.
+export const dynamic = 'force-dynamic'
+
+export async function GET() {
+  try {
+    const now = new Date()
+    const { year, month, day } = heroDateParts(now)
+    // Day-keyed cache: the key rolls over at the HERO_TIMEZONE midnight, so the
+    // same film is served all day. The pick is deterministic, so even a
+    // mid-day recompute (cache miss) yields the same film.
+    const cacheKey = `hero:${year}-${month}-${day}`
+
+    const payload = await cachedQuery(cacheKey, TTL.HOMEPAGE, async () => {
+      const candidates = await fetchHeroCandidates()
+      const pick = pickDailyHero(candidates, now)
+      if (!pick) {
+        apiLogger.warn('hero: no eligible film for today\'s angle')
+        return null
+      }
+
+      if (pick.usedFallback) {
+        apiLogger.warn(
+          { angle: pick.angle.label },
+          'hero: no-repeat guard emptied the pool, fell back to the eligible set',
+        )
+      }
+
+      // Stamp the pick, fire-and-forget. The response returns the same film
+      // regardless of whether this commits, because selection did not depend
+      // on lastFeaturedAt beyond the day-granular guard.
+      stampHeroFeatured(pick.film.id, now).catch((err) =>
+        apiLogger.error({ err, filmId: pick.film.id }, 'hero: stamp failed'),
+      )
+
+      const film = await prisma.film.findUnique({
+        where: { id: pick.film.id },
+        include: {
+          sentimentGraph: {
+            select: {
+              overallScore: true,
+              dataPoints: true,
+              biggestSwing: true,
+              peakMoment: true,
+              lowestMoment: true,
+              arcShape: true,
+            },
+          },
+        },
+      })
+      if (!film) return null
+
+      return {
+        film: withDerivedFields(film),
+        angle: pick.angle,
+        usedFallback: pick.usedFallback,
+      }
+    })
+
+    if (!payload) {
+      return Response.json({ film: null, angle: null }, { status: 200 })
+    }
+    return Response.json(payload)
+  } catch (err) {
+    apiLogger.error({ err }, 'Failed to pick daily hero')
+    return Response.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
+  }
+}
