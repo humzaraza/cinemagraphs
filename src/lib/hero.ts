@@ -86,6 +86,34 @@ export function heroDateParts(now: Date): HeroDateParts {
   return { year, month, day, dayOfWeek, dayOfYear, dayNumber }
 }
 
+/**
+ * Seconds remaining until the next HERO_TIMEZONE midnight, floored at 60 to
+ * avoid a zero/negative TTL right at the boundary. Used as the cache TTL for
+ * the day-keyed hero entry so the entry expires when the pick rolls over,
+ * instead of re-running the fetch-and-stamp path every fixed TTL.
+ *
+ * Elapsed-today is read from the local wall clock via Intl, so on DST
+ * transition days (23h/25h) the result can be off by up to an hour; the day
+ * key changes at rollover anyway, so a stale entry is never served past
+ * midnight (the next day reads a different key) and an early expiry just
+ * causes one extra recompute.
+ */
+export function secondsUntilHeroMidnight(now: Date): number {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: HERO_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+  const parts = fmt.formatToParts(now)
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0')
+  // Intl may render midnight as "24" with hour12: false; normalize to 0.
+  const hour = get('hour') % 24
+  const elapsed = hour * 3600 + get('minute') * 60 + get('second')
+  return Math.max(60, 86_400 - elapsed)
+}
+
 // Lightweight per-film inputs the pick needs. The route builds these from the
 // DB; tests build them directly.
 export type HeroCandidate = {
@@ -221,13 +249,28 @@ export async function fetchHeroCandidates(): Promise<HeroCandidate[]> {
   })
 }
 
+/** True when both instants fall on the same HERO_TIMEZONE calendar date.
+ *  Same day-granular comparison the no-repeat guard uses. */
+export function isSameHeroDay(a: Date, b: Date): boolean {
+  return heroDateParts(a).dayNumber === heroDateParts(b).dayNumber
+}
+
 /** Stamp the chosen film as featured. Targeted update by filmId (unique), never
- *  a batch write. Idempotent: a later now() simply overwrites, which is
- *  harmless because the pick never depends on lastFeaturedAt beyond the
- *  day-granular guard. */
-export async function stampHeroFeatured(filmId: string, when: Date): Promise<void> {
+ *  a batch write. Skips the write when lastFeaturedAt already falls on today's
+ *  HERO_TIMEZONE date: the pick never depends on lastFeaturedAt beyond the
+ *  day-granular guard, so re-stamping the same day is pure write noise.
+ *  Returns true when a write happened, false when it was skipped. */
+export async function stampHeroFeatured(filmId: string, when: Date): Promise<boolean> {
+  const existing = await prisma.sentimentGraph.findUnique({
+    where: { filmId },
+    select: { lastFeaturedAt: true },
+  })
+  if (existing?.lastFeaturedAt && isSameHeroDay(existing.lastFeaturedAt, when)) {
+    return false
+  }
   await prisma.sentimentGraph.update({
     where: { filmId },
     data: { lastFeaturedAt: when },
   })
+  return true
 }
