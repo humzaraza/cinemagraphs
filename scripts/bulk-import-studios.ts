@@ -25,8 +25,9 @@
  * Transient DB/network outages: connection-type failures probe the DB until
  * it recovers (up to 60 minutes) and retry the same candidate, instead of
  * failing one candidate per connection timeout for the whole outage. The
- * zero-IMDb quota warning only counts films that actually have an IMDb id,
- * so id-less shorts and documentaries cannot trip it.
+ * IMDb quota warning only counts real fetch failures reported by the RapidAPI
+ * host itself; films that merely have no IMDb reviews or no IMDb id cannot
+ * trip it.
  *
  * Quality gates: cron parity via checkCronQualityGates, with TWO differences:
  * Documentaries are ALLOWED (allowDocumentaries: true), and the popularity
@@ -70,7 +71,11 @@ const DISCOVER_MAX_PAGES = 50 // safety stop, same as the admin route
 const DISCOVER_PAGE_DELAY_MS = 250
 const DETAIL_DELAY_MS = 250 // after gate-reject or beats-only work (cheap calls)
 const IMPORT_DELAY_MS = 1000 // after full import or repair; review-source quotas are fragile
-const IMDB_QUOTA_WARN_STREAK = 20 // consecutive review-fetched films with zero IMDb reviews
+// Consecutive films where the IMDb SOURCE itself failed (HTTP error from the
+// RapidAPI host). Films that merely have no IMDb reviews, or no IMDb id, do
+// not count: two full-run false alarms proved deep-catalog blocks make that
+// signal worthless.
+const IMDB_FAILURE_WARN_STREAK = 10
 
 const RUN_LOG_PATH = 'bulk-import-studios-run.jsonl'
 
@@ -304,6 +309,9 @@ interface StageOutcome {
   reviewTotal: number // -1 when the fetch itself failed
   quality: number
   imdb: number
+  /** Set when the IMDb source returned a real failure (HTTP error), as
+   *  opposed to "this film has no IMDb reviews" or "no IMDb id". */
+  imdbFailure: string | null
   beatsNote: string
 }
 
@@ -313,8 +321,21 @@ async function runReviewAndBeatStages(
   incomplete: IncompleteFilm[]
 ): Promise<StageOutcome> {
   let reviewTotal = -1
+  let imdbFailure: string | null = null
   try {
-    reviewTotal = await fetchAllReviews(film)
+    reviewTotal = await fetchAllReviews(film, {
+      onPerSource: (perSource) => {
+        const imdbResult = perSource['IMDb']
+        if (
+          imdbResult &&
+          !imdbResult.ok &&
+          imdbResult.reason !== 'film missing imdbId' &&
+          imdbResult.reason !== 'no RAPIDAPI_KEY'
+        ) {
+          imdbFailure = imdbResult.reason ?? 'unknown failure'
+        }
+      },
+    })
   } catch (err) {
     const msg = errMsg(err)
     incomplete.push({ tmdbId: film.tmdbId, title: film.title, failedStage: 'reviews', error: msg })
@@ -348,7 +369,7 @@ async function runReviewAndBeatStages(
     beatsNote = 'error'
   }
 
-  return { reviewTotal, quality, imdb, beatsNote }
+  return { reviewTotal, quality, imdb, imdbFailure, beatsNote }
 }
 
 // ── Cost checkpoint ──
@@ -453,10 +474,10 @@ async function main() {
   // each tmdbId to the first studio that surfaces it this run; later studios
   // count it as a cross-studio duplicate instead of reprocessing it.
   const seenThisRun = new Set<number>()
-  // Consecutive review-fetched films with zero IMDb reviews. A long streak
-  // usually means the RapidAPI quota is exhausted: other sources keep
-  // working, so nothing throws, and only this counter makes it visible.
-  let zeroImdbStreak = 0
+  // Consecutive films where the IMDb source returned a real failure. Other
+  // sources keep working when RapidAPI dies, so nothing throws, and only
+  // this counter makes it visible.
+  let imdbFailureStreak = 0
 
   for (let s = 0; s < studios.length; s++) {
     if (aborted) break
@@ -537,14 +558,15 @@ async function main() {
               reviews: outcome.reviewTotal,
               quality: outcome.quality,
               imdb: outcome.imdb,
+              imdbFailure: outcome.imdbFailure ?? undefined,
               beats: outcome.beatsNote,
             })
             console.log(
               `${progress} REPAIRED ${film.title}: reviews ${outcome.reviewTotal < 0 ? 'FAILED' : outcome.reviewTotal} (quality ${outcome.quality}), beats ${outcome.beatsNote}`
             )
-            if (outcome.reviewTotal >= 0 && film.imdbId) {
-              zeroImdbStreak = outcome.imdb === 0 ? zeroImdbStreak + 1 : 0
-              warnOnImdbStreak(zeroImdbStreak)
+            if (outcome.reviewTotal >= 0) {
+              imdbFailureStreak = outcome.imdbFailure ? imdbFailureStreak + 1 : 0
+              warnOnImdbFailureStreak(imdbFailureStreak, outcome.imdbFailure)
             }
             await sleep(IMPORT_DELAY_MS)
           } else {
@@ -612,14 +634,15 @@ async function main() {
           reviews: outcome.reviewTotal,
           quality: outcome.quality,
           imdb: outcome.imdb,
+          imdbFailure: outcome.imdbFailure ?? undefined,
           beats: outcome.beatsNote,
         })
         console.log(
           `${progress} OK ${film.title}: reviews ${outcome.reviewTotal < 0 ? 'FAILED' : outcome.reviewTotal} (quality ${outcome.quality}), beats ${outcome.beatsNote}`
         )
-        if (outcome.reviewTotal >= 0 && film.imdbId) {
-          zeroImdbStreak = outcome.imdb === 0 ? zeroImdbStreak + 1 : 0
-          warnOnImdbStreak(zeroImdbStreak)
+        if (outcome.reviewTotal >= 0) {
+          imdbFailureStreak = outcome.imdbFailure ? imdbFailureStreak + 1 : 0
+          warnOnImdbFailureStreak(imdbFailureStreak, outcome.imdbFailure)
         }
         await sleep(IMPORT_DELAY_MS)
       }
@@ -729,12 +752,13 @@ async function main() {
   process.exit(aborted ? 130 : 0)
 }
 
-function warnOnImdbStreak(streak: number): void {
-  if (streak === IMDB_QUOTA_WARN_STREAK) {
+function warnOnImdbFailureStreak(streak: number, lastReason: string | null): void {
+  if (streak === IMDB_FAILURE_WARN_STREAK) {
     console.warn(
-      `\nWARNING: ${IMDB_QUOTA_WARN_STREAK} consecutive films with zero IMDb reviews. ` +
-        'The RapidAPI quota may be exhausted. Other sources keep working, so the run continues, ' +
-        `but affected films are logged with imdb: 0 in ${RUN_LOG_PATH}. ` +
+      `\nWARNING: ${IMDB_FAILURE_WARN_STREAK} consecutive films where the IMDb source FAILED ` +
+        `(last reason: ${lastReason ?? 'unknown'}). This is a real fetch failure from the RapidAPI host, ` +
+        'likely quota or rate-limit exhaustion. Other sources keep working, so the run continues, ' +
+        `but affected films are logged with an imdbFailure field in ${RUN_LOG_PATH}. ` +
         'Consider Ctrl-C now and resuming after the quota resets.\n'
     )
   }

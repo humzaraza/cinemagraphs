@@ -37,7 +37,26 @@ export function computeReviewHash(
   return createHash('sha256').update(hashes.join('|')).digest('hex')
 }
 
-export async function fetchAllReviews(film: Film): Promise<number> {
+export interface ReviewSourceResult {
+  count: number
+  ok: boolean
+  reason?: string
+}
+
+export interface FetchAllReviewsOptions {
+  /**
+   * Called once with the per-source fetch outcomes (keyed by display name:
+   * TMDB, IMDb, Roger Ebert, Letterboxd, Reddit, Guardian) before reviews
+   * are stored. Lets bulk callers observe source health (e.g. IMDb quota
+   * exhaustion) without changing the return type for existing callers.
+   */
+  onPerSource?: (perSource: Record<string, ReviewSourceResult>) => void
+}
+
+export async function fetchAllReviews(
+  film: Film,
+  options: FetchAllReviewsOptions = {}
+): Promise<number> {
   reviewLogger.info({ filmId: film.id, filmTitle: film.title }, 'Fetching reviews')
 
   const results = await Promise.allSettled([
@@ -52,12 +71,7 @@ export async function fetchAllReviews(film: Film): Promise<number> {
   // Display names for the end-of-run summary line. The order here must
   // match the fetcher order above.
   const sourceNames = ['TMDB', 'IMDb', 'Roger Ebert', 'Letterboxd', 'Reddit', 'Guardian']
-  interface PerSource {
-    count: number
-    ok: boolean
-    reason?: string
-  }
-  const perSource: Record<string, PerSource> = {}
+  const perSource: Record<string, ReviewSourceResult> = {}
   const allReviews: FetchedReview[] = []
 
   results.forEach((r, i) => {
@@ -89,6 +103,8 @@ export async function fetchAllReviews(film: Film): Promise<number> {
     { filmId: film.id, filmTitle: film.title, perSource, total: allReviews.length },
     summaryLine
   )
+
+  options.onPerSource?.(perSource)
 
   // Deduplicate by content hash and store
   let stored = 0
