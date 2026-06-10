@@ -22,6 +22,12 @@
  * quality, and IMDb counts, so partial runs and quota incidents can be
  * audited and repaired after the fact.
  *
+ * Transient DB/network outages: connection-type failures probe the DB until
+ * it recovers (up to 60 minutes) and retry the same candidate, instead of
+ * failing one candidate per connection timeout for the whole outage. The
+ * zero-IMDb quota warning only counts films that actually have an IMDb id,
+ * so id-less shorts and documentaries cannot trip it.
+ *
  * Quality gates: cron parity via checkCronQualityGates, with TWO differences:
  * Documentaries are ALLOWED (allowDocumentaries: true), and the popularity
  * floor is SKIPPED (skipPopularityCheck: true; TMDB popularity is a
@@ -181,6 +187,47 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/** Neon adapter and undici sometimes throw plain objects; "[object Object]"
+ *  in a failure log is useless, so serialize properly. */
+function errMsg(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (typeof err === 'object' && err !== null) {
+    try {
+      return JSON.stringify(err).slice(0, 300)
+    } catch {
+      return String(err)
+    }
+  }
+  return String(err)
+}
+
+function isConnectionError(msg: string): boolean {
+  return /connection|terminated|fetch failed|econn|etimedout|socket|websocket|network/i.test(msg)
+}
+
+/**
+ * After a connection-type failure, probe the DB until it answers instead of
+ * burning one candidate per ~30s timeout for the whole outage (observed: a
+ * transient network drop failed 114 candidates in a row before recovering).
+ * Gives up after 60 minutes so a permanent outage still surfaces as failures
+ * rather than an infinite hang. Returns early on abort.
+ */
+async function waitForDbRecovery(): Promise<void> {
+  const giveUpAt = Date.now() + 60 * 60_000
+  let delay = 15_000
+  while (!aborted && Date.now() < giveUpAt) {
+    await sleep(delay)
+    try {
+      await prisma.$queryRaw`SELECT 1`
+      console.log('DB reachable again, resuming')
+      return
+    } catch {
+      console.log(`DB still unreachable, next probe in ${Math.round(delay / 1000)}s`)
+      delay = Math.min(delay * 2, 300_000)
+    }
+  }
+}
+
 // ── Tallies ──
 
 interface StudioTally {
@@ -269,7 +316,7 @@ async function runReviewAndBeatStages(
   try {
     reviewTotal = await fetchAllReviews(film)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = errMsg(err)
     incomplete.push({ tmdbId: film.tmdbId, title: film.title, failedStage: 'reviews', error: msg })
     logEvent({ event: 'incomplete', stage: 'reviews', tmdbId: film.tmdbId, title: film.title, error: msg })
   }
@@ -295,7 +342,7 @@ async function runReviewAndBeatStages(
       beatsNote = wiki.status
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = errMsg(err)
     incomplete.push({ tmdbId: film.tmdbId, title: film.title, failedStage: 'wikiBeats', error: msg })
     logEvent({ event: 'incomplete', stage: 'wikiBeats', tmdbId: film.tmdbId, title: film.title, error: msg })
     beatsNote = 'error'
@@ -421,7 +468,7 @@ async function main() {
     try {
       candidates = await discoverCompanyFilms(studio.id, args.maxPerStudio)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = errMsg(err)
       console.error(`${studioTag} discover failed: ${msg}. Skipping studio; rerun to retry it.`)
       logEvent({ event: 'discover_failed', companyId: studio.id, studio: studio.label, error: msg })
       tallies.push(emptyTally(studio.label, studio.id))
@@ -444,7 +491,7 @@ async function main() {
       }
       seenThisRun.add(candidate.id)
 
-      try {
+      const processCandidate = async (): Promise<void> => {
         // 1. Existence + completeness check before any TMDB call.
         const existing = await prisma.film.findUnique({
           where: { tmdbId: candidate.id },
@@ -464,7 +511,7 @@ async function main() {
 
           if (hasReviews && (hasBeats || hasGraph)) {
             t.skippedExisting++
-            continue
+            return
           }
 
           if (args.dryRun) {
@@ -472,7 +519,7 @@ async function main() {
             console.log(
               `${progress} WOULD REPAIR ${existing.title} (${hasReviews ? 'beats only' : 'reviews + beats'})`
             )
-            continue
+            return
           }
 
           if (!hasReviews) {
@@ -495,7 +542,7 @@ async function main() {
             console.log(
               `${progress} REPAIRED ${film.title}: reviews ${outcome.reviewTotal < 0 ? 'FAILED' : outcome.reviewTotal} (quality ${outcome.quality}), beats ${outcome.beatsNote}`
             )
-            if (outcome.reviewTotal >= 0) {
+            if (outcome.reviewTotal >= 0 && film.imdbId) {
               zeroImdbStreak = outcome.imdb === 0 ? zeroImdbStreak + 1 : 0
               warnOnImdbStreak(zeroImdbStreak)
             }
@@ -512,7 +559,7 @@ async function main() {
                 note = wiki.status
               }
             } catch (err) {
-              const msg = err instanceof Error ? err.message : String(err)
+              const msg = errMsg(err)
               incomplete.push({ tmdbId: candidate.id, title: existing.title, failedStage: 'wikiBeats', error: msg })
               logEvent({ event: 'incomplete', stage: 'wikiBeats', tmdbId: candidate.id, title: existing.title, error: msg })
               note = 'error'
@@ -521,7 +568,7 @@ async function main() {
             console.log(`${progress} BEATS ${existing.title}: ${note}`)
             await sleep(DETAIL_DELAY_MS)
           }
-          continue
+          return
         }
 
         // 2. Fresh details for the quality gate (importMovie refetches them;
@@ -536,14 +583,14 @@ async function main() {
           t.gateRejected[gate.reason] = (t.gateRejected[gate.reason] ?? 0) + 1
           console.log(`${progress} GATE ${gate.reason}: ${details.title}`)
           await sleep(DETAIL_DELAY_MS)
-          continue
+          return
         }
 
         if (args.dryRun) {
           t.wouldImport++
           console.log(`${progress} WOULD IMPORT ${details.title}`)
           await sleep(DETAIL_DELAY_MS)
-          continue
+          return
         }
 
         // 3. Import the Film row (credits sync and similar-films recompute
@@ -570,17 +617,39 @@ async function main() {
         console.log(
           `${progress} OK ${film.title}: reviews ${outcome.reviewTotal < 0 ? 'FAILED' : outcome.reviewTotal} (quality ${outcome.quality}), beats ${outcome.beatsNote}`
         )
-        if (outcome.reviewTotal >= 0) {
+        if (outcome.reviewTotal >= 0 && film.imdbId) {
           zeroImdbStreak = outcome.imdb === 0 ? zeroImdbStreak + 1 : 0
           warnOnImdbStreak(zeroImdbStreak)
         }
         await sleep(IMPORT_DELAY_MS)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        t.failed++
-        logEvent({ event: 'failed', tmdbId: candidate.id, title: candidate.title, studio: studio.label, error: msg })
-        console.error(`${progress} FAIL ${candidate.title}: ${msg}`)
-        await sleep(DETAIL_DELAY_MS)
+      }
+
+      // Connection-type failures wait for the DB to answer again and retry
+      // the SAME candidate (up to twice) instead of consuming the queue at
+      // one candidate per connection timeout. Everything else fails the
+      // candidate immediately; rerunning the script picks failures back up.
+      let attempt = 0
+      while (true) {
+        try {
+          await processCandidate()
+          break
+        } catch (err) {
+          const msg = errMsg(err)
+          attempt++
+          if (isConnectionError(msg) && attempt <= 2 && !aborted) {
+            console.warn(
+              `${progress} connection error: ${msg.slice(0, 120)}. Probing DB before retrying (attempt ${attempt}/2).`
+            )
+            logEvent({ event: 'retry', tmdbId: candidate.id, title: candidate.title, attempt, error: msg.slice(0, 200) })
+            await waitForDbRecovery()
+            continue
+          }
+          t.failed++
+          logEvent({ event: 'failed', tmdbId: candidate.id, title: candidate.title, studio: studio.label, error: msg })
+          console.error(`${progress} FAIL ${candidate.title}: ${msg}`)
+          await sleep(DETAIL_DELAY_MS)
+          break
+        }
       }
     }
 
@@ -673,7 +742,7 @@ function warnOnImdbStreak(streak: number): void {
 
 main().catch(async (err) => {
   console.error('Fatal error:', err)
-  logEvent({ event: 'fatal', error: err instanceof Error ? err.message : String(err) })
+  logEvent({ event: 'fatal', error: errMsg(err) })
   await prisma.$disconnect().catch(() => {})
   process.exit(1)
 })
