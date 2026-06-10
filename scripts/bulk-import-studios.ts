@@ -3,16 +3,31 @@
  * IMPORT-ONLY. No synchronous Claude graph call; graphs come later via the
  * Batch API drain.
  *
- * Per new film: importMovie (TMDB details/credits/keywords, person sync,
- * similar-films) -> fetchAllReviews (6 sources) -> wiki-beats fallback.
- * Already-imported films fast-skip on a DB lookup before any TMDB call, so
- * the run is idempotent and restart-safe: kill it, rerun it, it resumes.
+ * Per new film: importMovie (TMDB details/credits/keywords) ->
+ * fetchAllReviews (6 sources) -> wiki-beats fallback. The per-film credits
+ * sync and similar-films recompute inside importMovie are SKIPPED for bulk
+ * speed; run these once after the import completes:
+ *   npx tsx scripts/backfill-persons.ts        (needs TMDB; run BEFORE cancelling TMDB)
+ *   npx tsx scripts/backfill-similar-films.ts  (DB-only; run any time)
+ *
+ * Restart-safe in both directions:
+ *   - resume: films already in the DB with reviews fast-skip on a cheap lookup.
+ *   - repair: an existing film with ZERO reviews (e.g. a previous run was
+ *     killed between import and review fetch) gets its review + beats stages
+ *     rerun. An existing film with reviews but no beats and no graph gets a
+ *     beats-only attempt. So rerunning the same command heals interruptions.
+ *
+ * A durable run log (JSONL, appended at ./bulk-import-studios-run.jsonl)
+ * records every imported / repaired / failed film with per-film review,
+ * quality, and IMDb counts, so partial runs and quota incidents can be
+ * audited and repaired after the fact.
  *
  * Quality gates: cron parity via checkCronQualityGates, with ONE difference:
  * Documentaries are ALLOWED (allowDocumentaries: true). TV Movies stay
  * excluded, as do low-vote, low-popularity, short, poster-less, and
  * overview-less films. The gate runs on fresh TMDB details BEFORE import,
- * so rejects cost one TMDB call and zero DB writes.
+ * so rejects cost one TMDB call and zero DB writes. Repairs of films already
+ * in the DB intentionally skip the gate.
  *
  * GATED: this mutates the shared Neon (prod/preview) database. Do not run
  * without explicit go-ahead. Even --dry-run reads prod (existence checks and
@@ -28,6 +43,8 @@
 import './_load-env'
 import './_neon-ws'
 
+import { appendFileSync } from 'node:fs'
+import type { Film } from '../src/generated/prisma/client'
 import { prisma } from '../src/lib/prisma'
 import { COMPANY_PRESETS } from '../src/lib/company-presets'
 import { importMovie, getMovieDetails } from '../src/lib/tmdb'
@@ -42,8 +59,11 @@ import {
 const DEFAULT_MAX_PER_STUDIO = 500
 const DISCOVER_MAX_PAGES = 50 // safety stop, same as the admin route
 const DISCOVER_PAGE_DELAY_MS = 250
-const DETAIL_DELAY_MS = 250 // after gate-reject (one TMDB call, no DB writes)
-const IMPORT_DELAY_MS = 1000 // after full import; review-source quotas are fragile
+const DETAIL_DELAY_MS = 250 // after gate-reject or beats-only work (cheap calls)
+const IMPORT_DELAY_MS = 1000 // after full import or repair; review-source quotas are fragile
+const IMDB_QUOTA_WARN_STREAK = 20 // consecutive review-fetched films with zero IMDb reviews
+
+const RUN_LOG_PATH = 'bulk-import-studios-run.jsonl'
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY
 const TMDB_BASE_URL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3'
@@ -86,6 +106,16 @@ function parseArgs(argv: string[]): Args {
     }
   }
   return args
+}
+
+// ── Run log (durable JSONL, survives crashes and closed terminals) ──
+
+function logEvent(event: Record<string, unknown>): void {
+  try {
+    appendFileSync(RUN_LOG_PATH, `${JSON.stringify({ ts: new Date().toISOString(), ...event })}\n`)
+  } catch {
+    // A logging failure must never kill the run.
+  }
 }
 
 // ── TMDB discover pager (lib tmdbFetch is module-private, so a local copy) ──
@@ -154,13 +184,16 @@ interface StudioTally {
   label: string
   companyId: number
   candidates: number
-  imported: number
+  imported: number // new film, full pipeline
+  repaired: number // existing film with zero reviews, stages rerun
+  beatsBackfilled: number // existing film with reviews but no beats/graph, beats attempt
   wouldImport: number // dry-run counterpart of imported
+  wouldRepair: number // dry-run counterpart of repaired + beatsBackfilled
   skippedExisting: number
   crossStudioDup: number
   gateRejected: Record<string, number>
-  graphEligible: number // imported this run with >= MIN_QUALITY_REVIEWS_FOR_GENERATION quality reviews
-  wikiBeats: number
+  graphEligible: number // imported or repaired this run with enough quality reviews
+  wikiBeats: number // beats actually generated (any path)
   failed: number
 }
 
@@ -169,6 +202,25 @@ interface IncompleteFilm {
   title: string
   failedStage: 'reviews' | 'wikiBeats'
   error: string
+}
+
+function emptyTally(label: string, companyId: number): StudioTally {
+  return {
+    label,
+    companyId,
+    candidates: 0,
+    imported: 0,
+    repaired: 0,
+    beatsBackfilled: 0,
+    wouldImport: 0,
+    wouldRepair: 0,
+    skippedExisting: 0,
+    crossStudioDup: 0,
+    gateRejected: {},
+    graphEligible: 0,
+    wikiBeats: 0,
+    failed: 0,
+  }
 }
 
 function gateRejectedTotal(t: StudioTally): number {
@@ -182,13 +234,74 @@ function formatGateRejects(t: StudioTally): string {
   return parts.length > 0 ? ` (${parts.join(', ')})` : ''
 }
 
-async function countQualityReviews(filmId: string): Promise<number> {
+async function countReviewStats(filmId: string): Promise<{ quality: number; imdb: number }> {
   const reviews = await prisma.review.findMany({
     where: { filmId },
-    select: { reviewText: true },
+    select: { reviewText: true, sourcePlatform: true },
   })
-  return reviews.filter((r) => isQualityReview(r.reviewText)).length
+  let quality = 0
+  let imdb = 0
+  for (const r of reviews) {
+    if (isQualityReview(r.reviewText)) quality++
+    if (r.sourcePlatform === 'IMDB') imdb++
+  }
+  return { quality, imdb }
 }
+
+// ── Post-import stages (shared by fresh imports and zero-review repairs) ──
+
+interface StageOutcome {
+  reviewTotal: number // -1 when the fetch itself failed
+  quality: number
+  imdb: number
+  beatsNote: string
+}
+
+async function runReviewAndBeatStages(
+  film: Film,
+  t: StudioTally,
+  incomplete: IncompleteFilm[]
+): Promise<StageOutcome> {
+  let reviewTotal = -1
+  try {
+    reviewTotal = await fetchAllReviews(film)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    incomplete.push({ tmdbId: film.tmdbId, title: film.title, failedStage: 'reviews', error: msg })
+    logEvent({ event: 'incomplete', stage: 'reviews', tmdbId: film.tmdbId, title: film.title, error: msg })
+  }
+
+  let quality = 0
+  let imdb = 0
+  try {
+    const stats = await countReviewStats(film.id)
+    quality = stats.quality
+    imdb = stats.imdb
+  } catch {
+    // Count failure only skews the run tally; the end-of-run sweep recounts everything.
+  }
+  if (quality >= MIN_QUALITY_REVIEWS_FOR_GENERATION) t.graphEligible++
+
+  let beatsNote = 'no'
+  try {
+    const wiki = await generateAndStoreWikiBeats(film.id)
+    if (wiki.status === 'generated') {
+      t.wikiBeats++
+      beatsNote = `yes (${wiki.beatCount})`
+    } else {
+      beatsNote = wiki.status
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    incomplete.push({ tmdbId: film.tmdbId, title: film.title, failedStage: 'wikiBeats', error: msg })
+    logEvent({ event: 'incomplete', stage: 'wikiBeats', tmdbId: film.tmdbId, title: film.title, error: msg })
+    beatsNote = 'error'
+  }
+
+  return { reviewTotal, quality, imdb, beatsNote }
+}
+
+// ── Cost checkpoint ──
 
 /**
  * Cost checkpoint: every ACTIVE, released film with no sentiment graph,
@@ -244,11 +357,13 @@ async function costCheckpointSweep(): Promise<{
 // ── Main ──
 
 let aborted = false
-process.on('SIGINT', () => {
+function requestAbort(signal: string) {
   if (aborted) process.exit(130)
   aborted = true
-  console.log('\nSIGINT: finishing the current film, then printing the summary. Ctrl-C again to force quit.')
-})
+  console.log(`\n${signal}: finishing the current film, then printing the summary. Repeat to force quit.`)
+}
+process.on('SIGINT', () => requestAbort('SIGINT'))
+process.on('SIGTERM', () => requestAbort('SIGTERM'))
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
@@ -277,8 +392,10 @@ async function main() {
 
   console.log('=== Studio Bulk Import (import-only) ===')
   console.log(
-    `${studios.length} studio(s), up to ${args.maxPerStudio} films each${args.dryRun ? ', DRY RUN (no DB writes)' : ''}\n`
+    `${studios.length} studio(s), up to ${args.maxPerStudio} films each${args.dryRun ? ', DRY RUN (no DB writes)' : ''}`
   )
+  console.log(`Run log: ${RUN_LOG_PATH} (JSONL, appended)\n`)
+  logEvent({ event: 'run_start', dryRun: args.dryRun, maxPerStudio: args.maxPerStudio, studios: studios.map((s) => s.id) })
 
   const tallies: StudioTally[] = []
   const incomplete: IncompleteFilm[] = []
@@ -286,6 +403,10 @@ async function main() {
   // each tmdbId to the first studio that surfaces it this run; later studios
   // count it as a cross-studio duplicate instead of reprocessing it.
   const seenThisRun = new Set<number>()
+  // Consecutive review-fetched films with zero IMDb reviews. A long streak
+  // usually means the RapidAPI quota is exhausted: other sources keep
+  // working, so nothing throws, and only this counter makes it visible.
+  let zeroImdbStreak = 0
 
   for (let s = 0; s < studios.length; s++) {
     if (aborted) break
@@ -298,37 +419,15 @@ async function main() {
       candidates = await discoverCompanyFilms(studio.id, args.maxPerStudio)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error(`${studioTag} discover failed: ${msg}. Skipping studio.`)
-      tallies.push({
-        label: studio.label,
-        companyId: studio.id,
-        candidates: 0,
-        imported: 0,
-        wouldImport: 0,
-        skippedExisting: 0,
-        crossStudioDup: 0,
-        gateRejected: {},
-        graphEligible: 0,
-        wikiBeats: 0,
-        failed: 0,
-      })
+      console.error(`${studioTag} discover failed: ${msg}. Skipping studio; rerun to retry it.`)
+      logEvent({ event: 'discover_failed', companyId: studio.id, studio: studio.label, error: msg })
+      tallies.push(emptyTally(studio.label, studio.id))
       continue
     }
     console.log(`${studioTag} ${candidates.length} unique candidates`)
 
-    const t: StudioTally = {
-      label: studio.label,
-      companyId: studio.id,
-      candidates: candidates.length,
-      imported: 0,
-      wouldImport: 0,
-      skippedExisting: 0,
-      crossStudioDup: 0,
-      gateRejected: {},
-      graphEligible: 0,
-      wikiBeats: 0,
-      failed: 0,
-    }
+    const t = emptyTally(studio.label, studio.id)
+    t.candidates = candidates.length
     tallies.push(t)
 
     for (let i = 0; i < candidates.length; i++) {
@@ -343,13 +442,82 @@ async function main() {
       seenThisRun.add(candidate.id)
 
       try {
-        // 1. Fast-skip: DB existence check before any TMDB call.
+        // 1. Existence + completeness check before any TMDB call.
         const existing = await prisma.film.findUnique({
           where: { tmdbId: candidate.id },
-          select: { id: true, title: true },
+          select: {
+            id: true,
+            title: true,
+            _count: { select: { reviews: true } },
+            filmBeats: { select: { id: true } },
+            sentimentGraph: { select: { id: true } },
+          },
         })
+
         if (existing) {
-          t.skippedExisting++
+          const hasReviews = existing._count.reviews > 0
+          const hasBeats = existing.filmBeats !== null
+          const hasGraph = existing.sentimentGraph !== null
+
+          if (hasReviews && (hasBeats || hasGraph)) {
+            t.skippedExisting++
+            continue
+          }
+
+          if (args.dryRun) {
+            t.wouldRepair++
+            console.log(
+              `${progress} WOULD REPAIR ${existing.title} (${hasReviews ? 'beats only' : 'reviews + beats'})`
+            )
+            continue
+          }
+
+          if (!hasReviews) {
+            // A previous run (or the old import script) created the film but
+            // reviews never landed. Rerun the full post-import stages. The
+            // quality gate is intentionally skipped: the film is already live.
+            const film = await prisma.film.findUniqueOrThrow({ where: { tmdbId: candidate.id } })
+            const outcome = await runReviewAndBeatStages(film, t, incomplete)
+            t.repaired++
+            logEvent({
+              event: 'repaired',
+              tmdbId: candidate.id,
+              title: film.title,
+              studio: studio.label,
+              reviews: outcome.reviewTotal,
+              quality: outcome.quality,
+              imdb: outcome.imdb,
+              beats: outcome.beatsNote,
+            })
+            console.log(
+              `${progress} REPAIRED ${film.title}: reviews ${outcome.reviewTotal < 0 ? 'FAILED' : outcome.reviewTotal} (quality ${outcome.quality}), beats ${outcome.beatsNote}`
+            )
+            if (outcome.reviewTotal >= 0) {
+              zeroImdbStreak = outcome.imdb === 0 ? zeroImdbStreak + 1 : 0
+              warnOnImdbStreak(zeroImdbStreak)
+            }
+            await sleep(IMPORT_DELAY_MS)
+          } else {
+            // Reviews exist but the film renders nothing: attempt wiki beats.
+            let note = 'no'
+            try {
+              const wiki = await generateAndStoreWikiBeats(existing.id)
+              if (wiki.status === 'generated') {
+                t.wikiBeats++
+                note = `yes (${wiki.beatCount})`
+              } else {
+                note = wiki.status
+              }
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err)
+              incomplete.push({ tmdbId: candidate.id, title: existing.title, failedStage: 'wikiBeats', error: msg })
+              logEvent({ event: 'incomplete', stage: 'wikiBeats', tmdbId: candidate.id, title: existing.title, error: msg })
+              note = 'error'
+            }
+            t.beatsBackfilled++
+            console.log(`${progress} BEATS ${existing.title}: ${note}`)
+            await sleep(DETAIL_DELAY_MS)
+          }
           continue
         }
 
@@ -372,60 +540,50 @@ async function main() {
           continue
         }
 
-        // 3. Import: Film row + credits + keywords + person sync + similar films.
-        const film = await importMovie(candidate.id)
+        // 3. Import the Film row (credits sync and similar-films recompute
+        //    are deferred to the end-of-run backfill scripts).
+        const film = await importMovie(candidate.id, {
+          skipCreditsSync: true,
+          skipSimilarRecompute: true,
+        })
         t.imported++
 
-        // 4. Reviews from all 6 sources. A failure here leaves the film
-        //    imported but review-less; it is recorded so a targeted rerun
-        //    can repair it (the fast-skip would otherwise hide it forever).
-        let reviewTotal = -1
-        try {
-          reviewTotal = await fetchAllReviews(film)
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err)
-          incomplete.push({ tmdbId: candidate.id, title: film.title, failedStage: 'reviews', error: msg })
-        }
-
-        let qualityCount = 0
-        try {
-          qualityCount = await countQualityReviews(film.id)
-        } catch {
-          // Count failure only skews the run tally; the end-of-run sweep recounts everything.
-        }
-        if (qualityCount >= MIN_QUALITY_REVIEWS_FOR_GENERATION) t.graphEligible++
-
-        // 5. Wiki beats so the detail page renders something until Piece 2.
-        let beatsNote = 'no'
-        try {
-          const wiki = await generateAndStoreWikiBeats(film.id)
-          if (wiki.status === 'generated') {
-            t.wikiBeats++
-            beatsNote = `yes (${wiki.beatCount})`
-          } else {
-            beatsNote = wiki.status
-          }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err)
-          incomplete.push({ tmdbId: candidate.id, title: film.title, failedStage: 'wikiBeats', error: msg })
-          beatsNote = 'error'
-        }
-
+        // 4 + 5. Reviews from all 6 sources, then wiki beats so the detail
+        //        page renders something until Piece 2.
+        const outcome = await runReviewAndBeatStages(film, t, incomplete)
+        logEvent({
+          event: 'imported',
+          tmdbId: candidate.id,
+          title: film.title,
+          studio: studio.label,
+          reviews: outcome.reviewTotal,
+          quality: outcome.quality,
+          imdb: outcome.imdb,
+          beats: outcome.beatsNote,
+        })
         console.log(
-          `${progress} OK ${film.title}: reviews ${reviewTotal < 0 ? 'FAILED' : reviewTotal} (quality ${qualityCount}), beats ${beatsNote}`
+          `${progress} OK ${film.title}: reviews ${outcome.reviewTotal < 0 ? 'FAILED' : outcome.reviewTotal} (quality ${outcome.quality}), beats ${outcome.beatsNote}`
         )
+        if (outcome.reviewTotal >= 0) {
+          zeroImdbStreak = outcome.imdb === 0 ? zeroImdbStreak + 1 : 0
+          warnOnImdbStreak(zeroImdbStreak)
+        }
         await sleep(IMPORT_DELAY_MS)
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         t.failed++
+        logEvent({ event: 'failed', tmdbId: candidate.id, title: candidate.title, studio: studio.label, error: msg })
         console.error(`${progress} FAIL ${candidate.title}: ${msg}`)
         await sleep(DETAIL_DELAY_MS)
       }
     }
 
     console.log(
-      `${studioTag} done: ${args.dryRun ? `${t.wouldImport} would import` : `${t.imported} imported`}, ` +
-        `${t.skippedExisting} existing, ${t.crossStudioDup} cross-studio dup, ` +
+      `${studioTag} done: ${
+        args.dryRun
+          ? `${t.wouldImport} would import, ${t.wouldRepair} would repair`
+          : `${t.imported} imported, ${t.repaired} repaired, ${t.beatsBackfilled} beats-backfilled`
+      }, ${t.skippedExisting} existing, ${t.crossStudioDup} cross-studio dup, ` +
         `${gateRejectedTotal(t)} gate-rejected${formatGateRejects(t)}, ${t.failed} failed\n`
     )
   }
@@ -436,8 +594,11 @@ async function main() {
   for (const t of tallies) {
     console.log(
       `${t.label} (${t.companyId}): candidates ${t.candidates}, ` +
-        `${args.dryRun ? `would-import ${t.wouldImport}` : `imported ${t.imported}`}, ` +
-        `existing ${t.skippedExisting}, cross-dup ${t.crossStudioDup}, ` +
+        `${
+          args.dryRun
+            ? `would-import ${t.wouldImport}, would-repair ${t.wouldRepair}`
+            : `imported ${t.imported}, repaired ${t.repaired}, beats-backfilled ${t.beatsBackfilled}`
+        }, existing ${t.skippedExisting}, cross-dup ${t.crossStudioDup}, ` +
         `gate-rejected ${gateRejectedTotal(t)}${formatGateRejects(t)}, ` +
         `${args.dryRun ? '' : `graph-eligible ${t.graphEligible}, wiki-beats ${t.wikiBeats}, `}failed ${t.failed}`
     )
@@ -448,9 +609,12 @@ async function main() {
   console.log(`Candidates:        ${sum((t) => t.candidates)}`)
   if (args.dryRun) {
     console.log(`Would import:      ${sum((t) => t.wouldImport)}`)
+    console.log(`Would repair:      ${sum((t) => t.wouldRepair)}`)
   } else {
     console.log(`Imported:          ${sum((t) => t.imported)}`)
-    console.log(`Graph-eligible:    ${sum((t) => t.graphEligible)} (of this run's imports)`)
+    console.log(`Repaired:          ${sum((t) => t.repaired)}`)
+    console.log(`Beats-backfilled:  ${sum((t) => t.beatsBackfilled)}`)
+    console.log(`Graph-eligible:    ${sum((t) => t.graphEligible)} (of this run's imports + repairs)`)
     console.log(`Wiki beats:        ${sum((t) => t.wikiBeats)}`)
   }
   console.log(`Skipped existing:  ${sum((t) => t.skippedExisting)}`)
@@ -459,14 +623,21 @@ async function main() {
   console.log(`Failed:            ${sum((t) => t.failed)}`)
 
   if (incomplete.length > 0) {
-    console.log(`\n=== Incomplete films (imported, but a later stage failed) ===`)
+    console.log(`\n=== Incomplete films (imported, but a later stage failed; also in ${RUN_LOG_PATH}) ===`)
     for (const f of incomplete) {
       console.log(`tmdbId ${f.tmdbId} ${f.title}: ${f.failedStage} failed: ${f.error}`)
     }
+    console.log('Rerunning the same command repairs zero-review films automatically.')
   }
 
   if (aborted) {
-    console.log('\nRun aborted by SIGINT. Rerun the same command to resume; existing films fast-skip.')
+    console.log('\nRun aborted by signal. Rerun the same command to resume; it also repairs films left half-done.')
+  }
+
+  if (!args.dryRun) {
+    console.log('\nDeferred per-film work. Run once after the import is fully done:')
+    console.log('  npx tsx scripts/backfill-persons.ts        (needs TMDB; run BEFORE cancelling TMDB)')
+    console.log('  npx tsx scripts/backfill-similar-films.ts  (DB-only; run any time)')
   }
 
   // ── Cost checkpoint for Piece 2 ──
@@ -477,13 +648,26 @@ async function main() {
     `  graph-eligible (>= ${MIN_QUALITY_REVIEWS_FOR_GENERATION} quality reviews): ${sweep.graphEligible}  <- multiply this by per-film batch cost`
   )
   console.log(`  below threshold (wiki-beats only):                ${sweep.belowThreshold}`)
+  logEvent({ event: 'run_end', aborted, sweep })
 
   await prisma.$disconnect()
   process.exit(aborted ? 130 : 0)
 }
 
+function warnOnImdbStreak(streak: number): void {
+  if (streak === IMDB_QUOTA_WARN_STREAK) {
+    console.warn(
+      `\nWARNING: ${IMDB_QUOTA_WARN_STREAK} consecutive films with zero IMDb reviews. ` +
+        'The RapidAPI quota may be exhausted. Other sources keep working, so the run continues, ' +
+        `but affected films are logged with imdb: 0 in ${RUN_LOG_PATH}. ` +
+        'Consider Ctrl-C now and resuming after the quota resets.\n'
+    )
+  }
+}
+
 main().catch(async (err) => {
   console.error('Fatal error:', err)
+  logEvent({ event: 'fatal', error: err instanceof Error ? err.message : String(err) })
   await prisma.$disconnect().catch(() => {})
   process.exit(1)
 })
