@@ -61,6 +61,7 @@ import { importMovie, getMovieDetails } from '../src/lib/tmdb'
 import { fetchAllReviews } from '../src/lib/review-fetcher'
 import { generateAndStoreWikiBeats } from '../src/lib/wiki-beat-fallback'
 import { checkCronQualityGates } from '../src/lib/cron-quality-gates'
+import { isAncillaryTitle } from '../src/lib/ancillary-title'
 import {
   isQualityReview,
   MIN_QUALITY_REVIEWS_FOR_GENERATION,
@@ -245,6 +246,7 @@ interface StudioTally {
   wouldImport: number // dry-run counterpart of imported
   wouldRepair: number // dry-run counterpart of repaired + beatsBackfilled
   skippedExisting: number
+  ancillarySkipped: number // existing ancillary content excluded from repair
   crossStudioDup: number
   gateRejected: Record<string, number>
   graphEligible: number // imported or repaired this run with enough quality reviews
@@ -270,6 +272,7 @@ function emptyTally(label: string, companyId: number): StudioTally {
     wouldImport: 0,
     wouldRepair: 0,
     skippedExisting: 0,
+    ancillarySkipped: 0,
     crossStudioDup: 0,
     gateRejected: {},
     graphEligible: 0,
@@ -526,6 +529,14 @@ async function main() {
         })
 
         if (existing) {
+          // Ancillary/bonus content (making-of, BTS, DVD extras) gets no
+          // repair churn; it should not be review-fetched at all.
+          if (isAncillaryTitle(existing.title)) {
+            t.ancillarySkipped++
+            console.log(`${progress} ANCILLARY skip (existing): ${existing.title}`)
+            return
+          }
+
           const hasReviews = existing._count.reviews > 0
           const hasBeats = existing.filmBeats !== null
           const hasGraph = existing.sentimentGraph !== null
@@ -590,6 +601,14 @@ async function main() {
             console.log(`${progress} BEATS ${existing.title}: ${note}`)
             await sleep(DETAIL_DELAY_MS)
           }
+          return
+        }
+
+        // Ancillary/bonus content never imports. Checked on the discover
+        // title, before spending the TMDB detail call.
+        if (isAncillaryTitle(candidate.title)) {
+          t.gateRejected['ancillaryTitle'] = (t.gateRejected['ancillaryTitle'] ?? 0) + 1
+          console.log(`${progress} GATE ancillaryTitle: ${candidate.title}`)
           return
         }
 
@@ -696,7 +715,7 @@ async function main() {
           args.dryRun
             ? `would-import ${t.wouldImport}, would-repair ${t.wouldRepair}`
             : `imported ${t.imported}, repaired ${t.repaired}, beats-backfilled ${t.beatsBackfilled}`
-        }, existing ${t.skippedExisting}, cross-dup ${t.crossStudioDup}, ` +
+        }, existing ${t.skippedExisting}, ancillary ${t.ancillarySkipped}, cross-dup ${t.crossStudioDup}, ` +
         `gate-rejected ${gateRejectedTotal(t)}${formatGateRejects(t)}, ` +
         `${args.dryRun ? '' : `graph-eligible ${t.graphEligible}, wiki-beats ${t.wikiBeats}, `}failed ${t.failed}`
     )
@@ -716,6 +735,7 @@ async function main() {
     console.log(`Wiki beats:        ${sum((t) => t.wikiBeats)}`)
   }
   console.log(`Skipped existing:  ${sum((t) => t.skippedExisting)}`)
+  console.log(`Ancillary skipped: ${sum((t) => t.ancillarySkipped)} (existing bonus content excluded from repair)`)
   console.log(`Cross-studio dup:  ${sum((t) => t.crossStudioDup)}`)
   console.log(`Gate-rejected:     ${sum(gateRejectedTotal)}`)
   console.log(`Failed:            ${sum((t) => t.failed)}`)
