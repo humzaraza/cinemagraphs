@@ -64,4 +64,41 @@ describe('checkCronQualityGates', () => {
     )
     expect(result).toEqual({ pass: true })
   })
+
+  it('passes a documentary when allowDocumentaries is set', () => {
+    const result = checkCronQualityGates(
+      makeMovie({ genres: [{ id: 99, name: 'Documentary' }] }),
+      { allowDocumentaries: true }
+    )
+    expect(result).toEqual({ pass: true })
+  })
+
+  it('still skips a TV Movie when allowDocumentaries is set', () => {
+    const result = checkCronQualityGates(
+      makeMovie({ genres: [{ id: 10770, name: 'TV Movie' }] }),
+      { allowDocumentaries: true }
+    )
+    expect(result).toEqual({ pass: false, reason: 'excludedGenre' })
+  })
+
+  it('still skips a documentary TV Movie when allowDocumentaries is set', () => {
+    const result = checkCronQualityGates(
+      makeMovie({
+        genres: [
+          { id: 99, name: 'Documentary' },
+          { id: 10770, name: 'TV Movie' },
+        ],
+      }),
+      { allowDocumentaries: true }
+    )
+    expect(result).toEqual({ pass: false, reason: 'excludedGenre' })
+  })
+
+  it('other gates still apply when allowDocumentaries is set', () => {
+    const result = checkCronQualityGates(
+      makeMovie({ genres: [{ id: 99, name: 'Documentary' }], vote_count: 10 }),
+      { allowDocumentaries: true }
+    )
+    expect(result).toEqual({ pass: false, reason: 'lowVotes' })
+  })
 })
