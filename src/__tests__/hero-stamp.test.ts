@@ -44,6 +44,18 @@ describe('stampHeroFeatured', () => {
     expect(update).toHaveBeenCalledTimes(1)
   })
 
+  it('writes across the Toronto midnight boundary (stamped 23:59, invoked 00:01)', async () => {
+    // 03:59 UTC Jun 11 = 23:59 Toronto Jun 10; 04:01 UTC = 00:01 Toronto Jun 11.
+    const lateNight = new Date('2026-06-11T03:59:00Z')
+    const justAfterMidnight = new Date('2026-06-11T04:01:00Z')
+    findUnique.mockResolvedValue({ lastFeaturedAt: lateNight })
+    expect(await stampHeroFeatured('f1', justAfterMidnight)).toBe(true)
+    expect(update).toHaveBeenCalledWith({
+      where: { filmId: 'f1' },
+      data: { lastFeaturedAt: justAfterMidnight },
+    })
+  })
+
   it('skips the write on a second same-day invocation', async () => {
     findUnique.mockResolvedValue({ lastFeaturedAt: null })
     expect(await stampHeroFeatured('f1', when)).toBe(true)
