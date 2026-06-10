@@ -114,6 +114,8 @@ export const PERFECT_ENDING_ABOVE_MEAN = 1.0
 export const SLOW_BURN_NET_RISE = 1.5
 export const SLOW_BURN_MAX_DIP = 1.0 // largest allowed single-step drop
 export const SLOW_BURN_MIN_RISING_RATIO = 0.6 // >= 60% of steps non-negative
+export const SLOW_BURN_MAX_START = 7.2 // first beat must start at or below this
+export const SLOW_BURN_MIN_ENDING = 7.5 // final beat must land at or above this
 export const HIDDEN_PEAK_MIN_POS = 0.25 // peak position within beat-span
 export const HIDDEN_PEAK_MAX_POS = 0.75
 export const HIDDEN_PEAK_FALL_FROM_PEAK = 1.0 // final this far below peak
@@ -198,12 +200,15 @@ export function classifyArcShape(
 
   const tags: ArcShape[] = []
 
-  // Slow burn: net rise, no big single dip, mostly rising. The ratio clause
+  // Slow burn: net rise, no big single dip, mostly rising, starting low enough
+  // and ending high enough that the burn actually pays off. The ratio clause
   // keeps "flat with one late jump" from leaking in.
   if (
     final.score - first.score >= SLOW_BURN_NET_RISE &&
     !steps.some((d) => d < -SLOW_BURN_MAX_DIP) &&
-    risingRatio >= SLOW_BURN_MIN_RISING_RATIO
+    risingRatio >= SLOW_BURN_MIN_RISING_RATIO &&
+    first.score <= SLOW_BURN_MAX_START &&
+    final.score >= SLOW_BURN_MIN_ENDING
   ) {
     tags.push('slow burn')
   }

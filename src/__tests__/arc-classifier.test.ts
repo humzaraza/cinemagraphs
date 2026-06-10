@@ -21,8 +21,20 @@ describe('classifyArcShape', () => {
   })
 
   it('slow burn without perfect ending when the final beat is not the max', () => {
-    const tags = classifyArcShape(pts([5, 5.5, 7.0, 6.0, 6.8]), 6)
+    const tags = classifyArcShape(pts([5, 5.5, 7.8, 7.0, 7.7]), 6)
     expect(tags).toEqual(['slow burn'])
+  })
+
+  it('no slow burn when the first beat starts above SLOW_BURN_MAX_START', () => {
+    // climbs cleanly but starts at 7.3 > 7.2; perfect ending still fires.
+    const tags = classifyArcShape(pts([7.3, 7.8, 8.3, 8.8, 9.3]), 8.7)
+    expect(tags).not.toContain('slow burn')
+  })
+
+  it('no slow burn when the final beat lands below SLOW_BURN_MIN_ENDING', () => {
+    // nets +1.6 but only reaches 7.4 < 7.5.
+    const tags = classifyArcShape(pts([5.8, 6.2, 6.6, 7.0, 7.4]), 6.6)
+    expect(tags).not.toContain('slow burn')
   })
 
   it('hidden peak: mid-runtime peak with a fall to the end', () => {
