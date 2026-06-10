@@ -1,12 +1,13 @@
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
 import { withDerivedFields } from '@/lib/films'
-import { cachedQuery, TTL } from '@/lib/cache'
+import { cachedQuery } from '@/lib/cache'
 import {
   fetchHeroCandidates,
   pickDailyHero,
   stampHeroFeatured,
   heroDateParts,
+  secondsUntilHeroMidnight,
 } from '@/lib/hero'
 
 // The pick depends on the wall-clock date, so never prerender this.
@@ -21,7 +22,9 @@ export async function GET() {
     // mid-day recompute (cache miss) yields the same film.
     const cacheKey = `hero:${year}-${month}-${day}`
 
-    const payload = await cachedQuery(cacheKey, TTL.HOMEPAGE, async () => {
+    // Expire the entry at the next HERO_TIMEZONE midnight, when the day key
+    // rolls over anyway, instead of recomputing every fixed TTL all day.
+    const payload = await cachedQuery(cacheKey, secondsUntilHeroMidnight(now), async () => {
       const candidates = await fetchHeroCandidates()
       const pick = pickDailyHero(candidates, now)
       if (!pick) {
