@@ -22,12 +22,15 @@
  * quality, and IMDb counts, so partial runs and quota incidents can be
  * audited and repaired after the fact.
  *
- * Quality gates: cron parity via checkCronQualityGates, with ONE difference:
- * Documentaries are ALLOWED (allowDocumentaries: true). TV Movies stay
- * excluded, as do low-vote, low-popularity, short, poster-less, and
- * overview-less films. The gate runs on fresh TMDB details BEFORE import,
- * so rejects cost one TMDB call and zero DB writes. Repairs of films already
- * in the DB intentionally skip the gate.
+ * Quality gates: cron parity via checkCronQualityGates, with TWO differences:
+ * Documentaries are ALLOWED (allowDocumentaries: true), and the popularity
+ * floor is SKIPPED (skipPopularityCheck: true; TMDB popularity is a
+ * current-trending metric and would permanently reject famous older films
+ * in a one-shot archival pull). TV Movies stay excluded, as do low-vote,
+ * short, poster-less, and overview-less films. The cron keeps both original
+ * gates. The gate runs on fresh TMDB details BEFORE import, so rejects cost
+ * one TMDB call and zero DB writes. Repairs of films already in the DB
+ * intentionally skip the gate.
  *
  * GATED: this mutates the shared Neon (prod/preview) database. Do not run
  * without explicit go-ahead. Even --dry-run reads prod (existence checks and
@@ -525,7 +528,10 @@ async function main() {
         //    one duplicate TMDB call per accepted film is the price of
         //    gating before any DB write).
         const details = await getMovieDetails(candidate.id)
-        const gate = checkCronQualityGates(details, { allowDocumentaries: true })
+        const gate = checkCronQualityGates(details, {
+          allowDocumentaries: true,
+          skipPopularityCheck: true,
+        })
         if (!gate.pass) {
           t.gateRejected[gate.reason] = (t.gateRejected[gate.reason] ?? 0) + 1
           console.log(`${progress} GATE ${gate.reason}: ${details.title}`)

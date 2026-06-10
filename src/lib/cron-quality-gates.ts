@@ -28,6 +28,14 @@ export interface QualityGateOptions {
    * cron behavior: both genres excluded.
    */
   allowDocumentaries?: boolean
+  /**
+   * Skip the MIN_POPULARITY floor. TMDB popularity is a current-trending
+   * metric, so the floor permanently rejects famous older films that simply
+   * are not trending right now; one-shot archival imports skip it while the
+   * cron (which evaluates new releases) keeps it. The vote floor still
+   * filters junk. Default false, which preserves the original cron behavior.
+   */
+  skipPopularityCheck?: boolean
 }
 
 const MIN_VOTES = 30
@@ -52,7 +60,7 @@ export function checkCronQualityGates(
     return { pass: false, reason: 'lowVotes' }
   }
 
-  if ((movie.popularity ?? 0) < MIN_POPULARITY) {
+  if (!options.skipPopularityCheck && (movie.popularity ?? 0) < MIN_POPULARITY) {
     return { pass: false, reason: 'lowPopularity' }
   }
 
