@@ -5,9 +5,35 @@ import { withDerivedFields } from '@/lib/films'
 import { cachedQuery, TTL } from '@/lib/cache'
 import { computeSwingMagnitude } from '@/lib/sentiment-metrics'
 import { ARC_SHAPES } from '@/lib/arc-classifier'
+import { getMobileOrServerSession } from '@/lib/mobile-auth'
+import { getReviewedFilmIds, attachUserHasReviewed } from '@/lib/user-review-flags'
+
+// Enriched responses carry per-user data and must never be cached by a
+// shared layer (CDN or browser shared cache). Anonymous responses keep
+// today's headers untouched.
+const PRIVATE_CACHE_HEADERS = { headers: { 'Cache-Control': 'private, no-store' } }
 
 export async function GET(request: NextRequest) {
   try {
+    // Best-effort session, like the detail route: any auth failure means the
+    // request proceeds as anonymous rather than 500ing a public list.
+    let userId: string | null = null
+    try {
+      const session = await getMobileOrServerSession()
+      userId = session?.user?.id ?? null
+    } catch {
+      // Auth failure on a public endpoint is non-fatal.
+    }
+
+    // Per-user merge, applied AFTER any cachedQuery resolves so the flag
+    // never enters the shared Redis payload. Returns new objects; the
+    // cached array and its films are never mutated.
+    const withUserFlags = async <T extends { id: string }>(films: T[]): Promise<T[]> => {
+      if (!userId) return films
+      const reviewed = await getReviewedFilmIds(userId, films.map((f) => f.id))
+      return attachUserHasReviewed(films, reviewed)
+    }
+
     const searchParams = request.nextUrl.searchParams
     const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
     const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '24')))
@@ -111,15 +137,18 @@ export async function GET(request: NextRequest) {
       const total = allMatches.length
       const films = allMatches.slice(skip, skip + limit)
 
-      return Response.json({
-        films: films.map(withDerivedFields),
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
+      return Response.json(
+        {
+          films: await withUserFlags(films.map(withDerivedFields)),
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
         },
-      })
+        userId ? PRIVATE_CACHE_HEADERS : undefined,
+      )
     }
 
     // sort=swing: rank by computed swing magnitude (abs(peak - low) from the
@@ -165,6 +194,12 @@ export async function GET(request: NextRequest) {
           pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
         }
       })
+      if (userId) {
+        return Response.json(
+          { films: await withUserFlags(payload.films), pagination: payload.pagination },
+          PRIVATE_CACHE_HEADERS,
+        )
+      }
       return Response.json(payload)
     }
 
@@ -202,6 +237,12 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    if (userId) {
+      return Response.json(
+        { films: await withUserFlags(payload.films), pagination: payload.pagination },
+        PRIVATE_CACHE_HEADERS,
+      )
+    }
     return Response.json(payload)
   } catch (err) {
     apiLogger.error({ err }, 'Failed to fetch films')
