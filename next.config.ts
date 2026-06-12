@@ -1,26 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  async headers() {
-    return [
-      {
-        // Response.json() omits the charset; clients that fall back to
-        // latin1/cp1252 then render UTF-8 text as mojibake.
-        // This rule OVERRIDES route-set content-type headers (verified
-        // locally), so non-JSON routes must be excluded: /api/og/* and
-        // /api/share/* serve image/png, and generate-missing-graphs
-        // streams text/event-stream.
-        source:
-          "/api/:path((?!og/|share/|admin/films/generate-missing-graphs).*)",
-        headers: [
-          {
-            key: "content-type",
-            value: "application/json; charset=utf-8",
-          },
-        ],
-      },
-    ];
-  },
   turbopack: {
     root: ".",
   },
