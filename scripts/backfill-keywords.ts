@@ -1,12 +1,30 @@
+/**
+ * Backfill TMDB keywords for films that have none.
+ *
+ * Place in the import tail sequence: runs after the studio bulk import
+ * completes, BEFORE backfill-persons.ts and backfill-similar-films.ts, so the
+ * similar-films recompute does not rebake keyword-degraded edges. Requires
+ * TMDB live (TMDB_API_KEY).
+ *
+ * Selects only films whose keywords array is empty; films with non-empty
+ * keywords are never touched. If TMDB has no keywords for a film, nothing is
+ * written, so re-running re-checks those films. Films that gained keywords on
+ * a prior run no longer match the selector, which makes the script idempotent
+ * and naturally resumable.
+ *
+ * Usage:
+ *   npx tsx scripts/backfill-keywords.ts [--dry-run] [--limit N]
+ *
+ *   --dry-run   fetch and report, write nothing
+ *   --limit N   process at most N films (small first run)
+ */
 import './_load-env'
 import './_neon-ws'
 import { PrismaClient } from '../src/generated/prisma/client'
 import { PrismaNeon } from '@prisma/adapter-neon'
+import { getMovieKeywords } from '../src/lib/tmdb'
 
-const TMDB_API_KEY = process.env.TMDB_API_KEY!
-const TMDB_BASE_URL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3'
-
-if (!TMDB_API_KEY) {
+if (!process.env.TMDB_API_KEY) {
   console.error('TMDB_API_KEY not found in environment')
   process.exit(1)
 }
@@ -14,90 +32,80 @@ if (!TMDB_API_KEY) {
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! })
 const prisma = new PrismaClient({ adapter })
 
-interface TMDBKeyword {
-  id: number
-  name: string
-}
-
-interface TMDBKeywordsResponse {
-  id: number
-  keywords: TMDBKeyword[]
-}
-
-async function fetchKeywords(tmdbId: number): Promise<string[]> {
-  const res = await fetch(`${TMDB_BASE_URL}/movie/${tmdbId}/keywords`, {
-    headers: { Authorization: `Bearer ${TMDB_API_KEY}` },
-  })
-  if (!res.ok) throw new Error(`TMDB ${res.status}: ${res.statusText}`)
-  const data = (await res.json()) as TMDBKeywordsResponse
-  return data.keywords.map((k) => k.name.toLowerCase())
-}
+// Same delay convention as the sequential TMDB calls in bulk-import-tmdb.ts.
+const RATE_LIMIT_DELAY_MS = 250
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-const BATCH_SIZE = 35
-const RATE_LIMIT_DELAY_MS = 10_000
+function parseArgs(): { dryRun: boolean; limit: number | undefined } {
+  const dryRun = process.argv.includes('--dry-run')
+  let limit: number | undefined
+  const limitIdx = process.argv.indexOf('--limit')
+  if (limitIdx !== -1) {
+    limit = Number(process.argv[limitIdx + 1])
+    if (!Number.isInteger(limit) || limit <= 0) {
+      console.error('Usage: npx tsx scripts/backfill-keywords.ts [--dry-run] [--limit N]')
+      process.exit(1)
+    }
+  }
+  return { dryRun, limit }
+}
 
 async function main() {
-  const force = process.argv.includes('--force')
-  console.log(`Backfill mode: ${force ? 'FORCE (re-fetch all)' : 'idempotent (skip non-empty)'}`)
+  const { dryRun, limit } = parseArgs()
+  console.log(`Mode: ${dryRun ? 'DRY RUN (no writes)' : 'live'}${limit ? `, limit ${limit}` : ''}\n`)
 
+  // tmdbId is non-nullable (Int @unique) in the schema, so a film without one
+  // cannot exist; no skip path is needed for that case.
   const films = await prisma.film.findMany({
-    select: { id: true, title: true, tmdbId: true, keywords: true },
+    where: { keywords: { isEmpty: true } },
+    select: { id: true, title: true, tmdbId: true },
     orderBy: { title: 'asc' },
+    ...(limit ? { take: limit } : {}),
   })
+  console.log(`Films with empty keywords selected: ${films.length}\n`)
 
-  const todo = force ? films : films.filter((f) => f.keywords.length === 0)
-  console.log(`Total films: ${films.length}  |  Needs backfill: ${todo.length}\n`)
-  if (todo.length === 0) {
-    await prisma.$disconnect()
-    return
-  }
+  let gained = 0
+  let tmdbHasNone = 0
+  const errors: string[] = []
 
-  let updated = 0
-  let emptyResults = 0
-  const failures: string[] = []
-
-  for (let i = 0; i < todo.length; i += BATCH_SIZE) {
-    const batch = todo.slice(i, i + BATCH_SIZE)
-    const results = await Promise.allSettled(
-      batch.map(async (film, idx) => {
-        const n = i + idx + 1
-        const keywords = await fetchKeywords(film.tmdbId)
-        await prisma.film.update({ where: { id: film.id }, data: { keywords } })
-        console.log(`[${n}/${todo.length}] ${film.title}  →  ${keywords.length} keywords`)
-        return keywords.length
-      }),
-    )
-
-    for (let j = 0; j < results.length; j++) {
-      const r = results[j]
-      if (r.status === 'fulfilled') {
-        updated++
-        if (r.value === 0) emptyResults++
+  for (let i = 0; i < films.length; i++) {
+    const film = films[i]
+    const n = `[${i + 1}/${films.length}]`
+    try {
+      const keywords = await getMovieKeywords(film.tmdbId)
+      if (keywords.length === 0) {
+        tmdbHasNone++
+        console.log(`${n} ${film.title}: TMDB has none`)
       } else {
-        failures.push(`${batch[j].title} (tmdbId=${batch[j].tmdbId}): ${r.reason}`)
-        console.error(`  ✗ Failed: ${batch[j].title} — ${r.reason}`)
+        if (!dryRun) {
+          await prisma.film.update({ where: { id: film.id }, data: { keywords } })
+        }
+        gained++
+        console.log(`${n} ${film.title}: ${keywords.length} keywords${dryRun ? ' (not written)' : ''}`)
       }
+    } catch (err) {
+      errors.push(`${film.title} (tmdbId=${film.tmdbId}): ${err}`)
+      console.error(`${n} ✗ ${film.title}: ${err}`)
     }
 
-    if (i + BATCH_SIZE < todo.length) {
-      console.log(`  → Batch done. Waiting ${RATE_LIMIT_DELAY_MS / 1000}s for rate limit...\n`)
+    if (i < films.length - 1) {
       await sleep(RATE_LIMIT_DELAY_MS)
     }
   }
 
   console.log('\n═══════════════════════════════════════════')
-  console.log('         KEYWORDS BACKFILL COMPLETE')
+  console.log(`     KEYWORDS BACKFILL ${dryRun ? 'DRY RUN ' : ''}COMPLETE`)
   console.log('═══════════════════════════════════════════')
-  console.log(`Films updated:       ${updated}`)
-  console.log(`Empty keyword sets:  ${emptyResults}`)
-  console.log(`Failures:            ${failures.length}`)
-  if (failures.length > 0) {
-    console.log('\nFailed films:')
-    failures.forEach((f) => console.log(`  - ${f}`))
+  console.log(`Total selected:      ${films.length}`)
+  console.log(`Gained keywords:     ${gained}${dryRun ? ' (dry run, nothing written)' : ''}`)
+  console.log(`TMDB has none:       ${tmdbHasNone}`)
+  console.log(`Errors:              ${errors.length}`)
+  if (errors.length > 0) {
+    console.log('\nFailed films (skipped, re-run to retry):')
+    errors.forEach((e) => console.log(`  - ${e}`))
   }
 
   await prisma.$disconnect()
