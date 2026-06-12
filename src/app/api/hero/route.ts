@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
 import { withDerivedFields } from '@/lib/films'
 import { cachedQuery } from '@/lib/cache'
+import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import {
   fetchHeroCandidates,
   pickDailyHero,
@@ -72,6 +73,32 @@ export async function GET() {
 
     if (!payload) {
       return Response.json({ film: null, angle: null }, { status: 200 })
+    }
+
+    // Best-effort session, like the detail route: any auth failure means the
+    // request proceeds as anonymous rather than 500ing a public endpoint.
+    let userId: string | null = null
+    try {
+      const session = await getMobileOrServerSession()
+      userId = session?.user?.id ?? null
+    } catch {
+      // Auth failure on a public endpoint is non-fatal.
+    }
+
+    // Per-user merge AFTER the cache read, on fresh objects only: the flag
+    // must never reach the shared Redis payload, so never assign onto
+    // `payload` or `payload.film`. Enriched responses are per-user and must
+    // not be cached by any shared layer; anonymous responses keep today's
+    // headers untouched.
+    if (userId && payload.film) {
+      const row = await prisma.userReview.findUnique({
+        where: { userId_filmId: { userId, filmId: payload.film.id } },
+        select: { id: true },
+      })
+      return Response.json(
+        { ...payload, film: { ...payload.film, userHasReviewed: Boolean(row) } },
+        { headers: { 'Cache-Control': 'private, no-store' } },
+      )
     }
     return Response.json(payload)
   } catch (err) {
