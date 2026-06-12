@@ -168,6 +168,8 @@ model Film {
   rtAudienceScore      Int?
   metacriticScore      Int?
   keywords             String[]              @default([])
+  originalLanguage     String?
+  originCountries      String[]              @default([])
   lastReviewCount      Int                   @default(0)
   nowPlaying           Boolean               @default(false)
   nowPlayingOverride   String?               // null = auto (TMDB), "force_show", "force_hide"
