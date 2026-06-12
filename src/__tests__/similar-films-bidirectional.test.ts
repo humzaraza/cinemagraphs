@@ -6,6 +6,7 @@ interface FilmRow {
   genres: string[]
   director: string | null
   releaseDate: Date | null
+  originalLanguage: string | null
 }
 
 const mocks = vi.hoisted(() => ({
@@ -43,6 +44,7 @@ const CATALOG_DEFAULT: FilmRow[] = [
     genres: ['Action', 'Sci-Fi'],
     director: 'Nolan',
     releaseDate: baseDate(2010),
+    originalLanguage: null,
   },
   {
     id: 'A',
@@ -50,6 +52,7 @@ const CATALOG_DEFAULT: FilmRow[] = [
     genres: ['Action', 'Sci-Fi'],
     director: 'Nolan',
     releaseDate: baseDate(2010),
+    originalLanguage: null,
   },
   {
     id: 'B',
@@ -57,6 +60,7 @@ const CATALOG_DEFAULT: FilmRow[] = [
     genres: ['Action'],
     director: 'Nolan',
     releaseDate: baseDate(2012),
+    originalLanguage: null,
   },
   {
     id: 'C',
@@ -64,6 +68,7 @@ const CATALOG_DEFAULT: FilmRow[] = [
     genres: ['Sci-Fi'],
     director: 'Nolan',
     releaseDate: baseDate(2014),
+    originalLanguage: null,
   },
   {
     // Era is the trickiest sink: ≤30 years from S (2010) still yields era=0.3
@@ -74,6 +79,7 @@ const CATALOG_DEFAULT: FilmRow[] = [
     genres: ['Romance'],
     director: 'Ephron',
     releaseDate: baseDate(1970),
+    originalLanguage: null,
   },
   {
     id: 'E',
@@ -81,6 +87,7 @@ const CATALOG_DEFAULT: FilmRow[] = [
     genres: [],
     director: null,
     releaseDate: null,
+    originalLanguage: null,
   },
 ]
 
@@ -165,8 +172,8 @@ describe('recomputeSimilarFilmsForFilm — bidirectional', () => {
   it('does no bidirectional work when the source has zero scoring matches', async () => {
     // Catalog where the source has no overlap with anyone: every signal returns 0.
     primePrismaMock([
-      { id: 'S', keywords: [], genres: [], director: null, releaseDate: null },
-      { id: 'X', keywords: ['unrelated'], genres: ['Romance'], director: 'OtherDir', releaseDate: baseDate(1900) },
+      { id: 'S', keywords: [], genres: [], director: null, releaseDate: null, originalLanguage: null },
+      { id: 'X', keywords: ['unrelated'], genres: ['Romance'], director: 'OtherDir', releaseDate: baseDate(1900), originalLanguage: null },
     ])
     const { transaction, calls } = makeTransactionRunner()
     mocks.prisma.$transaction.mockImplementation(transaction)

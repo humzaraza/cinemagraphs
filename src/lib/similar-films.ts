@@ -19,12 +19,20 @@ export const WEIGHTS = {
 
 export const DEFAULT_TOP_N = 20
 
+// Flat bonus added when both films share a non-English original language.
+// Applied after the weighted sum (not a weighted signal): language identity
+// is a cultural-context marker, not a graded similarity, so it either applies
+// or it does not. English is excluded because en/en pairs are the catalog
+// majority and the bonus would just inflate every score.
+export const LANGUAGE_AFFINITY_BONUS = 0.2
+
 export interface FilmForScoring {
   id: string
   keywords: string[]
   genres: string[]
   director: string | null
   releaseDate: Date | null
+  originalLanguage: string | null
 }
 
 export interface SimilarityBreakdown {
@@ -43,6 +51,12 @@ export interface SimilarityResult {
    * possible degraded score is the sum of the non-keyword weights (0.45).
    */
   keywordsDegraded: boolean
+  /**
+   * The language-affinity bonus applied to the score: LANGUAGE_AFFINITY_BONUS
+   * when both films share a non-English original language, 0 otherwise.
+   * Recorded in matchSignals (like keywordsDegraded) for diagnostics.
+   */
+  languageAffinity: number
 }
 
 export interface ScoredCandidate {
@@ -50,6 +64,7 @@ export interface ScoredCandidate {
   score: number
   signals: SimilarityBreakdown
   keywordsDegraded: boolean
+  languageAffinity: number
 }
 
 /**
@@ -154,6 +169,14 @@ function getYear(date: Date | null): number | null {
  * possible degraded score is therefore the sum of the non-keyword weights
  * (0.45), which is intentional: a candidate with missing data should rank
  * below any well-formed candidate that scores above 0.45.
+ *
+ * Language affinity: when both films share a non-English original language,
+ * LANGUAGE_AFFINITY_BONUS is added after the weighted sum and the final score
+ * is capped at 1.0. English and missing languages never earn the bonus.
+ * The bonus deliberately stacks with degraded mode: a same-language pair with
+ * sparse keywords can exceed the 0.45 degraded ceiling (up to 0.65). That is
+ * the rescue case the signal exists for: culturally specific films whose
+ * TMDB keywords are too thin to register otherwise.
  */
 export function scorePair(source: FilmForScoring, candidate: FilmForScoring): SimilarityResult {
   const keywordsDegraded = source.keywords.length === 0 || candidate.keywords.length === 0
@@ -164,13 +187,24 @@ export function scorePair(source: FilmForScoring, candidate: FilmForScoring): Si
     era: eraScore(getYear(source.releaseDate), getYear(candidate.releaseDate)),
   }
 
-  const score =
+  const languageAffinity =
+    source.originalLanguage &&
+    candidate.originalLanguage &&
+    source.originalLanguage !== 'en' &&
+    candidate.originalLanguage !== 'en' &&
+    source.originalLanguage === candidate.originalLanguage
+      ? LANGUAGE_AFFINITY_BONUS
+      : 0
+
+  const weighted =
     WEIGHTS.keywords * signals.keywords +
     WEIGHTS.genres * signals.genres +
     WEIGHTS.director * signals.director +
     WEIGHTS.era * signals.era
 
-  return { score, signals, keywordsDegraded }
+  const score = Math.min(1, weighted + languageAffinity)
+
+  return { score, signals, keywordsDegraded, languageAffinity }
 }
 
 /**
@@ -185,9 +219,9 @@ export function computeTopSimilarFor(
   const scored: ScoredCandidate[] = []
   for (const candidate of candidates) {
     if (candidate.id === source.id) continue
-    const { score, signals, keywordsDegraded } = scorePair(source, candidate)
+    const { score, signals, keywordsDegraded, languageAffinity } = scorePair(source, candidate)
     if (score <= 0) continue
-    scored.push({ filmId: candidate.id, score, signals, keywordsDegraded })
+    scored.push({ filmId: candidate.id, score, signals, keywordsDegraded, languageAffinity })
   }
   scored.sort((a, b) => b.score - a.score)
   return scored.slice(0, n)
@@ -199,6 +233,7 @@ const SCORING_SELECT = {
   genres: true,
   director: true,
   releaseDate: true,
+  originalLanguage: true,
 } as const
 
 /**
@@ -217,7 +252,11 @@ async function writeTopForFilm(filmId: string, top: ScoredCandidate[]): Promise<
               filmId,
               similarFilmId: t.filmId,
               similarityScore: t.score,
-              matchSignals: { ...t.signals, keywordsDegraded: t.keywordsDegraded },
+              matchSignals: {
+                ...t.signals,
+                keywordsDegraded: t.keywordsDegraded,
+                languageAffinity: t.languageAffinity,
+              },
             })),
           }),
         ]
