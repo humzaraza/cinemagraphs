@@ -22,6 +22,9 @@ interface TMDBMovie {
   vote_average?: number
   vote_count?: number
   popularity?: number
+  original_language?: string
+  production_countries?: { iso_3166_1: string; name: string }[]
+  origin_country?: string[]
 }
 
 interface TMDBCredits {
@@ -208,6 +211,11 @@ export async function importMovie(tmdbId: number) {
       imdbRating: movie.vote_average ?? null,
       imdbVotes: movie.vote_count ?? null,
       keywords,
+      originalLanguage: movie.original_language ?? null,
+      // origin_country is TMDB's curated origin signal (bare ISO 3166-1
+      // codes); production_countries is the fallback when it is absent.
+      originCountries:
+        movie.origin_country ?? movie.production_countries?.map((c) => c.iso_3166_1) ?? [],
     },
   })
 
