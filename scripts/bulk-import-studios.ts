@@ -198,6 +198,13 @@ function sleep(ms: number) {
 function errMsg(err: unknown): string {
   if (err instanceof Error) return err.message
   if (typeof err === 'object' && err !== null) {
+    // Neon/Prisma sometimes throw non-Error objects whose .message is
+    // non-enumerable: JSON.stringify drops it, which both hides the real
+    // error and defeats isConnectionError (observed: a connection drop
+    // serialized as {"clientVersion":"7.8.0"} and burned 119 candidates
+    // because the retry path never engaged).
+    const message = (err as { message?: unknown }).message
+    if (typeof message === 'string' && message.length > 0) return message
     try {
       return JSON.stringify(err).slice(0, 300)
     } catch {
