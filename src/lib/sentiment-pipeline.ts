@@ -249,7 +249,17 @@ export type PrepareSentimentInputResult =
  */
 export async function prepareSentimentGraphInput(
   filmId: string,
-  options: { force?: boolean } = {}
+  options: {
+    force?: boolean
+    /**
+     * Skip the live fetchAllReviews refresh and build the prompt from
+     * already-stored reviews. For bulk drains right after a bulk import the
+     * refresh is redundant (reviews are hours old) and adds seconds of
+     * external API churn per film. Default false: cron and admin callers
+     * keep the refresh.
+     */
+    skipReviewRefresh?: boolean
+  } = {}
 ): Promise<PrepareSentimentInputResult> {
   const filmRecord = await prisma.film.findUnique({
     where: { id: filmId },
@@ -320,7 +330,9 @@ export async function prepareSentimentGraphInput(
   )
 
   // Fetch reviews from all sources (stores new ones, dedupes existing)
-  await fetchAllReviews(filmForAnalysis)
+  if (!options.skipReviewRefresh) {
+    await fetchAllReviews(filmForAnalysis)
+  }
 
   // Pull all stored reviews — order by fetchedAt so the slice(0, 40) inside
   // the prompt builder sends the freshest reviews first.
