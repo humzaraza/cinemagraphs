@@ -50,24 +50,10 @@ function filmsRateLimitBucket(
   return { name: 'films-detail', limit: 200 }
 }
 
-// Response.json() in route handlers emits content-type: application/json
-// without a charset; clients that fall back to latin1/cp1252 then render
-// UTF-8 text as mojibake. A next.config headers() rule cannot fix this on
-// Vercel (the function's own headers win there), so the charset is stamped
-// here instead. The exclusion list is path-based: /api/og/* and /api/share/*
-// serve image/png and generate-missing-graphs streams text/event-stream.
-// A future binary or streaming route outside these prefixes must be added
-// here or its content-type gets overwritten.
-function setJsonCharset(pathname: string, response: NextResponse): NextResponse {
-  const excluded =
-    pathname.startsWith('/api/og/') ||
-    pathname.startsWith('/api/share/') ||
-    pathname.startsWith('/api/admin/films/generate-missing-graphs')
-  if (!excluded) {
-    response.headers.set('content-type', 'application/json; charset=utf-8')
-  }
-  return response
-}
+// Note: JSON responses are served without an explicit charset. JSON is
+// UTF-8 by spec, so the header is cosmetic; both next.config headers()
+// rules (#58) and middleware-set response headers (#59) are overridden
+// by the function's own content-type on Vercel, so neither can add it.
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -161,10 +147,10 @@ export async function middleware(request: NextRequest) {
       }
     }
 
-    return setJsonCharset(pathname, response)
+    return response
   }
 
-  return setJsonCharset(pathname, NextResponse.next())
+  return NextResponse.next()
 }
 
 export const config = {
