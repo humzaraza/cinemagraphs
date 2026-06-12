@@ -23,6 +23,7 @@ async function main() {
       genres: true,
       director: true,
       releaseDate: true,
+      originalLanguage: true,
     },
     orderBy: { title: 'asc' },
   })
@@ -34,6 +35,7 @@ async function main() {
     genres: f.genres,
     director: f.director,
     releaseDate: f.releaseDate,
+    originalLanguage: f.originalLanguage,
   }))
 
   console.log('Clearing all existing SimilarFilm rows...')
@@ -61,7 +63,11 @@ async function main() {
           filmId: source.id,
           similarFilmId: t.filmId,
           similarityScore: t.score,
-          matchSignals: { ...t.signals, keywordsDegraded: t.keywordsDegraded },
+          matchSignals: {
+            ...t.signals,
+            keywordsDegraded: t.keywordsDegraded,
+            languageAffinity: t.languageAffinity,
+          },
         })
       }
     }

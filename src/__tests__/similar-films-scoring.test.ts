@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   WEIGHTS,
+  LANGUAGE_AFFINITY_BONUS,
   jaccard,
   cappedIntersection,
   directorScore,
@@ -17,6 +18,7 @@ function film(over: Partial<FilmForScoring>): FilmForScoring {
     genres: over.genres ?? [],
     director: over.director ?? null,
     releaseDate: over.releaseDate ?? null,
+    originalLanguage: over.originalLanguage ?? null,
   }
 }
 
@@ -215,6 +217,85 @@ describe('scorePair', () => {
     })
     const r = scorePair(inception, candidateNoKw)
     expect(r.keywordsDegraded).toBe(true)
+  })
+
+  it('adds the language affinity bonus for a same-language non-English pair', () => {
+    const a = film({
+      id: 'a',
+      keywords: ['poetic'],
+      genres: ['Drama'],
+      releaseDate: new Date('1997-01-01'),
+      originalLanguage: 'fa',
+    })
+    const b = film({
+      id: 'b',
+      keywords: ['poetic'],
+      genres: ['Drama'],
+      releaseDate: new Date('1997-01-01'),
+      originalLanguage: 'fa',
+    })
+    const r = scorePair(a, b)
+    expect(r.languageAffinity).toBe(LANGUAGE_AFFINITY_BONUS)
+
+    const weighted =
+      WEIGHTS.keywords * cappedIntersection(a.keywords, b.keywords, 5) +
+      WEIGHTS.genres * 1 +
+      WEIGHTS.era * 1
+    expect(r.score).toBeCloseTo(weighted + LANGUAGE_AFFINITY_BONUS)
+  })
+
+  it('gives no bonus to an en/en pair even when otherwise identical', () => {
+    const a = film({ id: 'a', keywords: ['k'], genres: ['Drama'], originalLanguage: 'en' })
+    const b = film({ id: 'b', keywords: ['k'], genres: ['Drama'], originalLanguage: 'en' })
+    const r = scorePair(a, b)
+    expect(r.languageAffinity).toBe(0)
+  })
+
+  it('gives no bonus across languages (en vs fa)', () => {
+    const a = film({ id: 'a', keywords: ['k'], genres: ['Drama'], originalLanguage: 'en' })
+    const b = film({ id: 'b', keywords: ['k'], genres: ['Drama'], originalLanguage: 'fa' })
+    expect(scorePair(a, b).languageAffinity).toBe(0)
+    expect(scorePair(b, a).languageAffinity).toBe(0)
+  })
+
+  it('gives no bonus when either language is null', () => {
+    const fa = film({ id: 'a', keywords: ['k'], originalLanguage: 'fa' })
+    const unknown = film({ id: 'b', keywords: ['k'], originalLanguage: null })
+    expect(scorePair(fa, unknown).languageAffinity).toBe(0)
+    expect(scorePair(unknown, fa).languageAffinity).toBe(0)
+    expect(scorePair(unknown, { ...unknown, id: 'c' }).languageAffinity).toBe(0)
+  })
+
+  it('caps the final score at 1.0 when the bonus would exceed it', () => {
+    const a = film({
+      id: 'a',
+      keywords: ['k1', 'k2', 'k3', 'k4', 'k5'],
+      genres: ['Drama'],
+      director: 'Kiarostami',
+      releaseDate: new Date('1997-01-01'),
+      originalLanguage: 'fa',
+    })
+    const b = { ...a, id: 'b' }
+    const r = scorePair(a, b)
+    // All four signals maxed: weighted sum is exactly 1.0; the bonus applies
+    // but the cap holds.
+    expect(r.languageAffinity).toBe(LANGUAGE_AFFINITY_BONUS)
+    expect(r.score).toBe(1)
+  })
+
+  it('lets language affinity lift a degraded pair above the 0.45 ceiling (rescue case)', () => {
+    const a = film({
+      id: 'a',
+      keywords: [],
+      genres: ['Drama'],
+      director: 'Same',
+      releaseDate: new Date('1997-01-01'),
+      originalLanguage: 'fa',
+    })
+    const b = { ...a, id: 'b' }
+    const r = scorePair(a, b)
+    expect(r.keywordsDegraded).toBe(true)
+    expect(r.score).toBeCloseTo(0.45 + LANGUAGE_AFFINITY_BONUS)
   })
 
   it('returns 0 when nothing matches', () => {
