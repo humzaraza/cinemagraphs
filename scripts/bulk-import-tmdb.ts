@@ -51,6 +51,9 @@ interface TMDBMovieDetail {
   genres?: { id: number; name: string }[]
   vote_average?: number
   vote_count?: number
+  original_language?: string
+  production_countries?: { iso_3166_1: string; name: string }[]
+  origin_country?: string[]
 }
 
 interface TMDBCredits {
@@ -195,6 +198,11 @@ async function main() {
           imdbRating: movie.vote_average ?? null,
           imdbVotes: movie.vote_count ?? null,
           keywords,
+          originalLanguage: movie.original_language ?? null,
+          // Same convention as importMovie: origin_country preferred,
+          // production_countries ISO codes as fallback.
+          originCountries:
+            movie.origin_country ?? movie.production_countries?.map((c) => c.iso_3166_1) ?? [],
         },
       })
 
