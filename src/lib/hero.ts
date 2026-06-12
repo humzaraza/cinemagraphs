@@ -25,6 +25,13 @@ export const HERO_NO_REPEAT_DAYS = 14
 export const HERO_MIN_VOTES = 14
 export const HERO_MIN_BEATS = 5 // a "real arc" worth featuring
 
+// Quality floor for the nosedive HERO pool only. The nosedive tag selects on
+// shape (starts high relative to itself, falls), so without a floor the pool
+// admits "started mediocre, got worse" films; a nosedive is only worth the
+// hero card when the fall is from genuine height. Classification is untouched:
+// films keep the nosedive tag for Search/browse rows.
+export const HERO_NOSEDIVE_MIN_PEAK = 7.0
+
 type RankedMetric = 'overallScore' | 'swing'
 
 export type HeroAngle =
@@ -124,6 +131,9 @@ export type HeroCandidate = {
   swing: number
   arcShape: string[]
   lastFeaturedAt: Date | null
+  // peakMoment.score, null when the graph has no peakMoment. Only consulted
+  // by the nosedive floor; null fails the floor (no height to fall from).
+  peakScore: number | null
 }
 
 export type HeroPick = {
@@ -192,11 +202,32 @@ export function pickDailyHero(candidates: HeroCandidate[], now: Date): HeroPick 
   // stays eligible, so today's own stamp does not shrink today's set and the
   // pick stays stable for every request all day. Films featured 1..14 days ago
   // are excluded; 15+ days ago (or never) are kept.
-  const guarded = eligible.filter((c) => {
-    if (!c.lastFeaturedAt) return true
-    const daysAgo = dayNumber - heroDateParts(c.lastFeaturedAt).dayNumber
-    return daysAgo <= 0 || daysAgo > HERO_NO_REPEAT_DAYS
-  })
+  const applyGuard = (pool: HeroCandidate[]) =>
+    pool.filter((c) => {
+      if (!c.lastFeaturedAt) return true
+      const daysAgo = dayNumber - heroDateParts(c.lastFeaturedAt).dayNumber
+      return daysAgo <= 0 || daysAgo > HERO_NO_REPEAT_DAYS
+    })
+
+  // Nosedive runs tiered: (1) floored pool with the guard, (2) unfloored pool
+  // with the guard (usedFallback), (3) the shared repeat-rather-than-nothing
+  // fallback below. The floor is intentionally NOT a static pool-size check:
+  // a floored pool smaller than the guard window still serves tier 1 on most
+  // days and leans on tier 2 only when the guard empties it.
+  if (angle.kind === 'shape' && angle.shape === 'nosedive') {
+    const floored = eligible.filter((c) => (c.peakScore ?? 0) >= HERO_NOSEDIVE_MIN_PEAK)
+    const guardedFloored = applyGuard(floored)
+    if (guardedFloored.length > 0) {
+      return { film: selectFromPool(guardedFloored, angle, dayOfYear), angle, usedFallback: false }
+    }
+    const guardedUnfloored = applyGuard(eligible)
+    if (guardedUnfloored.length > 0) {
+      return { film: selectFromPool(guardedUnfloored, angle, dayOfYear), angle, usedFallback: true }
+    }
+    return { film: selectFromPool(eligible, angle, dayOfYear), angle, usedFallback: true }
+  }
+
+  const guarded = applyGuard(eligible)
 
   // Better to repeat than show nothing.
   const usedFallback = guarded.length === 0
@@ -235,8 +266,14 @@ export async function fetchHeroCandidates(): Promise<HeroCandidate[]> {
   return films.flatMap((f) => {
     const g = f.sentimentGraph
     if (!g) return []
+    const peak = g.peakMoment
+    const peakScore =
+      peak && typeof peak === 'object' && !Array.isArray(peak) && typeof peak.score === 'number'
+        ? peak.score
+        : null
     return [
       {
+        peakScore,
         id: f.id,
         imdbVotes: f.imdbVotes,
         beatCount: Array.isArray(g.dataPoints) ? g.dataPoints.length : 0,
