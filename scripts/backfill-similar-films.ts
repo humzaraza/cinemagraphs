@@ -1,3 +1,10 @@
+/**
+ * Full SimilarFilm rebuild. NOT transactional: deleteMany runs up front, so
+ * the table is empty/partial for the whole run (minutes at ~5k films) and
+ * requests during that window can cache empty lists for up to TTL.FILM (1h).
+ * After every run, flush the film:{id}:similar and film:{id}:detail:similar
+ * Redis keys.
+ */
 import './_load-env'
 import './_neon-ws'
 import { PrismaClient } from '../src/generated/prisma/client'
