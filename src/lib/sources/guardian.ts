@@ -86,8 +86,8 @@ export async function fetchGuardianReviews(
     const toDate = year ? `${year + 2}-12-31` : ''
 
     const queries = [
-      `"${title}" ${year} review`,
-      `"${title}" ${year} film`,
+      `${title} ${year} review`,
+      `${title} ${year} film`,
     ]
 
     const reviews: FetchedReview[] = []
