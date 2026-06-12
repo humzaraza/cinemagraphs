@@ -8,6 +8,7 @@
 import './_load-env'
 import { PrismaClient } from '../src/generated/prisma/client.js'
 import { PrismaNeon } from '@prisma/adapter-neon'
+import { getMovieKeywords } from '../src/lib/tmdb'
 
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! })
 const prisma = new PrismaClient({ adapter })
@@ -144,10 +145,13 @@ async function main() {
     const progress = `[${i + 1}/${newCandidates.length}]`
 
     try {
-      // Fetch full details (need runtime, genres, imdb_id)
-      const [movie, credits] = await Promise.all([
+      // Fetch full details (need runtime, genres, imdb_id). Keywords ride
+      // along like in importMovie: a keywords failure must not block the
+      // import, so it degrades to [].
+      const [movie, credits, keywords] = await Promise.all([
         tmdbFetch<TMDBMovieDetail>(`/movie/${candidate.id}`),
         tmdbFetch<TMDBCredits>(`/movie/${candidate.id}/credits`),
+        getMovieKeywords(candidate.id).catch(() => [] as string[]),
       ])
 
       // Skip shorts (runtime <= 60 min)
@@ -190,6 +194,7 @@ async function main() {
           cast: topCast,
           imdbRating: movie.vote_average ?? null,
           imdbVotes: movie.vote_count ?? null,
+          keywords,
         },
       })
 
