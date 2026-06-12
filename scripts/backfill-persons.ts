@@ -63,6 +63,9 @@ interface TMDBCreditsResponse {
 async function fetchCredits(tmdbId: number): Promise<TMDBCreditsResponse> {
   const res = await fetch(`https://api.themoviedb.org/3/movie/${tmdbId}/credits`, {
     headers: { Authorization: `Bearer ${TMDB_API_KEY}` },
+    // A single hung TMDB request previously froze a whole 35-film batch
+    // forever (Promise.allSettled never resolved). Fail fast instead.
+    signal: AbortSignal.timeout(30_000),
   })
   if (!res.ok) throw new Error(`TMDB ${res.status}: ${res.statusText}`)
   return res.json() as Promise<TMDBCreditsResponse>
@@ -76,7 +79,9 @@ function sleep(ms: number): Promise<void> {
 
 async function main() {
   console.log('Fetching all films from database...')
+  const onlyMissing = process.argv.includes('--only-missing')
   const films = await prisma.film.findMany({
+    where: onlyMissing ? { filmPersons: { none: {} } } : undefined,
     select: { id: true, title: true, tmdbId: true },
     orderBy: { title: 'asc' },
   })
