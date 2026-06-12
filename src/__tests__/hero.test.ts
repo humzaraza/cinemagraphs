@@ -11,6 +11,7 @@ import {
   selectFromPool,
   pickDailyHero,
   HERO_RANKED_POOL_SIZE,
+  HERO_NOSEDIVE_MIN_PEAK,
   type HeroAngle,
   type HeroCandidate,
 } from '@/lib/hero'
@@ -26,6 +27,7 @@ function cand(over: Partial<HeroCandidate> & { id: string }): HeroCandidate {
     swing: over.swing ?? 3,
     arcShape: over.arcShape ?? [],
     lastFeaturedAt: over.lastFeaturedAt ?? null,
+    peakScore: over.peakScore ?? 8,
   }
 }
 
@@ -158,6 +160,65 @@ describe('pickDailyHero eligibility + guard', () => {
     const pick = pickDailyHero(candidates, wed)
     expect(pick?.usedFallback).toBe(true)
     expect(['a', 'b']).toContain(pick?.film.id)
+  })
+
+  it('nosedive tier 1: picks from the floored pool, no fallback', () => {
+    const thu = nowForDow(4) // nosedive day
+    const candidates = [
+      cand({ id: 'tall', arcShape: ['nosedive'], peakScore: 8.2 }),
+      cand({ id: 'short', arcShape: ['nosedive'], peakScore: 4.5 }),
+      cand({ id: 'no-peak', arcShape: ['nosedive'], peakScore: null }),
+    ]
+    const pick = pickDailyHero(candidates, thu)
+    expect(pick?.film.id).toBe('tall')
+    expect(pick?.usedFallback).toBe(false)
+  })
+
+  it('nosedive floor boundary: peak exactly at the floor stays in tier 1', () => {
+    const thu = nowForDow(4)
+    const candidates = [
+      cand({ id: 'edge', arcShape: ['nosedive'], peakScore: HERO_NOSEDIVE_MIN_PEAK }),
+      cand({ id: 'below', arcShape: ['nosedive'], peakScore: HERO_NOSEDIVE_MIN_PEAK - 0.1 }),
+    ]
+    const pick = pickDailyHero(candidates, thu)
+    expect(pick?.film.id).toBe('edge')
+    expect(pick?.usedFallback).toBe(false)
+  })
+
+  it('nosedive tier 2: floored pool fully guard-excluded falls back to unfloored, guard still applied', () => {
+    const thu = nowForDow(4)
+    const recent = new Date(thu.getTime() - 3 * DAY)
+    const candidates = [
+      // Floored pool is NON-empty but every member was featured recently.
+      cand({ id: 'tall-recent', arcShape: ['nosedive'], peakScore: 8, lastFeaturedAt: recent }),
+      // Unfloored, not recently featured: tier 2 winner.
+      cand({ id: 'short-fresh', arcShape: ['nosedive'], peakScore: 5 }),
+      // Unfloored but guard-excluded: must NOT be picked (guard applies in tier 2).
+      cand({ id: 'short-recent', arcShape: ['nosedive'], peakScore: 5, lastFeaturedAt: recent }),
+    ]
+    const pick = pickDailyHero(candidates, thu)
+    expect(pick?.film.id).toBe('short-fresh')
+    expect(pick?.usedFallback).toBe(true)
+  })
+
+  it('nosedive tier 3: guard empties everything, repeats rather than shows nothing', () => {
+    const thu = nowForDow(4)
+    const recent = new Date(thu.getTime() - 3 * DAY)
+    const candidates = [
+      cand({ id: 'a', arcShape: ['nosedive'], peakScore: 8, lastFeaturedAt: recent }),
+      cand({ id: 'b', arcShape: ['nosedive'], peakScore: 5, lastFeaturedAt: recent }),
+    ]
+    const pick = pickDailyHero(candidates, thu)
+    expect(pick).not.toBeNull()
+    expect(pick?.usedFallback).toBe(true)
+    expect(['a', 'b']).toContain(pick?.film.id)
+  })
+
+  it('non-nosedive shape angles ignore the peak floor', () => {
+    const candidates = [cand({ id: 'low-peak', arcShape: ['hidden peak'], peakScore: 4 })]
+    const pick = pickDailyHero(candidates, wed)
+    expect(pick?.film.id).toBe('low-peak')
+    expect(pick?.usedFallback).toBe(false)
   })
 
   it("stamping today's pick does not change today's pick (no midnight race)", () => {
