@@ -234,6 +234,27 @@ async function waitForDbRecovery(): Promise<void> {
   }
 }
 
+/** Same recovery loop as waitForDbRecovery, but probes TMDB. Used when the
+ *  discover pager hits a connection failure (machine offline, DNS dead). */
+async function waitForTmdbRecovery(): Promise<void> {
+  const giveUpAt = Date.now() + 60 * 60_000
+  let delay = 15_000
+  while (!aborted && Date.now() < giveUpAt) {
+    await sleep(delay)
+    try {
+      const res = await fetch(`${TMDB_BASE_URL}/configuration`, {
+        headers: { Authorization: `Bearer ${TMDB_API_KEY}` },
+      })
+      if (!res.ok) throw new Error(`TMDB probe ${res.status}`)
+      console.log('TMDB reachable again, resuming')
+      return
+    } catch {
+      console.log(`TMDB still unreachable, next probe in ${Math.round(delay / 1000)}s`)
+      delay = Math.min(delay * 2, 300_000)
+    }
+  }
+}
+
 // ── Tallies ──
 
 interface StudioTally {
@@ -488,16 +509,29 @@ async function main() {
     const studioTag = `[${s + 1}/${studios.length} ${studio.label}]`
 
     console.log(`${studioTag} paging /discover/movie (with_companies=${studio.id}, popularity.desc)...`)
-    let candidates: DiscoverCandidate[] = []
-    try {
-      candidates = await discoverCompanyFilms(studio.id, args.maxPerStudio)
-    } catch (err) {
-      const msg = errMsg(err)
-      console.error(`${studioTag} discover failed: ${msg}. Skipping studio; rerun to retry it.`)
-      logEvent({ event: 'discover_failed', companyId: studio.id, studio: studio.label, error: msg })
-      tallies.push(emptyTally(studio.label, studio.id))
-      continue
+    // A connection-type discover failure waits for the network and retries
+    // the studio instead of skipping it: an overnight outage previously
+    // burned 7 studios in seconds, one empty tally each.
+    let candidates: DiscoverCandidate[] | null = null
+    for (let discoverAttempt = 1; candidates === null; discoverAttempt++) {
+      try {
+        candidates = await discoverCompanyFilms(studio.id, args.maxPerStudio)
+      } catch (err) {
+        const msg = errMsg(err)
+        if (isConnectionError(msg) && discoverAttempt <= 2 && !aborted) {
+          console.warn(
+            `${studioTag} discover connection error: ${msg.slice(0, 120)}. Probing TMDB before retrying (attempt ${discoverAttempt}/2).`
+          )
+          await waitForTmdbRecovery()
+          continue
+        }
+        console.error(`${studioTag} discover failed: ${msg}. Skipping studio; rerun to retry it.`)
+        logEvent({ event: 'discover_failed', companyId: studio.id, studio: studio.label, error: msg })
+        tallies.push(emptyTally(studio.label, studio.id))
+        break
+      }
     }
+    if (candidates === null) continue
     console.log(`${studioTag} ${candidates.length} unique candidates`)
 
     const t = emptyTally(studio.label, studio.id)
