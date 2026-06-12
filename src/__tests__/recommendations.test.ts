@@ -4,6 +4,7 @@ import {
   scoreCandidates,
   preferredArcTags,
   applyArcBoost,
+  applyQualityWeight,
   SEED_WEIGHT_FLOOR,
   ARC_SEED_MIN_RATING,
   ARC_BOOST_CAP,
@@ -113,5 +114,27 @@ describe('applyArcBoost', () => {
 
   it('applies a single uncapped step for one matching tag', () => {
     expect(applyArcBoost(10, ['slow burn'], new Set(['slow burn']))).toBeCloseTo(11)
+  })
+})
+
+describe('applyQualityWeight', () => {
+  it('returns rankScore unchanged at sentiment 10', () => {
+    expect(applyQualityWeight(13.2, 10)).toBeCloseTo(13.2)
+  })
+
+  it('halves rankScore at sentiment 5', () => {
+    expect(applyQualityWeight(13.2, 5)).toBeCloseTo(6.6)
+  })
+
+  it('zeroes rankScore at sentiment 0', () => {
+    expect(applyQualityWeight(13.2, 0)).toBe(0)
+  })
+
+  it('ranks a high-similarity low-quality candidate below a moderate-similarity high-quality one (the Eragon case)', () => {
+    // From the first live diagnostic: Eragon (high base score, weak sentiment)
+    // outranked The Two Towers (moderate base score, strong sentiment).
+    const eragon = applyQualityWeight(13.2, 4.5)
+    const twoTowers = applyQualityWeight(11.6, 8.7)
+    expect(eragon).toBeLessThan(twoTowers)
   })
 })
