@@ -14,6 +14,8 @@ export const ARC_BOOST_CAP = 0.2
 export const BASE_POOL = 40
 /** Films returned to the client. */
 export const RESULT_LIMIT = 20
+/** Sentiment scores live on a 0-10 scale; 10 means full rank score retained. */
+export const QUALITY_NORMALIZER = 10
 
 export interface RecommendationSeed {
   filmId: string
@@ -97,4 +99,14 @@ export function applyArcBoost(
   }
   const boost = Math.min(ARC_BOOST_CAP, ARC_BOOST_PER_TAG * matched)
   return baseScore * (1 + boost)
+}
+
+/**
+ * Scale a rank score by the candidate's own sentiment quality:
+ * rankScore * (sentimentScore / QUALITY_NORMALIZER). A 10 keeps the rank
+ * score intact; a 5 halves it. Takes a non-null number; candidates without
+ * a sentiment score are the route's job to exclude before ranking.
+ */
+export function applyQualityWeight(rankScore: number, sentimentScore: number): number {
+  return rankScore * (sentimentScore / QUALITY_NORMALIZER)
 }

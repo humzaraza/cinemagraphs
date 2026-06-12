@@ -9,6 +9,7 @@ import {
   scoreCandidates,
   preferredArcTags,
   applyArcBoost,
+  applyQualityWeight,
 } from '@/lib/recommendations'
 
 // Every response from this route is per-user and must never enter a shared
@@ -96,18 +97,20 @@ export async function GET() {
       })),
     )
 
-    const ranked: Array<{ film: (typeof films)[number]; boosted: number }> = []
+    const ranked: Array<{ film: (typeof films)[number]; weighted: number }> = []
     for (const [id, base] of pool) {
       const film = filmsById.get(id)
       if (!film) continue
-      ranked.push({
-        film,
-        boosted: applyArcBoost(base, film.sentimentGraph?.arcShape ?? [], preferred),
-      })
+      // A film without sentiment data cannot be recommended on a sentiment
+      // platform: no quality signal means no rank.
+      const sentimentScore = film.sentimentGraph?.overallScore
+      if (sentimentScore == null) continue
+      const boosted = applyArcBoost(base, film.sentimentGraph?.arcShape ?? [], preferred)
+      ranked.push({ film, weighted: applyQualityWeight(boosted, sentimentScore) })
     }
-    ranked.sort((a, b) => b.boosted - a.boosted || a.film.id.localeCompare(b.film.id))
+    ranked.sort((a, b) => b.weighted - a.weighted || a.film.id.localeCompare(b.film.id))
 
-    // Scores (base, similarity, boost) are internals and stay out of the
+    // Scores (base, similarity, boost, quality weight) are internals and stay out of the
     // response. userHasReviewed is false by construction: reviewed films were
     // excluded. The field exists for client shape consistency.
     return Response.json(
