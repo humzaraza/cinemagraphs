@@ -175,7 +175,24 @@ export async function getMovieKeywords(tmdbId: number): Promise<string[]> {
   return data.keywords.map((k) => k.name.toLowerCase())
 }
 
-export async function importMovie(tmdbId: number) {
+export interface ImportMovieOptions {
+  /**
+   * Skip the per-film Person/FilmPerson credits sync. For bulk imports it is
+   * far cheaper to run scripts/backfill-persons.ts once at the end than to
+   * pay hundreds of sequential queries per film. Default false: existing
+   * callers keep the original behavior.
+   */
+  skipCreditsSync?: boolean
+  /**
+   * Skip the per-film similar-films recompute (a full-catalog read plus up
+   * to 21 write transactions per call). For bulk imports, run
+   * scripts/backfill-similar-films.ts once at the end instead. Default
+   * false: existing callers keep the original behavior.
+   */
+  skipSimilarRecompute?: boolean
+}
+
+export async function importMovie(tmdbId: number, options: ImportMovieOptions = {}) {
   const existing = await prisma.film.findUnique({ where: { tmdbId } })
   if (existing) return existing
 
@@ -220,11 +237,13 @@ export async function importMovie(tmdbId: number) {
   })
 
   // Sync Person/FilmPerson records from credits
-  try {
-    const { syncFilmCredits } = await import('./person-sync')
-    await syncFilmCredits(film.id, tmdbId)
-  } catch {
-    // Credits sync failed. Film still created successfully.
+  if (!options.skipCreditsSync) {
+    try {
+      const { syncFilmCredits } = await import('./person-sync')
+      await syncFilmCredits(film.id, tmdbId)
+    } catch {
+      // Credits sync failed. Film still created successfully.
+    }
   }
 
   // Compute top-20 similar films for the new entry, then recompute each of
@@ -233,11 +252,13 @@ export async function importMovie(tmdbId: number) {
   // (scripts/backfill-similar-films.ts) remain useful for the long tail of
   // films that are not in any new film's top-20 but might still benefit from
   // including new films in their own top-20.
-  try {
-    const { recomputeSimilarFilmsForFilm } = await import('./similar-films')
-    await recomputeSimilarFilmsForFilm(film.id)
-  } catch {
-    // Similarity compute failed. Film still created successfully.
+  if (!options.skipSimilarRecompute) {
+    try {
+      const { recomputeSimilarFilmsForFilm } = await import('./similar-films')
+      await recomputeSimilarFilmsForFilm(film.id)
+    } catch {
+      // Similarity compute failed. Film still created successfully.
+    }
   }
 
   return film

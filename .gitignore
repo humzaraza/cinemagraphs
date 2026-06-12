@@ -58,3 +58,6 @@ test-vertical.webm
 
 # Local-only diagnostic scripts (already-tracked files in this dir remain tracked)
 scripts/diagnostic/
+
+# bulk-import-studios durable run log (local artifact)
+bulk-import-studios-run.jsonl

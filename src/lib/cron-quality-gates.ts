@@ -21,12 +21,33 @@ interface QualityGateMovie {
 
 type GateResult = { pass: true } | { pass: false; reason: SkipReason }
 
+export interface QualityGateOptions {
+  /**
+   * Let Documentary (TMDB genre 99) through the gate. TV Movie (10770) is
+   * always excluded regardless. Default false, which preserves the original
+   * cron behavior: both genres excluded.
+   */
+  allowDocumentaries?: boolean
+  /**
+   * Skip the MIN_POPULARITY floor. TMDB popularity is a current-trending
+   * metric, so the floor permanently rejects famous older films that simply
+   * are not trending right now; one-shot archival imports skip it while the
+   * cron (which evaluates new releases) keeps it. The vote floor still
+   * filters junk. Default false, which preserves the original cron behavior.
+   */
+  skipPopularityCheck?: boolean
+}
+
 const MIN_VOTES = 30
 const MIN_POPULARITY = 15
 const MIN_RUNTIME = 60
-const EXCLUDED_GENRE_IDS = new Set([99, 10770]) // Documentary, TV Movie
+const DOCUMENTARY_GENRE_ID = 99
+const TV_MOVIE_GENRE_ID = 10770
 
-export function checkCronQualityGates(movie: QualityGateMovie): GateResult {
+export function checkCronQualityGates(
+  movie: QualityGateMovie,
+  options: QualityGateOptions = {}
+): GateResult {
   if (!movie.poster_path) {
     return { pass: false, reason: 'noPoster' }
   }
@@ -39,7 +60,7 @@ export function checkCronQualityGates(movie: QualityGateMovie): GateResult {
     return { pass: false, reason: 'lowVotes' }
   }
 
-  if ((movie.popularity ?? 0) < MIN_POPULARITY) {
+  if (!options.skipPopularityCheck && (movie.popularity ?? 0) < MIN_POPULARITY) {
     return { pass: false, reason: 'lowPopularity' }
   }
 
@@ -47,7 +68,12 @@ export function checkCronQualityGates(movie: QualityGateMovie): GateResult {
     return { pass: false, reason: 'shortRuntime' }
   }
 
-  if (movie.genres?.some((g) => EXCLUDED_GENRE_IDS.has(g.id))) {
+  const genreExcluded = movie.genres?.some(
+    (g) =>
+      g.id === TV_MOVIE_GENRE_ID ||
+      (g.id === DOCUMENTARY_GENRE_ID && !options.allowDocumentaries)
+  )
+  if (genreExcluded) {
     return { pass: false, reason: 'excludedGenre' }
   }
 
