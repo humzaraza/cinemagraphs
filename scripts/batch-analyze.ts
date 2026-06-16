@@ -199,7 +199,7 @@ Return this JSON structure:
 {"film":"${film.title}","anchoredFrom":"${anchorString}","dataPoints":[{"timeStart":0,"timeEnd":0,"timeMidpoint":0,"score":0,"label":"","confidence":"medium","reviewEvidence":""}],"overallSentiment":${targetScore},"peakMoment":{"label":"","score":0,"time":0},"lowestMoment":{"label":"","score":0,"time":0},"biggestSentimentSwing":"","summary":"","sources":["tmdb"],"varianceSource":"external_only","reviewCount":${reviews.length},"generatedAt":"${new Date().toISOString()}"}`
 
   const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 4000,
     messages: [{ role: 'user', content: prompt }],
   })

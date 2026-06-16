@@ -85,7 +85,7 @@ There are **two** independent beat paths; they do not share data.
    prompt that includes the anchor scores, plot section, segment count
    (14–18 based on runtime), and up to the 40 freshest reviews (ordered by
    `fetchedAt` desc, truncated to 1500 chars each).
-8. Call Claude (`claude-sonnet-4-20250514`, 4000 max tokens) either
+8. Call Claude (`claude-sonnet-4-6`, 4000 max tokens) either
    synchronously (`analyzeSentiment`, retried once on bad JSON) or via the
    Message Batches API (`analyzeSentimentBatch`, used by the cron).
 9. Parse the response, force trusted server-controlled fields
