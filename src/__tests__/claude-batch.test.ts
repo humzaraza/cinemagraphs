@@ -126,7 +126,7 @@ describe('analyzeSentimentBatch', () => {
   it('uses the locked sonnet-4 model identifier', async () => {
     const { SENTIMENT_MODEL } = await import('@/lib/claude')
     // The model is intentionally pinned — we should not silently drift.
-    expect(SENTIMENT_MODEL).toBe('claude-sonnet-4-20250514')
+    expect(SENTIMENT_MODEL).toBe('claude-sonnet-4-6')
   })
 
   it('throws when called with no jobs', async () => {

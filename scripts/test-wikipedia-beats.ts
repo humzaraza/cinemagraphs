@@ -176,7 +176,7 @@ Return ONLY valid JSON (no markdown, no code fences, no explanation) matching th
 // ── Call Claude and parse ──
 async function callClaude(prompt: string): Promise<any> {
   const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 4000,
     messages: [{ role: 'user', content: prompt }],
   })

@@ -12,10 +12,10 @@ const anthropic = new Anthropic({
 
 // Keep the model + max_tokens constants in one place so the single-call and
 // batch paths can never drift apart.
-export const SENTIMENT_MODEL = 'claude-sonnet-4-20250514'
+export const SENTIMENT_MODEL = 'claude-sonnet-4-6'
 export const SENTIMENT_MAX_TOKENS = 4000
 
-// ── Pricing (USD per 1M tokens) for claude-sonnet-4-20250514 ──
+// ── Pricing (USD per 1M tokens) for claude-sonnet-4-6 ──
 // Synchronous price; Batch API charges 50% of this.
 const PRICE_PER_MTOK_INPUT = 3.0
 const PRICE_PER_MTOK_OUTPUT = 15.0
