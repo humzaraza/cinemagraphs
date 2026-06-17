@@ -84,6 +84,8 @@ model User {
   addedFilms           Film[]                @relation("addedFilms")
   lists                List[]
   blindModeOverrides   UserFilmBlindMode[]
+  reviewLikes          ReviewLike[]
+  reviewReplies        ReviewReply[]
 }
 
 model Account {
@@ -345,6 +347,8 @@ model UserReview {
   updatedAt     DateTime @updatedAt
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   film          Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
+  likes         ReviewLike[]
+  replies       ReviewReply[]
 
   @@unique([userId, filmId])
   @@index([filmId])
@@ -522,4 +526,30 @@ enum BannerType {
   GRADIENT
   PHOTO
   BACKDROP
+}
+
+model ReviewLike {
+  id        String     @id @default(cuid())
+  userId    String
+  reviewId  String
+  createdAt DateTime   @default(now())
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  review    UserReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, reviewId])
+  @@index([reviewId])
+}
+
+model ReviewReply {
+  id        String     @id @default(cuid())
+  userId    String
+  reviewId  String
+  body      String     @db.Text
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  review    UserReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+  @@index([userId])
 }
