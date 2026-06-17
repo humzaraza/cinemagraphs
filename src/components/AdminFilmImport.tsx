@@ -21,7 +21,13 @@ export default function AdminFilmImport() {
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault()
-    if (!query.trim()) return
+    const trimmed = query.trim()
+    if (!trimmed) return
+
+    // A bare 5+ digit number is treated as a TMDB ID and resolved to a single
+    // result card (no import). Shorter numbers ("1917", "300") and any text run a
+    // normal title search. Importing is always a separate click on the card.
+    const isId = /^\d{5,}$/.test(trimmed)
 
     setLoading(true)
     setMessage(null)
@@ -29,7 +35,7 @@ export default function AdminFilmImport() {
       const res = await fetch('/api/admin/films/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: query.trim() }),
+        body: JSON.stringify(isId ? { resolveId: Number(trimmed) } : { query: trimmed }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Search failed')
@@ -68,7 +74,7 @@ export default function AdminFilmImport() {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search TMDB for a movie..."
+          placeholder="Search by title, or enter a TMDB ID"
           className="flex-1 bg-cinema-dark border border-cinema-border rounded-lg px-4 py-2 text-cinema-cream placeholder:text-cinema-muted focus:outline-none focus:border-cinema-gold/50"
         />
         <button

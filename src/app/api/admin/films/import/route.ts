@@ -1,5 +1,5 @@
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
-import { importMovie, searchMovies } from '@/lib/tmdb'
+import { getMovieDetails, importMovie, searchMovies } from '@/lib/tmdb'
 import { apiLogger } from '@/lib/logger'
 
 export async function POST(request: Request) {
@@ -11,7 +11,11 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { tmdbId, query } = body as { tmdbId?: number; query?: string }
+    const { tmdbId, query, resolveId } = body as {
+      tmdbId?: number
+      query?: string
+      resolveId?: number
+    }
 
     // Search mode: return TMDB search results
     if (query && typeof query === 'string') {
@@ -23,6 +27,21 @@ export async function POST(request: Request) {
       return Response.json({ results: results.results })
     }
 
+    // Resolve mode: look up a single film by TMDB ID WITHOUT importing it, so the
+    // admin can preview it as a result card and import it with a deliberate click.
+    // Returned in the same { results } shape as search so the UI renders it identically.
+    if (resolveId && typeof resolveId === 'number' && Number.isInteger(resolveId) && resolveId > 0) {
+      try {
+        const movie = await getMovieDetails(resolveId)
+        return Response.json({ results: [movie] })
+      } catch {
+        return Response.json(
+          { error: 'No TMDB film found with that ID', code: 'NOT_FOUND' },
+          { status: 404 }
+        )
+      }
+    }
+
     // Import mode: import a specific film by TMDB ID
     if (tmdbId && typeof tmdbId === 'number' && Number.isInteger(tmdbId) && tmdbId > 0) {
       const film = await importMovie(tmdbId)
@@ -30,7 +49,7 @@ export async function POST(request: Request) {
     }
 
     return Response.json(
-      { error: 'Provide either a tmdbId (number) or query (string)', code: 'BAD_REQUEST' },
+      { error: 'Provide a query (string), resolveId (number), or tmdbId (number)', code: 'BAD_REQUEST' },
       { status: 400 }
     )
   } catch (err) {
