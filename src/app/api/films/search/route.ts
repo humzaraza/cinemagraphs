@@ -61,6 +61,11 @@ export async function GET(request: NextRequest) {
       WHERE f."status" = 'ACTIVE'
         AND f."searchVector" @@ websearch_to_tsquery('english', ${sanitizedQuery})
       ORDER BY
+        (CASE
+           WHEN lower(f."title") = lower(${sanitizedQuery}) THEN 0
+           WHEN lower(f."title") LIKE (replace(replace(replace(lower(${sanitizedQuery}), '!', '!!'), '%', '!%'), '_', '!_') || '%') ESCAPE '!' THEN 1
+           ELSE 2
+         END),
         ts_rank_cd(f."searchVector", websearch_to_tsquery('english', ${sanitizedQuery})) DESC,
         (COALESCE(sg."overallScore", 0) * LN(GREATEST(f."lastReviewCount", 1) + 1)) DESC,
         f."title" ASC
