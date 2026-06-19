@@ -14,6 +14,15 @@ import { PersonFilmography } from '@/components/PersonFilmography'
 // crawler hits then serve cached HTML instead of re-querying Neon every time.
 export const revalidate = 3600
 
+// Next 16 only engages runtime ISR for on-demand dynamic params when the route
+// returns an empty array from generateStaticParams (or sets dynamic = 'force-static').
+// Without this companion the `revalidate` above is inert and every /person/<slug>
+// renders dynamically, hitting Postgres on every view. Empty array = prerender
+// nothing at build, generate each page statically on first visit, revalidate hourly.
+export async function generateStaticParams() {
+  return []
+}
+
 type Props = { params: Promise<{ slug: string }> }
 
 function parseTmdbIdFromSlug(slug: string): number | null {
