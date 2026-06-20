@@ -97,7 +97,7 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
                   </span>
                   {/* Mini sparkline — sentiment curve colored by score direction */}
                   <div className="w-16 h-9 md:w-32 md:h-14">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 128, height: 56 }}>
                       <AreaChart data={film.dataPoints} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
                         <defs>
                           <linearGradient id={`tickerGrad-${film.id}-${i}`} x1="0" y1="0" x2="0" y2="1">
