@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getPersonData } from '@/lib/person-data'
+import { getPersonDataCached } from '@/lib/person-data'
 
 export async function GET(
   _request: Request,
@@ -17,7 +17,7 @@ export async function GET(
     return NextResponse.json({ error: 'Invalid slug' }, { status: 400 })
   }
 
-  const data = await getPersonData(tmdbPersonId)
+  const data = await getPersonDataCached(tmdbPersonId)
 
   if (!data) {
     return NextResponse.json({ error: 'Person not found' }, { status: 404 })

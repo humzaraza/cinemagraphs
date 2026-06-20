@@ -1,6 +1,7 @@
 import { prisma } from './prisma'
 import { getMovieCredits } from './tmdb'
 import { cacheDel, KEYS } from './cache'
+import { syncPersonBio } from './person-bio'
 import { logger } from './logger'
 
 const syncLogger = logger.child({ module: 'person-sync' })
@@ -88,6 +89,7 @@ export async function syncFilmCredits(filmId: string, tmdbId: number): Promise<v
     let directorCount = 0
     let crewCount = 0
     const personTmdbIds = new Set<number>()
+    const needsBio = new Set<number>()
 
     for (const entry of uniqueEntries) {
       const slug = generatePersonSlug(entry.name, entry.tmdbPersonId)
@@ -131,11 +133,17 @@ export async function syncFilmCredits(filmId: string, tmdbId: number): Promise<v
       // Get person id
       const person = await prisma.person.findUnique({
         where: { tmdbPersonId: entry.tmdbPersonId },
-        select: { id: true },
+        select: { id: true, biography: true, bioFetchedAt: true },
       })
       if (!person) continue
 
       personTmdbIds.add(entry.tmdbPersonId)
+      // Queue a bio backfill for people we've never attempted. Bounded to new/
+      // never-fetched persons, runs off the render path (this is the cron/import
+      // job), and is non-throwing.
+      if (person.biography === null && person.bioFetchedAt === null) {
+        needsBio.add(entry.tmdbPersonId)
+      }
 
       // Create FilmPerson link (skip if exists)
       try {
@@ -162,6 +170,13 @@ export async function syncFilmCredits(filmId: string, tmdbId: number): Promise<v
     const cacheKeys = Array.from(personTmdbIds).map((id) => KEYS.person(id))
     if (cacheKeys.length > 0) {
       await cacheDel(...cacheKeys)
+    }
+
+    // Backfill bios last: syncPersonBio writes the bio, stamps bioFetchedAt, and
+    // busts KEYS.person itself, so the route cache repopulates with the new bio.
+    // Non-throwing per-person; never fails the parent sync.
+    for (const tmdbPersonId of needsBio) {
+      await syncPersonBio(tmdbPersonId)
     }
 
     syncLogger.info(

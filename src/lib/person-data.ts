@@ -1,9 +1,7 @@
 import { cache } from 'react'
-import { after } from 'next/server'
 import { prisma } from './prisma'
 import { cachedQuery, KEYS, TTL } from './cache'
 import { calculateCompositeArc, downsampleDataPoints } from './person-utils'
-import { syncPersonBio } from './person-bio'
 import type { SentimentDataPoint } from './types'
 
 export type PersonFilmographyEntry = {
@@ -44,7 +42,8 @@ export type PersonData = {
 /**
  * Pure read: resolves a person and derives the JSON-safe shape that both the
  * page and the API route render from. No writes, no TMDB calls, so it is safe
- * to cache directly. Runs only on a cache miss (inside cachedQuery's fetchFn).
+ * to cache directly. Called directly by the page (uncached) and through
+ * cachedQuery's fetchFn by the API route.
  */
 async function fetchPersonData(tmdbPersonId: number): Promise<PersonData | null> {
   const person = await prisma.person.findUnique({
@@ -143,30 +142,29 @@ async function fetchPersonData(tmdbPersonId: number): Promise<PersonData | null>
 }
 
 /**
- * Shared cached read for a person. Both /person/[slug] and /api/person/[slug]
- * call this, so they hit one Redis entry of one JSON-safe shape under
- * KEYS.person(id) at TTL.PERSON, consistent across surfaces and busted as a
- * unit by syncFilmCredits when credits change.
+ * Pure, request-deduped read for the STATIC /person/[slug] page and its
+ * generateMetadata. Direct Prisma only — NO Redis. An Upstash read here issues a
+ * `fetch(..., { cache: 'no-store' })` (see node_modules/@upstash/redis), which
+ * inside the statically-generated render flips the route static→dynamic and
+ * breaks ISR. That is the PR #77 regression, so the page never touches Redis.
  *
- * React cache() dedupes within a single request: the page render and
- * generateMetadata share one Redis read and one backfill schedule.
- *
- * Must be called only within a request scope (Server Component / Route
- * Handler), because of the after() scheduling below.
+ * React cache() dedupes within one request, so generateMetadata and the page
+ * component share a single Postgres read.
  */
-export const getPersonData = cache(async (tmdbPersonId: number): Promise<PersonData | null> => {
-  const data = await cachedQuery(
-    KEYS.person(tmdbPersonId),
-    TTL.PERSON,
-    () => fetchPersonData(tmdbPersonId),
-  )
+export const getPersonData = cache(
+  (tmdbPersonId: number): Promise<PersonData | null> => fetchPersonData(tmdbPersonId),
+)
 
-  // Demand-driven bio backfill, deferred out of the render path. Scheduled once
-  // (only while the marker is null), runs after the response/prerender is
-  // finished, never blocks the read, and does not make the route dynamic.
-  if (data && data.biography === null && data.bioFetchedAt === null) {
-    after(() => syncPersonBio(tmdbPersonId))
-  }
-
-  return data
-})
+/**
+ * Redis-cached read for the DYNAMIC /api/person/[slug] route handler ONLY.
+ * Next 16 route handlers are not statically generated ("Route Handlers are not
+ * cached by default"), so the Upstash no-store fetch is safe here. Stores the
+ * derived JSON-safe PersonData under KEYS.person(id) at TTL.PERSON; busted as a
+ * unit by syncFilmCredits / syncPersonBio when a person's data changes.
+ *
+ * Pure read: no writes, no after(). Bio backfill lives in the sync job and the
+ * standalone script, never on this path.
+ */
+export function getPersonDataCached(tmdbPersonId: number): Promise<PersonData | null> {
+  return cachedQuery(KEYS.person(tmdbPersonId), TTL.PERSON, () => fetchPersonData(tmdbPersonId))
+}

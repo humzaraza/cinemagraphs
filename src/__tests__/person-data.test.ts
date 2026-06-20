@@ -42,19 +42,7 @@ vi.mock('@/lib/logger', () => ({
   },
 }))
 
-// React cache() must be identity here: with the real per-request memoization,
-// the second getPersonData() call would return the first call's memoized
-// promise and never re-enter cachedQuery, so the cache-HIT path would not be
-// exercised at all. Identity forces both calls through cachedQuery.
-vi.mock('react', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react')>()
-  return { ...actual, cache: (fn: unknown) => fn }
-})
-
-// after() must not run its callback (it would fire syncPersonBio -> TMDB).
-vi.mock('next/server', () => ({ after: vi.fn() }))
-
-import { getPersonData } from '@/lib/person-data'
+import { getPersonDataCached } from '@/lib/person-data'
 
 // A person as Prisma would return it: relation included, releaseDate a real
 // Date, three directed films so the composite arc is computed.
@@ -121,12 +109,12 @@ beforeEach(() => {
   mockFindUnique.mockResolvedValue(buildPersonFixture())
 })
 
-describe('getPersonData cache-HIT shape (Layer 1)', () => {
+describe('getPersonDataCached cache-HIT shape (Layer 1)', () => {
   it('serves the second read from cache and keeps releaseDate a string the render can consume', async () => {
     // First call: cache MISS -> fetchPersonData runs against Prisma, result stored.
-    const miss = await getPersonData(45400)
+    const miss = await getPersonDataCached(45400)
     // Second call: cache HIT -> value comes back through the Redis JSON round-trip.
-    const hit = await getPersonData(45400)
+    const hit = await getPersonDataCached(45400)
 
     // The second read must be a genuine cache hit: fetchPersonData (hence the
     // Prisma query) ran exactly once across both calls.
