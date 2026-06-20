@@ -461,7 +461,6 @@ model Person {
   birthday           String?
   deathday           String?
   knownForDepartment String?
-  bioFetchedAt       DateTime?
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
   films              FilmPerson[]
