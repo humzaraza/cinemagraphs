@@ -1,7 +1,5 @@
 import { prisma } from '@/lib/prisma'
 import { cronLogger } from '@/lib/logger'
-import { safeWriteSentimentGraph } from '@/lib/sentiment-beat-lock'
-import type { SentimentDataPoint } from '@/lib/types'
 
 export const maxDuration = 300
 
@@ -78,21 +76,6 @@ export async function GET(request: Request) {
           where: { id: film.id },
           data: { imdbRating: newRating },
         })
-
-        // Also update previousScore on the sentiment graph so ticker delta works
-        if (film.sentimentGraph && currentRating != null && Math.abs(newRating - currentRating) > 0.01) {
-          const existingGraph = await prisma.sentimentGraph.findUnique({
-            where: { id: film.sentimentGraph.id },
-            select: { dataPoints: true },
-          })
-          const existingBeats = (existingGraph?.dataPoints ?? []) as unknown as SentimentDataPoint[]
-          await safeWriteSentimentGraph({
-            filmId: film.id,
-            incomingDataPoints: existingBeats,
-            otherFields: { previousScore: film.sentimentGraph.overallScore },
-            callerPath: 'cron-refresh-scores',
-          })
-        }
 
         updated++
         cronLogger.info({ filmId: film.id, title: film.title, oldRating: currentRating, newRating }, 'Score refreshed')
