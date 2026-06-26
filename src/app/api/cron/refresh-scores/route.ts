@@ -46,7 +46,6 @@ export async function GET(request: Request) {
     // Only refresh scores for now playing films with sentiment graphs
     const films = await prisma.film.findMany({
       where: { nowPlaying: true, sentimentGraph: { isNot: null } },
-      include: { sentimentGraph: { select: { id: true, overallScore: true } } },
     })
 
     cronLogger.info({ filmCount: films.length }, 'Starting daily score refresh for now playing films')
@@ -70,7 +69,7 @@ export async function GET(request: Request) {
           continue
         }
 
-        // Save current imdbRating as previous, update with new
+        // Refresh the stored imdbRating with the freshly fetched value
         const currentRating = film.imdbRating
         await prisma.film.update({
           where: { id: film.id },
