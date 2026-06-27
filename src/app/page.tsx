@@ -7,7 +7,7 @@ import AnnouncementBar from '@/components/AnnouncementBar'
 import Link from 'next/link'
 import { getMovieTrailerKey, getNowPlayingMovies } from '@/lib/tmdb'
 import { cacheGet, cacheSet, KEYS, TTL } from '@/lib/cache'
-import { getInTheatersFilms, IN_THEATERS_RECENCY_DAYS } from '@/lib/queries'
+import { getInTheatersFilms } from '@/lib/queries'
 
 export const dynamic = 'force-dynamic'
 
@@ -144,7 +144,6 @@ export default async function HomePage() {
             { tickerOverride: 'force_show' },
             { tickerOverride: null, nowPlaying: true },
           ],
-          NOT: { tickerOverride: 'force_hide' },
         },
         include: {
           sentimentGraph: { select: { overallScore: true, previousScore: true, dataPoints: true } },
@@ -198,40 +197,6 @@ export default async function HomePage() {
 
     recentFilmsResult = results[0] as InTheaterFilm
     allGraphFilmsResult = results[1] as TickerFilm
-
-    // Fallback: the Movie Market ticker must never render empty. When the
-    // primary now-playing/force-shown pool yields fewer than TICKER_TARGET
-    // films, top it up with recent NA releases that clear a quality floor.
-    // The "recent NA release" signal is the In Theaters recency window over
-    // releaseDate, NOT the volatile nowPlaying flag — gating on nowPlaying here
-    // would just re-select films the primary query already holds (a no-op),
-    // and that flag's thinness is what empties the ticker in the first place.
-    // Primary rows keep their order and are never dropped; fallback rows are
-    // only appended after them, and force-hidden films stay excluded. Same
-    // include shape as the primary query, so the shaping below treats both
-    // sets identically.
-    const TICKER_TARGET = 12
-    const TICKER_FALLBACK_MIN_REVIEWS = 5
-    if (allGraphFilmsResult.length < TICKER_TARGET) {
-      const primaryIds = allGraphFilmsResult.map((f) => f.id)
-      const recencyFloor = new Date(Date.now() - IN_THEATERS_RECENCY_DAYS * 24 * 60 * 60 * 1000)
-      const fallbackFilms = await prisma.film.findMany({
-        where: {
-          status: 'ACTIVE',
-          sentimentGraph: { is: { reviewCount: { gte: TICKER_FALLBACK_MIN_REVIEWS } } },
-          releaseDate: { not: null, gte: recencyFloor },
-          NOT: { tickerOverride: 'force_hide' },
-          id: { notIn: primaryIds },
-        },
-        include: {
-          sentimentGraph: { select: { overallScore: true, previousScore: true, dataPoints: true } },
-        },
-        take: TICKER_TARGET - allGraphFilmsResult.length,
-        orderBy: { releaseDate: 'desc' },
-      })
-      allGraphFilmsResult = [...allGraphFilmsResult, ...fallbackFilms] as TickerFilm
-    }
-
     topRatedFilmsResult = results[2]
     pinnedTopRatedResult = results[3]
     allSwingFilmsResult = results[4]
