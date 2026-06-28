@@ -144,7 +144,6 @@ export default async function HomePage() {
             { tickerOverride: 'force_show' },
             { tickerOverride: null, nowPlaying: true },
           ],
-          NOT: { tickerOverride: 'force_hide' },
         },
         include: {
           sentimentGraph: { select: { overallScore: true, previousScore: true, dataPoints: true } },
