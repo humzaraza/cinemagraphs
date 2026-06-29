@@ -130,11 +130,6 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
                       {isUp ? '\u25B2' : '\u25BC'} {isUp ? '+' : ''}{d!.toFixed(1)}
                     </span>
                   )}
-                  {!hasDelta && dpTrend !== 0 && (
-                    <span className="text-sm font-medium" style={{ color }}>
-                      {isUp ? '\u25B2' : '\u25BC'}
-                    </span>
-                  )}
                 </Link>
               )
             })}
