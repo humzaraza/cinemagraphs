@@ -75,15 +75,12 @@ export default function MovieTicker({ films }: { films: TickerFilm[] }) {
               const prev = film.previousScore
               const hasDelta = d != null && prev != null
 
-              // Derive trend from dataPoints as fallback when no previousScore
-              const pts = film.dataPoints
-              const dpTrend = pts.length >= 2
-                ? pts[pts.length - 1].score - pts[0].score
-                : 0
-
-              const effectiveDelta = hasDelta ? d : dpTrend
-              const isUp = effectiveDelta > 0
-              const isDown = effectiveDelta < 0
+              // Color reflects REAL score movement only: teal (up) / red (down)
+              // appear solely when a real non-zero delta exists, the same
+              // condition that shows the number. No real delta => neutral gold
+              // (no implied movement from sparkline shape).
+              const isUp = hasDelta && d != null && d > 0
+              const isDown = hasDelta && d != null && d < 0
               const color = isUp ? 'var(--cinema-teal)' : isDown ? '#ef4444' : 'var(--cinema-gold)'
 
               return (
