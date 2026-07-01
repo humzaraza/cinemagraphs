@@ -677,20 +677,21 @@ function ReviewCard({
       })()}
       {(() => {
         const like = likesMap[review.id] ?? { count: 0, liked: false }
-        // Logged-out viewers get read-only counts this PR; a review's author
-        // cannot like their own review (server enforces this too).
-        const readOnly = !currentUserId || currentUserId === review.user.id
-        // Skip the bordered row when there is nothing to show or do: read-only
-        // with zero likes. Interactive cards always render so a viewer can like
-        // from zero.
-        const showLikeRow = !readOnly || like.count > 0
+        // Logged-out viewers get a sign-in prompt on tap; a review's author
+        // gets a read-only count (server enforces the no-self-like rule too).
+        const isOwner = currentUserId === review.user.id
+        const mode = !currentUserId ? 'signin' : isOwner ? 'readonly' : 'interactive'
+        // Skip the bordered row only for a read-only card with zero likes.
+        // Interactive and signin cards always render the row so a viewer can
+        // like from zero or be prompted to sign in.
+        const showLikeRow = mode !== 'readonly' || like.count > 0
         return showLikeRow ? (
           <div className="flex items-center mt-3 pt-3 border-t border-cinema-border">
             <LikeButton
               reviewId={review.id}
               initialCount={like.count}
               initialLiked={like.liked}
-              readOnly={readOnly}
+              mode={mode}
             />
           </div>
         ) : null

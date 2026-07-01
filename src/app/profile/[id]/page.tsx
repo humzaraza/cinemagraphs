@@ -9,7 +9,7 @@ import ShareModal from '@/components/ShareModal'
 import EditProfileModal from '@/components/EditProfileModal'
 import NewListModal from '@/components/NewListModal'
 import ProfileBanner from '@/components/ProfileBanner'
-import LikeButton from '@/components/LikeButton'
+import LikeButton, { type LikeButtonMode } from '@/components/LikeButton'
 import { useReviewLikes, type ReviewLikesMap } from '@/hooks/useReviewLikes'
 
 interface FilmData {
@@ -111,6 +111,15 @@ export default function ProfilePage() {
 
   const userId = params.id as string
   const isOwnProfile = session?.user?.id === userId
+
+  // Every review on this page belongs to the profile owner, so one mode fits
+  // all cards: own profile shows read-only counts, someone else's profile is
+  // likeable when signed in, and logged-out viewers get a sign-in prompt.
+  const likeMode: LikeButtonMode = !session?.user?.id
+    ? 'signin'
+    : isOwnProfile
+      ? 'readonly'
+      : 'interactive'
 
   // Like counts + the viewer's liked state for the review cards actually
   // rendered. Cards show on every tab except lists/watchlist; the graphs tab
@@ -384,6 +393,7 @@ export default function ProfilePage() {
               key={review.id}
               review={review}
               isOwn={isOwnProfile}
+              likeMode={likeMode}
               likesMap={likesMap}
               onShare={() => setShareReview(review)}
             />
@@ -735,11 +745,13 @@ function WatchlistCard({ film }: { film: FilmData }) {
 function ReviewCard({
   review,
   isOwn,
+  likeMode,
   likesMap,
   onShare,
 }: {
   review: ReviewData
   isOwn: boolean
+  likeMode: LikeButtonMode
   likesMap: ReviewLikesMap
   onShare: () => void
 }) {
@@ -815,7 +827,7 @@ function ReviewCard({
               reviewId={review.id}
               initialCount={like.count}
               initialLiked={like.liked}
-              readOnly={isOwn}
+              mode={likeMode}
             />
             {hasBeatRatings && (
               <span
