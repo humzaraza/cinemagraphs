@@ -63,7 +63,7 @@ async function fetchWikipediaPlot(title: string, year: number): Promise<string |
 }
 
 // ── Quality filter (same as pipeline) ──
-const ENGLISH_REGEX = /^[\x00-\x7F\u00C0-\u024F\u2018-\u201D\u2014\u2013\u2026\s.,;:!?'"()\-[\]{}@#$%^&*+=/<>~`|\\]+$/
+const ENGLISH_REGEX = /^[\x00-\x7F\u00A0-\u024F\u2018-\u201D\u2014\u2013\u2026\s.,;:!?'"()\-[\]{}@#$%^&*+=/<>~`|\\]+$/
 const MIN_WORD_COUNT = 50
 
 function isQualityReview(text: string): boolean {
