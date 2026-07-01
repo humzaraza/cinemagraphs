@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { importMovie } from '@/lib/tmdb'
 import { fetchAllReviews } from '@/lib/review-fetcher'
 import { generateHybridAndStore } from '@/lib/sentiment-pipeline'
+import { isQualityReview } from '@/lib/review-quality'
 import { generateAndStoreWikiBeats } from '@/lib/wiki-beat-fallback'
 import { apiLogger } from '@/lib/logger'
 
@@ -16,21 +17,6 @@ const DELAY_BETWEEN_FILMS_MS = 1000
 // films, but for bulk imports we want a higher bar to avoid burning Claude
 // budget on films with only a single noisy review.
 const MIN_QUALITY_REVIEWS_FOR_GRAPH = 3
-const MIN_WORD_COUNT = 50
-
-// Matches the isQualityReview filter in sentiment-pipeline.ts. Duplicated
-// here intentionally — the task brief said do not modify the pipeline, so
-// we don't export the private filter. 5 lines of duplication is cheaper
-// than coupling this endpoint to pipeline internals.
-const ENGLISH_REGEX =
-  /^[\x00-\x7F\u00A0-\u024F\u2018-\u201D\u2014\u2013\u2026\s.,;:!?'"()\-[\]{}@#$%^&*+=/<>~`|\\]+$/
-
-function isQualityReview(text: string): boolean {
-  const words = text.trim().split(/\s+/)
-  if (words.length < MIN_WORD_COUNT) return false
-  if (!ENGLISH_REGEX.test(text.slice(0, 500))) return false
-  return true
-}
 
 // ── TMDB list-endpoint helpers ─────────────────────────────────────────────
 

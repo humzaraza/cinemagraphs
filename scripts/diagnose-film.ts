@@ -12,20 +12,12 @@ import { prisma } from '../src/lib/prisma'
 import { fetchAnchorScores } from '../src/lib/omdb'
 import { fetchAllReviews } from '../src/lib/review-fetcher'
 import { fetchPlotContext, generateSentimentGraph } from '../src/lib/sentiment-pipeline'
+import { isQualityReview, ENGLISH_REGEX, MIN_WORD_COUNT } from '../src/lib/review-quality'
 
 const FILM_ID = process.argv[2]
 if (!FILM_ID) {
   console.error('Usage: npx tsx scripts/diagnose-film.ts <filmId>')
   process.exit(1)
-}
-
-const ENGLISH_REGEX = /^[\x00-\x7F\u00A0-\u024F\u2018-\u201D\u2014\u2013\u2026\s.,;:!?'"()\-[\]{}@#$%^&*+=/<>~`|\\]+$/
-const MIN_WORD_COUNT = 50
-function isQualityReview(text: string): boolean {
-  const words = text.trim().split(/\s+/)
-  if (words.length < MIN_WORD_COUNT) return false
-  if (!ENGLISH_REGEX.test(text.slice(0, 500))) return false
-  return true
 }
 
 async function main() {
