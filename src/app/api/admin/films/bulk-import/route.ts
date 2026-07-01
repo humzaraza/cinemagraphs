@@ -23,7 +23,7 @@ const MIN_WORD_COUNT = 50
 // we don't export the private filter. 5 lines of duplication is cheaper
 // than coupling this endpoint to pipeline internals.
 const ENGLISH_REGEX =
-  /^[\x00-\x7F\u00C0-\u024F\u2018-\u201D\u2014\u2013\u2026\s.,;:!?'"()\-[\]{}@#$%^&*+=/<>~`|\\]+$/
+  /^[\x00-\x7F\u00A0-\u024F\u2018-\u201D\u2014\u2013\u2026\s.,;:!?'"()\-[\]{}@#$%^&*+=/<>~`|\\]+$/
 
 function isQualityReview(text: string): boolean {
   const words = text.trim().split(/\s+/)

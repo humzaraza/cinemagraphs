@@ -15,7 +15,7 @@ const MIN_QUALITY_REVIEWS_FOR_GRAPH = 3
 // pipeline module. Three ~5-line copies is cheaper than coupling each
 // caller to pipeline internals.
 const ENGLISH_REGEX =
-  /^[\x00-\x7F\u00C0-\u024F\u2018-\u201D\u2014\u2013\u2026\s.,;:!?'"()\-[\]{}@#$%^&*+=/<>~`|\\]+$/
+  /^[\x00-\x7F\u00A0-\u024F\u2018-\u201D\u2014\u2013\u2026\s.,;:!?'"()\-[\]{}@#$%^&*+=/<>~`|\\]+$/
 const MIN_WORD_COUNT = 50
 
 function isQualityReview(text: string): boolean {
