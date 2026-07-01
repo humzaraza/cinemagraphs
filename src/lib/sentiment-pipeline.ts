@@ -22,27 +22,23 @@ import {
   buildAnchorString,
   type HybridResult,
 } from './hybrid-sentiment'
+import { isQualityReview } from './review-quality'
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY!
 const TMDB_BASE_URL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3'
 
 // ── Review quality filter ──
 
-const ENGLISH_REGEX = /^[\x00-\x7F\u00A0-\u024F\u2018-\u201D\u2014\u2013\u2026\s.,;:!?'"()\-[\]{}@#$%^&*+=/<>~`|\\]+$/
-const MIN_WORD_COUNT = 50
+// isQualityReview, ENGLISH_REGEX, and MIN_WORD_COUNT now live in the shared,
+// dependency-free ./review-quality module (imported above for internal use).
+// Re-exported here so callers importing isQualityReview from
+// '@/lib/sentiment-pipeline' keep working unchanged.
+export { isQualityReview }
 
 // Minimum quality reviews required to generate a sentiment graph. Kept in sync
 // with MIN_REVIEWS_TO_DISPLAY_GRAPH in film-display-state.ts so generation and
 // display agree on the same floor.
 export const MIN_QUALITY_REVIEWS_FOR_GENERATION = 3
-
-export function isQualityReview(text: string): boolean {
-  const words = text.trim().split(/\s+/)
-  if (words.length < MIN_WORD_COUNT) return false
-  // Check if predominantly English/Latin characters
-  if (!ENGLISH_REGEX.test(text.slice(0, 500))) return false
-  return true
-}
 
 /**
  * Check if a film needs re-analysis based on review growth threshold.

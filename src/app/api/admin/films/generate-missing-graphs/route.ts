@@ -1,6 +1,7 @@
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { generateHybridAndStore } from '@/lib/sentiment-pipeline'
+import { isQualityReview } from '@/lib/review-quality'
 import { invalidateFilmCache, invalidateHomepageCache } from '@/lib/cache'
 import { apiLogger } from '@/lib/logger'
 
@@ -8,22 +9,6 @@ export const maxDuration = 300 // 5 minutes for Vercel
 
 const TIME_BUDGET_MS = 280_000
 const MIN_QUALITY_REVIEWS_FOR_GRAPH = 3
-
-// Quality-review filter — mirrors the private isQualityReview in
-// sentiment-pipeline.ts (and the copy in bulk-import/route.ts). Kept in
-// sync by hand because the canonical version is not exported from the
-// pipeline module. Three ~5-line copies is cheaper than coupling each
-// caller to pipeline internals.
-const ENGLISH_REGEX =
-  /^[\x00-\x7F\u00A0-\u024F\u2018-\u201D\u2014\u2013\u2026\s.,;:!?'"()\-[\]{}@#$%^&*+=/<>~`|\\]+$/
-const MIN_WORD_COUNT = 50
-
-function isQualityReview(text: string): boolean {
-  const words = text.trim().split(/\s+/)
-  if (words.length < MIN_WORD_COUNT) return false
-  if (!ENGLISH_REGEX.test(text.slice(0, 500))) return false
-  return true
-}
 
 /**
  * Generate sentiment graphs for films that don't have one yet AND have
