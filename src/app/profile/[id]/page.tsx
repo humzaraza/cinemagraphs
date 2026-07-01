@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { useParams } from 'next/navigation'
 import Image from 'next/image'
@@ -9,6 +9,8 @@ import ShareModal from '@/components/ShareModal'
 import EditProfileModal from '@/components/EditProfileModal'
 import NewListModal from '@/components/NewListModal'
 import ProfileBanner from '@/components/ProfileBanner'
+import LikeButton, { type LikeButtonMode } from '@/components/LikeButton'
+import { useReviewLikes, type ReviewLikesMap } from '@/hooks/useReviewLikes'
 
 interface FilmData {
   id: string
@@ -109,6 +111,28 @@ export default function ProfilePage() {
 
   const userId = params.id as string
   const isOwnProfile = session?.user?.id === userId
+
+  // Every review on this page belongs to the profile owner, so one mode fits
+  // all cards: own profile shows read-only counts, someone else's profile is
+  // likeable when signed in, and logged-out viewers get a sign-in prompt.
+  const likeMode: LikeButtonMode = !session?.user?.id
+    ? 'signin'
+    : isOwnProfile
+      ? 'readonly'
+      : 'interactive'
+
+  // Like counts + the viewer's liked state for the review cards actually
+  // rendered. Cards show on every tab except lists/watchlist; the graphs tab
+  // narrows to reviews with beat ratings. Keyed on that visible id set, so the
+  // hook refetches when the tab (and thus the rendered set) changes.
+  const visibleReviewIds = useMemo(() => {
+    if (!profile) return []
+    if (tab === 'lists' || tab === 'watchlist') return []
+    const revs =
+      tab === 'graphs' ? profile.reviews.filter((r) => r.beatRatings !== null) : profile.reviews
+    return revs.map((r) => r.id)
+  }, [profile, tab])
+  const likesMap = useReviewLikes(visibleReviewIds)
 
   const fetchProfile = useCallback(() => {
     fetch(`/api/users/${userId}`)
@@ -369,6 +393,8 @@ export default function ProfilePage() {
               key={review.id}
               review={review}
               isOwn={isOwnProfile}
+              likeMode={likeMode}
+              likesMap={likesMap}
               onShare={() => setShareReview(review)}
             />
           ))}
@@ -719,15 +745,20 @@ function WatchlistCard({ film }: { film: FilmData }) {
 function ReviewCard({
   review,
   isOwn,
+  likeMode,
+  likesMap,
   onShare,
 }: {
   review: ReviewData
   isOwn: boolean
+  likeMode: LikeButtonMode
+  likesMap: ReviewLikesMap
   onShare: () => void
 }) {
   const { film } = review
   const ratingColor = review.overallRating >= 7 ? 'var(--cinema-gold)' : '#ef4444'
   const hasBeatRatings = review.beatRatings !== null
+  const like = likesMap[review.id] ?? { count: 0, liked: false }
 
   return (
     <div
@@ -790,8 +821,14 @@ function ReviewCard({
             </p>
           )}
 
-          {/* Badges + Share */}
+          {/* Likes + Badges + Share */}
           <div className="flex items-center gap-2 mt-2">
+            <LikeButton
+              reviewId={review.id}
+              initialCount={like.count}
+              initialLiked={like.liked}
+              mode={likeMode}
+            />
             {hasBeatRatings && (
               <span
                 className="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase"
