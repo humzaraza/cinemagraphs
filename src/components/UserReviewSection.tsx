@@ -5,6 +5,8 @@ import { useSession, signIn } from 'next-auth/react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { formatReviewProse } from '@/lib/review-prose'
+import LikeButton from './LikeButton'
+import { useReviewLikes, type ReviewLikesMap } from '@/hooks/useReviewLikes'
 
 interface BeatInfo {
   label: string
@@ -141,6 +143,15 @@ export default function UserReviewSection({
   const [totalPages, setTotalPages] = useState(initialData?.totalPages ?? 1)
   const [showAll, setShowAll] = useState(false)
   const [loading, setLoading] = useState(!initialData)
+
+  // Like counts + the viewer's liked state for the currently visible cards.
+  // Reviews are collapsed behind "Show all", so only fetch once expanded. The
+  // hook re-runs whenever the id set changes (Load more, post/delete refetch).
+  const visibleReviewIds = useMemo(
+    () => (showAll ? reviews.map((r) => r.id) : []),
+    [showAll, reviews],
+  )
+  const likesMap = useReviewLikes(visibleReviewIds)
 
   // Peak/lowest tagging only makes sense when beats have real NLP scores
   const taggingEnabled = beatSource === 'graph'
@@ -530,7 +541,7 @@ export default function UserReviewSection({
           {showAll && (
             <div className="space-y-3">
               {reviews.map((review) => (
-                <ReviewCard key={review.id} review={review} currentUserId={session?.user?.id} onDelete={async (id) => {
+                <ReviewCard key={review.id} review={review} currentUserId={session?.user?.id} likesMap={likesMap} onDelete={async (id) => {
                   const res = await fetch(`/api/reviews/${id}`, { method: 'DELETE' })
                   if (res.ok) {
                     setReviews((prev) => prev.filter((r) => r.id !== id))
@@ -590,10 +601,12 @@ function TextArea({
 function ReviewCard({
   review,
   currentUserId,
+  likesMap,
   onDelete,
 }: {
   review: ReviewData
   currentUserId?: string
+  likesMap: ReviewLikesMap
   onDelete: (id: string) => void
 }) {
   return (
@@ -660,6 +673,26 @@ function ReviewCard({
         const prose = formatReviewProse(review)
         return prose ? (
           <p className="text-sm text-cinema-cream/80 leading-relaxed whitespace-pre-line">{prose}</p>
+        ) : null
+      })()}
+      {(() => {
+        const like = likesMap[review.id] ?? { count: 0, liked: false }
+        // Logged-out viewers get read-only counts this PR; a review's author
+        // cannot like their own review (server enforces this too).
+        const readOnly = !currentUserId || currentUserId === review.user.id
+        // Skip the bordered row when there is nothing to show or do: read-only
+        // with zero likes. Interactive cards always render so a viewer can like
+        // from zero.
+        const showLikeRow = !readOnly || like.count > 0
+        return showLikeRow ? (
+          <div className="flex items-center mt-3 pt-3 border-t border-cinema-border">
+            <LikeButton
+              reviewId={review.id}
+              initialCount={like.count}
+              initialLiked={like.liked}
+              readOnly={readOnly}
+            />
+          </div>
         ) : null
       })()}
     </div>
