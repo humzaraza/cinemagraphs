@@ -4,6 +4,7 @@ import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getReviewById } from '@/lib/review-detail'
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
+import ReviewComments from '@/components/ReviewComments'
 import { formatReviewProse } from '@/lib/review-prose'
 import { tmdbImageUrl, formatDate, truncate } from '@/lib/utils'
 import type { SentimentDataPoint } from '@/lib/types'
@@ -42,14 +43,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ReviewPage({ params }: Props) {
   const { id } = await params
 
-  // The session is not used for gating (the page is public); it is fetched
-  // here so later phases (own-review affordances, the reply composer) plug
-  // into an already-session-aware render.
+  // The page itself is public; the session only personalizes the comment
+  // thread (composer vs sign-in prompt, owner-only delete controls).
   const [review, session] = await Promise.all([
     getReviewById(id),
     getMobileOrServerSession().catch(() => null),
   ])
-  void session
 
   if (!review) notFound()
 
@@ -170,8 +169,9 @@ export default async function ReviewPage({ params }: Props) {
         )}
       </div>
 
-      {/* The comment thread mounts here in a later phase. */}
-      <section id="comments" />
+      <section id="comments">
+        <ReviewComments reviewId={review.id} currentUserId={session?.user?.id} />
+      </section>
     </div>
   )
 }
