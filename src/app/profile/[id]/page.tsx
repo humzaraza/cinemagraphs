@@ -821,7 +821,7 @@ function ReviewCard({
             </p>
           )}
 
-          {/* Likes + Badges + Share */}
+          {/* Likes + Badges + Discuss + Share */}
           <div className="flex items-center gap-2 mt-2">
             <LikeButton
               reviewId={review.id}
@@ -845,6 +845,12 @@ function ReviewCard({
                 Reviewed
               </span>
             )}
+            <Link
+              href={`/reviews/${review.id}`}
+              className="text-xs text-cinema-muted hover:text-cinema-gold transition-colors"
+            >
+              Discuss
+            </Link>
             {isOwn && (
               <button
                 onClick={onShare}

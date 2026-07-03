@@ -681,20 +681,29 @@ function ReviewCard({
         // gets a read-only count (server enforces the no-self-like rule too).
         const isOwner = currentUserId === review.user.id
         const mode = !currentUserId ? 'signin' : isOwner ? 'readonly' : 'interactive'
-        // Skip the bordered row only for a read-only card with zero likes.
-        // Interactive and signin cards always render the row so a viewer can
-        // like from zero or be prompted to sign in.
-        const showLikeRow = mode !== 'readonly' || like.count > 0
-        return showLikeRow ? (
+        // The bordered row always renders now that it carries the discuss
+        // link. The like control keeps its old visibility rule: hidden only
+        // on a read-only card with zero likes; interactive and signin cards
+        // show it so a viewer can like from zero or be prompted to sign in.
+        const showLikeButton = mode !== 'readonly' || like.count > 0
+        return (
           <div className="flex items-center mt-3 pt-3 border-t border-cinema-border">
-            <LikeButton
-              reviewId={review.id}
-              initialCount={like.count}
-              initialLiked={like.liked}
-              mode={mode}
-            />
+            {showLikeButton && (
+              <LikeButton
+                reviewId={review.id}
+                initialCount={like.count}
+                initialLiked={like.liked}
+                mode={mode}
+              />
+            )}
+            <Link
+              href={`/reviews/${review.id}`}
+              className="ml-auto text-xs text-cinema-muted hover:text-cinema-gold transition-colors"
+            >
+              Discuss
+            </Link>
           </div>
-        ) : null
+        )
       })()}
     </div>
   )
