@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { formatReviewProse } from '@/lib/review-prose'
 import LikeButton from './LikeButton'
 import { useReviewLikes, type ReviewLikesMap } from '@/hooks/useReviewLikes'
+import { useReplyCounts, type ReplyCountsMap } from '@/hooks/useReplyCounts'
 
 interface BeatInfo {
   label: string
@@ -152,6 +153,7 @@ export default function UserReviewSection({
     [showAll, reviews],
   )
   const likesMap = useReviewLikes(visibleReviewIds)
+  const replyCounts = useReplyCounts(visibleReviewIds)
 
   // Peak/lowest tagging only makes sense when beats have real NLP scores
   const taggingEnabled = beatSource === 'graph'
@@ -541,7 +543,7 @@ export default function UserReviewSection({
           {showAll && (
             <div className="space-y-3">
               {reviews.map((review) => (
-                <ReviewCard key={review.id} review={review} currentUserId={session?.user?.id} likesMap={likesMap} onDelete={async (id) => {
+                <ReviewCard key={review.id} review={review} currentUserId={session?.user?.id} likesMap={likesMap} replyCounts={replyCounts} onDelete={async (id) => {
                   const res = await fetch(`/api/reviews/${id}`, { method: 'DELETE' })
                   if (res.ok) {
                     setReviews((prev) => prev.filter((r) => r.id !== id))
@@ -602,11 +604,13 @@ function ReviewCard({
   review,
   currentUserId,
   likesMap,
+  replyCounts,
   onDelete,
 }: {
   review: ReviewData
   currentUserId?: string
   likesMap: ReviewLikesMap
+  replyCounts: ReplyCountsMap
   onDelete: (id: string) => void
 }) {
   return (
@@ -681,20 +685,32 @@ function ReviewCard({
         // gets a read-only count (server enforces the no-self-like rule too).
         const isOwner = currentUserId === review.user.id
         const mode = !currentUserId ? 'signin' : isOwner ? 'readonly' : 'interactive'
-        // Skip the bordered row only for a read-only card with zero likes.
-        // Interactive and signin cards always render the row so a viewer can
-        // like from zero or be prompted to sign in.
-        const showLikeRow = mode !== 'readonly' || like.count > 0
-        return showLikeRow ? (
+        // The bordered row always renders now that it carries the discuss
+        // link. The like control keeps its old visibility rule: hidden only
+        // on a read-only card with zero likes; interactive and signin cards
+        // show it so a viewer can like from zero or be prompted to sign in.
+        const showLikeButton = mode !== 'readonly' || like.count > 0
+        const replyCount = replyCounts[review.id] ?? 0
+        return (
           <div className="flex items-center mt-3 pt-3 border-t border-cinema-border">
-            <LikeButton
-              reviewId={review.id}
-              initialCount={like.count}
-              initialLiked={like.liked}
-              mode={mode}
-            />
+            {showLikeButton && (
+              <LikeButton
+                reviewId={review.id}
+                initialCount={like.count}
+                initialLiked={like.liked}
+                mode={mode}
+              />
+            )}
+            <Link
+              href={`/reviews/${review.id}`}
+              className="ml-auto text-xs text-cinema-muted hover:text-cinema-gold transition-colors"
+            >
+              {replyCount > 0
+                ? `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`
+                : 'Reply'}
+            </Link>
           </div>
-        ) : null
+        )
       })()}
     </div>
   )
