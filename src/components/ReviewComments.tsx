@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { signIn } from 'next-auth/react'
 import Image from 'next/image'
 import Link from 'next/link'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 interface ReplyUser {
   id: string
@@ -40,6 +41,7 @@ export default function ReviewComments({ reviewId, currentUserId }: Props) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [replyingTo, setReplyingTo] = useState<string | null>(null)
+  const [pendingDeleteComment, setPendingDeleteComment] = useState<CommentData | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -103,13 +105,10 @@ export default function ReviewComments({ reviewId, currentUserId }: Props) {
     )
   }
 
+  // Opens the styled ConfirmDialog; the delete itself runs from its
+  // onConfirm. Child replies keep their direct, no-confirm delete.
   function confirmDeleteComment(comment: CommentData) {
-    const message =
-      comment.children.length > 0
-        ? 'Delete this comment? This will also delete its replies.'
-        : 'Delete this comment?'
-    if (!window.confirm(message)) return
-    deleteReply(comment.id, null)
+    setPendingDeleteComment(comment)
   }
 
   return (
@@ -217,6 +216,24 @@ export default function ReviewComments({ reviewId, currentUserId }: Props) {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingDeleteComment !== null}
+        title="Delete comment?"
+        message={
+          pendingDeleteComment && pendingDeleteComment.children.length > 0
+            ? `This will also delete its ${pendingDeleteComment.children.length} ${
+                pendingDeleteComment.children.length === 1 ? 'reply' : 'replies'
+              }.`
+            : 'This cannot be undone.'
+        }
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (pendingDeleteComment) deleteReply(pendingDeleteComment.id, null)
+          setPendingDeleteComment(null)
+        }}
+        onCancel={() => setPendingDeleteComment(null)}
+      />
     </div>
   )
 }
