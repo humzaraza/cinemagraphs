@@ -11,6 +11,7 @@ import NewListModal from '@/components/NewListModal'
 import ProfileBanner from '@/components/ProfileBanner'
 import LikeButton, { type LikeButtonMode } from '@/components/LikeButton'
 import { useReviewLikes, type ReviewLikesMap } from '@/hooks/useReviewLikes'
+import { useReplyCounts, type ReplyCountsMap } from '@/hooks/useReplyCounts'
 
 interface FilmData {
   id: string
@@ -133,6 +134,7 @@ export default function ProfilePage() {
     return revs.map((r) => r.id)
   }, [profile, tab])
   const likesMap = useReviewLikes(visibleReviewIds)
+  const replyCounts = useReplyCounts(visibleReviewIds)
 
   const fetchProfile = useCallback(() => {
     fetch(`/api/users/${userId}`)
@@ -395,6 +397,7 @@ export default function ProfilePage() {
               isOwn={isOwnProfile}
               likeMode={likeMode}
               likesMap={likesMap}
+              replyCounts={replyCounts}
               onShare={() => setShareReview(review)}
             />
           ))}
@@ -747,18 +750,21 @@ function ReviewCard({
   isOwn,
   likeMode,
   likesMap,
+  replyCounts,
   onShare,
 }: {
   review: ReviewData
   isOwn: boolean
   likeMode: LikeButtonMode
   likesMap: ReviewLikesMap
+  replyCounts: ReplyCountsMap
   onShare: () => void
 }) {
   const { film } = review
   const ratingColor = review.overallRating >= 7 ? 'var(--cinema-gold)' : '#ef4444'
   const hasBeatRatings = review.beatRatings !== null
   const like = likesMap[review.id] ?? { count: 0, liked: false }
+  const replyCount = replyCounts[review.id] ?? 0
 
   return (
     <div
@@ -849,7 +855,9 @@ function ReviewCard({
               href={`/reviews/${review.id}`}
               className="text-xs text-cinema-muted hover:text-cinema-gold transition-colors"
             >
-              Discuss
+              {replyCount > 0
+                ? `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`
+                : 'Reply'}
             </Link>
             {isOwn && (
               <button
