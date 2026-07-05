@@ -86,6 +86,8 @@ model User {
   blindModeOverrides   UserFilmBlindMode[]
   reviewLikes          ReviewLike[]
   reviewReplies        ReviewReply[]
+  activities           Activity[]            @relation("ActivityActor")
+  activityTargets      Activity[]            @relation("ActivityTargetUser")
 }
 
 model Account {
@@ -557,4 +559,22 @@ model ReviewReply {
   @@index([reviewId])
   @@index([userId])
   @@index([parentReplyId])
+}
+
+model Activity {
+  id           String   @id @default(cuid())
+  actorId      String
+  type         String
+  createdAt    DateTime @default(now())
+  targetUserId String?
+  reviewId     String?
+  filmId       String?
+  replyId      String?
+
+  actor      User  @relation("ActivityActor", fields: [actorId], references: [id], onDelete: Cascade)
+  targetUser User? @relation("ActivityTargetUser", fields: [targetUserId], references: [id], onDelete: Cascade)
+
+  @@index([actorId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@index([createdAt])
 }
