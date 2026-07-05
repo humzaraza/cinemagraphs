@@ -3,6 +3,7 @@ import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
 import { invalidateFilmCache, invalidateHomepageCache } from '@/lib/cache'
+import { logActivity } from '@/lib/activity'
 
 export async function PATCH(
   request: NextRequest,
@@ -22,6 +23,14 @@ export async function PATCH(
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
     }
 
+    const prior =
+      status === 'approved'
+        ? await prisma.userReview.findUnique({
+            where: { id },
+            select: { status: true },
+          })
+        : null
+
     const review = await prisma.userReview.update({
       where: { id },
       data: {
@@ -31,6 +40,24 @@ export async function PATCH(
     })
 
     if (status === 'approved') {
+      // Log a 'review' activity only on a real flagged->approved
+      // transition, and only if creation-time logging (or a prior
+      // approval) hasn't already produced a row for this review.
+      if (prior?.status === 'flagged') {
+        const existing = await prisma.activity.findFirst({
+          where: { reviewId: review.id, type: 'review' },
+          select: { id: true },
+        })
+        if (!existing) {
+          await logActivity({
+            actorId: review.userId,
+            type: 'review',
+            reviewId: review.id,
+            filmId: review.filmId,
+          })
+        }
+      }
+
       await Promise.all([
         invalidateFilmCache(review.filmId),
         invalidateHomepageCache(),
