@@ -3,6 +3,7 @@ import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
 import { getWatchlistStatus } from '@/lib/film-detail'
+import { logActivity } from '@/lib/activity'
 
 export async function GET(
   _request: NextRequest,
@@ -42,11 +43,15 @@ export async function POST(
       return NextResponse.json({ error: 'Film not found' }, { status: 404 })
     }
 
-    await prisma.watchlist.upsert({
-      where: { userId_filmId: { userId: session.user.id, filmId: id } },
-      create: { userId: session.user.id, filmId: id },
-      update: {},
-    })
+    // Re-adding is a no-op (unique violation) and logs no activity.
+    try {
+      await prisma.watchlist.create({
+        data: { userId: session.user.id, filmId: id },
+      })
+      await logActivity({ actorId: session.user.id, type: 'watchlist', filmId: id })
+    } catch (err: any) {
+      if (err.code !== 'P2002') throw err
+    }
 
     return NextResponse.json({ inWatchlist: true })
   } catch (err) {

@@ -7,6 +7,7 @@ import { apiLogger } from '@/lib/logger'
 import { checkSuspension } from '@/lib/middleware'
 import { invalidateFilmCache } from '@/lib/cache'
 import { getFilmReviewsPage, getUserReviewForFilm } from '@/lib/film-detail'
+import { logActivity } from '@/lib/activity'
 
 // TEMPORARY: auto-moderation bypass per admin request. When false, every
 // new review and every edit goes live as `approved` — autoModerate() is
@@ -191,6 +192,10 @@ export async function POST(
         user: { select: { id: true, name: true, image: true } },
       },
     })
+
+    if (review.status === 'approved') {
+      await logActivity({ actorId: session.user.id, type: 'review', reviewId: review.id, filmId })
+    }
 
     invalidateFilmCache(filmId).catch(() => {})
     maybeBlendAndUpdate(filmId).catch(() => {})

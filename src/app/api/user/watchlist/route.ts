@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
+import { logActivity } from '@/lib/activity'
 
 export async function GET() {
   try {
@@ -53,11 +54,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'filmId is required' }, { status: 400 })
     }
 
-    await prisma.watchlist.upsert({
-      where: { userId_filmId: { userId: session.user.id, filmId } },
-      create: { userId: session.user.id, filmId },
-      update: {},
-    })
+    // Re-adding is a no-op (unique violation) and logs no activity.
+    try {
+      await prisma.watchlist.create({
+        data: { userId: session.user.id, filmId },
+      })
+      await logActivity({ actorId: session.user.id, type: 'watchlist', filmId })
+    } catch (err: any) {
+      if (err.code !== 'P2002') throw err
+    }
 
     return NextResponse.json({ message: 'Added to watchlist' })
   } catch (err) {

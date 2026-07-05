@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
+import { logActivity } from '@/lib/activity'
 
 export async function GET(
   _request: NextRequest,
@@ -53,16 +54,15 @@ export async function POST(
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    await prisma.follow.upsert({
-      where: {
-        followerId_followingId: {
-          followerId: session.user.id,
-          followingId: id,
-        },
-      },
-      create: { followerId: session.user.id, followingId: id },
-      update: {},
-    })
+    // Repeat follow is a no-op (unique violation) and logs no activity.
+    try {
+      await prisma.follow.create({
+        data: { followerId: session.user.id, followingId: id },
+      })
+      await logActivity({ actorId: session.user.id, type: 'follow', targetUserId: id })
+    } catch (err: any) {
+      if (err.code !== 'P2002') throw err
+    }
 
     return NextResponse.json({ following: true })
   } catch (err) {

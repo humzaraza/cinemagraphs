@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
+import { logActivity } from '@/lib/activity'
 
 const PRIVATE_CACHE_HEADERS = { headers: { 'Cache-Control': 'private, no-store' } }
 
@@ -49,7 +50,7 @@ export async function POST(
 
     const review = await prisma.userReview.findUnique({
       where: { id: reviewId },
-      select: { id: true },
+      select: { id: true, userId: true },
     })
     if (!review) {
       return NextResponse.json({ error: 'Review not found' }, { status: 404 })
@@ -89,6 +90,14 @@ export async function POST(
         parentReplyId: typeof parentReplyId === 'string' ? parentReplyId : null,
       },
       select: replySelect,
+    })
+
+    await logActivity({
+      actorId: session.user.id,
+      type: 'reply',
+      targetUserId: review.userId,
+      reviewId,
+      replyId: reply.id,
     })
 
     return NextResponse.json(reply, { status: 201, ...PRIVATE_CACHE_HEADERS })
