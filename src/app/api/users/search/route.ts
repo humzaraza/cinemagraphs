@@ -14,7 +14,6 @@ export async function GET(request: NextRequest) {
     }
 
     const where = {
-      isPublic: true,
       role: { not: 'BANNED' as const },
       OR: [
         { name: { contains: q, mode: 'insensitive' as const } },

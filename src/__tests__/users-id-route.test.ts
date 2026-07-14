@@ -48,14 +48,38 @@ beforeEach(() => {
   mocks.prisma.film.findUnique.mockResolvedValue(null)
 })
 
-describe('GET /api/users/[id] banner fields', () => {
-  it('returns 404 when the user is not public', async () => {
+describe('GET /api/users/[id] visibility and lists', () => {
+  it('returns 200 for a user with isPublic: false (open-social: profiles are always visible)', async () => {
     mocks.prisma.user.findUnique.mockResolvedValue({ ...baseUserRow, isPublic: false })
+    const { GET } = await import('@/app/api/users/[id]/route')
+    const res = await GET(getRequest(), routeContext(USER_ID))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.user.id).toBe(USER_ID)
+  })
+
+  it('still returns 404 when the user does not exist', async () => {
+    mocks.prisma.user.findUnique.mockResolvedValue(null)
     const { GET } = await import('@/app/api/users/[id]/route')
     const res = await GET(getRequest(), routeContext(USER_ID))
     expect(res.status).toBe(404)
   })
 
+  it('fetches only public lists for the profile lists preview', async () => {
+    const { GET } = await import('@/app/api/users/[id]/route')
+    const res = await GET(getRequest(), routeContext(USER_ID))
+    expect(res.status).toBe(200)
+    // List.isPublic is list-level privacy; it stays even though
+    // User.isPublic enforcement is gone.
+    expect(mocks.prisma.list.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: USER_ID, isPublic: true },
+      })
+    )
+  })
+})
+
+describe('GET /api/users/[id] banner fields', () => {
   it('returns bannerType, bannerValue and bannerFilm: null for a GRADIENT banner', async () => {
     mocks.prisma.user.findUnique.mockResolvedValue({
       ...baseUserRow,
