@@ -19,7 +19,6 @@ export async function GET(
         image: true,
         bio: true,
         createdAt: true,
-        isPublic: true,
         bannerType: true,
         bannerValue: true,
         userReviews: {
@@ -62,7 +61,7 @@ export async function GET(
       },
     })
 
-    if (!user || !user.isPublic) {
+    if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
