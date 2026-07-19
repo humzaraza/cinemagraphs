@@ -32,7 +32,6 @@ const baseUserRow = {
   image: null,
   bio: 'hi',
   createdAt: new Date('2026-01-01'),
-  isPublic: true,
   bannerType: 'GRADIENT',
   bannerValue: 'midnight',
   userReviews: [],
@@ -49,8 +48,7 @@ beforeEach(() => {
 })
 
 describe('GET /api/users/[id] visibility and lists', () => {
-  it('returns 200 for a user with isPublic: false (open-social: profiles are always visible)', async () => {
-    mocks.prisma.user.findUnique.mockResolvedValue({ ...baseUserRow, isPublic: false })
+  it('returns 200 with the user payload (open-social: profiles are always visible)', async () => {
     const { GET } = await import('@/app/api/users/[id]/route')
     const res = await GET(getRequest(), routeContext(USER_ID))
     expect(res.status).toBe(200)

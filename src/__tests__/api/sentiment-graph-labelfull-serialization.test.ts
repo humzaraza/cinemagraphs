@@ -334,7 +334,6 @@ describe('labelFull serialization across SentimentGraph API routes', () => {
         image: null,
         bio: null,
         createdAt: new Date('2026-04-19'),
-        isPublic: true,
         userReviews: [
           {
             overallRating: 8,
@@ -389,7 +388,6 @@ describe('labelFull serialization across SentimentGraph API routes', () => {
         image: null,
         bio: null,
         createdAt: new Date('2026-04-19'),
-        isPublic: true,
         userReviews: [
           {
             overallRating: 7,

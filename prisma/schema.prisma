@@ -57,10 +57,6 @@ model User {
   password             String?
   role                 UserRole              @default(USER)
   suspendedUntil       DateTime?
-  isPublic             Boolean               @default(true)
-  publicProfile        Boolean               @default(true)
-  allowFollowers       Boolean               @default(true)
-  privateGraphs        Boolean               @default(false)
   points               Int                   @default(0)
   blindUnwatchedDefault Boolean              @default(false)
   hasSeenBlindModeTooltip Boolean            @default(false)
