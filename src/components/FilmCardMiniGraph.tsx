@@ -53,6 +53,9 @@ export function FilmCardMiniGraph({
     timeMidpoint: dp.timeMidpoint ?? Math.round(((dp.timeStart ?? 0) + (dp.timeEnd ?? 0)) / 2),
   })) : []
 
+  // allPoints[0] is the neutral starting baseline, not a measured beat: every
+  // film starts at 5 because the viewer has no opinion yet. The stroke fades in
+  // from transparent there, and it is excluded from hover.
   const allPoints: { timeMidpoint: number; score: number; label?: string }[] = [
     { timeMidpoint: 0, score: 5 },
     ...chartData.map((dp) => ({
@@ -88,12 +91,15 @@ export function FilmCardMiniGraph({
   const endTime = runtime ?? lastDp?.timeMidpoint ?? maxTime
 
   const gradientId = `miniGrad-${dataPoints?.length ?? 0}-${allPoints[1]?.timeMidpoint ?? 0}`
+  const strokeGradientId = `miniStroke-${dataPoints?.length ?? 0}-${allPoints[1]?.timeMidpoint ?? 0}`
 
   const interpolateAtX = useCallback(
     (svgX: number): HoverInfo | null => {
-      if (svgX < linePoints[0].x || svgX > linePoints[linePoints.length - 1].x) return null
+      // Hover starts at the first measured beat: there is nothing to report
+      // about the baseline.
+      if (svgX < linePoints[1].x || svgX > linePoints[linePoints.length - 1].x) return null
 
-      for (let i = 0; i < linePoints.length - 1; i++) {
+      for (let i = 1; i < linePoints.length - 1; i++) {
         const a = linePoints[i]
         const b = linePoints[i + 1]
         if (svgX >= a.x && svgX <= b.x) {
@@ -170,6 +176,19 @@ export function FilmCardMiniGraph({
             <stop offset="0%" stopColor="var(--cinema-gold)" stopOpacity={0.35} />
             <stop offset="100%" stopColor="var(--cinema-gold)" stopOpacity={0} />
           </linearGradient>
+          {/* Stroke fade: transparent at the 0m neutral baseline, full strength
+              from the first measured beat on. */}
+          <linearGradient
+            id={strokeGradientId}
+            gradientUnits="userSpaceOnUse"
+            x1={linePoints[0].x}
+            y1="0"
+            x2={linePoints[1]?.x ?? linePoints[0].x}
+            y2="0"
+          >
+            <stop offset="0%" stopColor="var(--cinema-gold)" stopOpacity={0} />
+            <stop offset="100%" stopColor="var(--cinema-gold)" stopOpacity={1} />
+          </linearGradient>
         </defs>
 
         {/* Fill area */}
@@ -186,8 +205,8 @@ export function FilmCardMiniGraph({
           strokeDasharray="4 3"
         />
 
-        {/* Gold line */}
-        <path d={linePath} fill="none" stroke="var(--cinema-gold)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+        {/* Gold line — fades in from the neutral baseline to the first beat */}
+        <path d={linePath} fill="none" stroke={`url(#${strokeGradientId})`} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
 
         {/* Hover elements — all inside SVG so they're never clipped */}
         {hover && (

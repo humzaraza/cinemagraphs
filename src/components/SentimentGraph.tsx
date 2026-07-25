@@ -127,6 +127,19 @@ function CustomTooltip({
   const showSpoilers = spoilersRevealed === true
   const view = graphView ?? 'critics'
 
+  // The neutral start is a baseline, not a reading. Say so plainly instead of
+  // showing a score, a time window or a confidence level.
+  if (data.isStart) {
+    return (
+      <div className="bg-cinema-card border border-cinema-border rounded-lg p-3 max-w-xs shadow-xl">
+        <span className="text-cinema-cream font-semibold text-sm block mb-1">Start of film</span>
+        <p className="text-xs text-cinema-muted leading-relaxed">
+          Every film starts at a neutral 5. No viewer opinion yet.
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="bg-cinema-card border border-cinema-border rounded-lg p-3 max-w-xs shadow-xl">
       {showSpoilers && data.label && (
@@ -390,22 +403,34 @@ export default function SentimentGraph({
     : graphView === 'merged' && hasAudienceData ? 'Merged Sentiment'
     : 'Critics Sentiment'
 
-  // Prepend synthetic neutral starting point
-  const chartData = [
-    {
-      timeMidpoint: 0,
-      timeStart: 0,
-      timeEnd: 0,
-      score: 5,
-      label: '',
-      confidence: 'low' as const,
-      reviewEvidence: '',
-      fill: scoreColor(5),
-      userScore: hasAudienceData ? 5 : null,
-      mergedScore: hasAudienceData ? 5 : null,
-    } as (typeof realData)[0],
-    ...realData,
-  ]
+  // Neutral starting baseline.
+  // Every film starts at 5 because the viewer has no opinion yet. This is a
+  // definition, not a measurement, so it must never be drawn like a real beat:
+  // no dot, no confidence badge, no score readout, and the stroke fades in from
+  // transparent so the line reads as starting at the first measured beat.
+  const startRow = {
+    timeMidpoint: 0,
+    timeStart: 0,
+    timeEnd: 0,
+    score: 5,
+    label: '',
+    confidence: 'low' as const,
+    reviewEvidence: '',
+    fill: scoreColor(5),
+    userScore: hasAudienceData ? 5 : null,
+    mergedScore: hasAudienceData ? 5 : null,
+  } as (typeof realData)[0]
+
+  const chartData = [{ ...startRow, isStart: true }, ...realData].map((row, i) => ({
+    ...row,
+    isStart: i === 0,
+  }))
+
+  // The stroke dissolves to nothing at the 0m baseline and reaches full opacity
+  // at the first measured beat, so the line reads as beginning there rather than
+  // as a beat anyone recorded. Points are evenly spaced, so the first beat sits
+  // at 1/(n-1) across the line's bounding box.
+  const firstBeatOffset = chartData.length > 1 ? 1 / (chartData.length - 1) : 0
 
   // ── Visibility flags ──
   const showCritics = graphView === 'critics' || graphView === 'both'
@@ -561,6 +586,23 @@ export default function SentimentGraph({
                 <stop offset="5%" stopColor="#F5F0E8" stopOpacity={0.15} />
                 <stop offset="95%" stopColor="#F5F0E8" stopOpacity={0} />
               </linearGradient>
+              {/* Horizontal stroke fades: transparent at the 0m baseline, full
+                  strength from the first measured beat onward. */}
+              <linearGradient id="criticsStroke" x1="0" y1="0" x2="1" y2="0">
+                <stop offset={0} stopColor="var(--cinema-gold)" stopOpacity={0} />
+                <stop offset={firstBeatOffset} stopColor="var(--cinema-gold)" stopOpacity={1} />
+                <stop offset={1} stopColor="var(--cinema-gold)" stopOpacity={1} />
+              </linearGradient>
+              <linearGradient id="audienceStroke" x1="0" y1="0" x2="1" y2="0">
+                <stop offset={0} stopColor="var(--cinema-teal)" stopOpacity={0} />
+                <stop offset={firstBeatOffset} stopColor="var(--cinema-teal)" stopOpacity={1} />
+                <stop offset={1} stopColor="var(--cinema-teal)" stopOpacity={1} />
+              </linearGradient>
+              <linearGradient id="mergedStroke" x1="0" y1="0" x2="1" y2="0">
+                <stop offset={0} stopColor="rgba(245,240,232,0.9)" stopOpacity={0} />
+                <stop offset={firstBeatOffset} stopColor="rgba(245,240,232,0.9)" stopOpacity={1} />
+                <stop offset={1} stopColor="rgba(245,240,232,0.9)" stopOpacity={1} />
+              </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--cinema-border)" />
             <XAxis
@@ -624,7 +666,7 @@ export default function SentimentGraph({
               <Area
                 type="monotone"
                 dataKey="score"
-                stroke="var(--cinema-gold)"
+                stroke="url(#criticsStroke)"
                 strokeWidth={2.5}
                 fill="url(#sentimentGradient)"
                 isAnimationActive={false}
@@ -711,8 +753,12 @@ export default function SentimentGraph({
               />
             )}
 
-            {/* Lowest moment (shown with critics line, skip if it falls on the anchored 5.0 start) */}
-            {showCritics && lowestMoment && lowestMoment.time !== dataPoints[0]?.timeMidpoint && (
+            {/* Lowest moment (shown with critics line, skip only if it falls on
+                the 0m neutral baseline, which is not a measured beat). The old
+                guard compared against dataPoints[0], the first *real* beat, so
+                the marker vanished whenever a film's worst moment was its
+                opening one. */}
+            {showCritics && lowestMoment && lowestMoment.time !== 0 && (
               <ReferenceDot
                 x={lowestMoment.time}
                 y={lowestMoment.score}
@@ -728,14 +774,15 @@ export default function SentimentGraph({
               <Area
                 type="monotone"
                 dataKey="userScore"
-                stroke="var(--cinema-teal)"
+                stroke="url(#audienceStroke)"
                 strokeWidth={2}
                 fill="url(#userGradient)"
                 isAnimationActive={false}
                 connectNulls
                 dot={(props: any) => {
                   const { cx, cy, payload, index } = props
-                  if (cx == null || cy == null || payload.userScore == null) return <circle r={0} />
+                  if (cx == null || cy == null || payload.userScore == null || payload.isStart)
+                    return <circle r={0} />
                   return (
                     <circle
                       key={`user-dot-${index}`}
@@ -771,14 +818,15 @@ export default function SentimentGraph({
               <Area
                 type="monotone"
                 dataKey="mergedScore"
-                stroke="rgba(245,240,232,0.9)"
+                stroke="url(#mergedStroke)"
                 strokeWidth={2.5}
                 fill="url(#mergedGradient)"
                 isAnimationActive={false}
                 connectNulls
                 dot={(props: any) => {
                   const { cx, cy, payload, index } = props
-                  if (cx == null || cy == null || payload.mergedScore == null) return <circle r={0} />
+                  if (cx == null || cy == null || payload.mergedScore == null || payload.isStart)
+                    return <circle r={0} />
                   return (
                     <circle
                       key={`merged-dot-${index}`}

@@ -98,7 +98,9 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
 
   const film = films[activeIndex]
   const year = film.releaseDate ? new Date(film.releaseDate).getFullYear() : null
-  // Prepend a synthetic neutral point so the line starts from y=5
+  // Neutral starting baseline. Every film starts at 5 because the viewer has no
+  // opinion yet — a definition, not a measurement. Drawn as a faded dashed
+  // stroke fade so it never reads as a measured beat. Matches SentimentGraph.
   const realData = film.dataPoints.map((dp) => ({
     ...dp,
     timeMidpoint: dp.timeMidpoint ?? Math.round((dp.timeStart + dp.timeEnd) / 2),
@@ -107,6 +109,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
     { timeMidpoint: 0, timeStart: 0, timeEnd: 0, score: 5, label: '', confidence: 'low' },
     ...realData,
   ]
+  const firstBeatOffset = chartData.length > 1 ? 1 / (chartData.length - 1) : 0
 
   return (
     <section
@@ -214,6 +217,13 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                       <stop offset="50%" stopColor="var(--cinema-gold)" stopOpacity={0.1} />
                       <stop offset="95%" stopColor="var(--cinema-gold)" stopOpacity={0} />
                     </linearGradient>
+                    {/* Horizontal stroke fade: transparent at the 0m neutral
+                        baseline, full strength from the first measured beat on. */}
+                    <linearGradient id="heroStroke" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset={0} stopColor="var(--cinema-gold)" stopOpacity={0} />
+                      <stop offset={firstBeatOffset} stopColor="var(--cinema-gold)" stopOpacity={1} />
+                      <stop offset={1} stopColor="var(--cinema-gold)" stopOpacity={1} />
+                    </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--cinema-border)" />
                   <XAxis dataKey="timeMidpoint" tickFormatter={formatTime} stroke="#666" fontSize={11} />
@@ -247,7 +257,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                   <Area
                     type="natural"
                     dataKey="score"
-                    stroke="var(--cinema-gold)"
+                    stroke="url(#heroStroke)"
                     strokeWidth={2.5}
                     fill="url(#heroGradient)"
                     isAnimationActive={false}
