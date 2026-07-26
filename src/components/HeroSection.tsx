@@ -98,15 +98,24 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
 
   const film = films[activeIndex]
   const year = film.releaseDate ? new Date(film.releaseDate).getFullYear() : null
-  // Prepend a synthetic neutral point so the line starts from y=5
+  // Neutral starting baseline. Every film starts at 5 because the viewer has no
+  // opinion yet — a definition, not a measurement. Drawn as a faded dashed
+  // stroke fade so it never reads as a measured beat. Matches SentimentGraph.
   const realData = film.dataPoints.map((dp) => ({
     ...dp,
     timeMidpoint: dp.timeMidpoint ?? Math.round((dp.timeStart + dp.timeEnd) / 2),
   }))
-  const chartData = [
-    { timeMidpoint: 0, timeStart: 0, timeEnd: 0, score: 5, label: '', confidence: 'low' },
-    ...realData,
-  ]
+  // Same threshold as SentimentGraph. With n measured beats the fade spans 1/n
+  // of the chart, so below 6 beats it covers enough width to dim real data
+  // rather than de-emphasise the origin. In that case no origin is drawn.
+  const showOrigin = realData.length >= 6
+  const chartData = showOrigin
+    ? [
+        { timeMidpoint: 0, timeStart: 0, timeEnd: 0, score: 5, label: '', confidence: 'low' },
+        ...realData,
+      ]
+    : realData
+  const firstBeatOffset = chartData.length > 1 ? 1 / (chartData.length - 1) : 0
 
   return (
     <section
@@ -214,6 +223,24 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                       <stop offset="50%" stopColor="var(--cinema-gold)" stopOpacity={0.1} />
                       <stop offset="95%" stopColor="var(--cinema-gold)" stopOpacity={0} />
                     </linearGradient>
+                    {/* Origin fade. The 0m point is the neutral baseline, not a
+                        measured beat, so the whole series fades in from
+                        transparent there to full strength at the first beat. A
+                        mask is used rather than a stroke gradient so the area
+                        fill fades with the line instead of asserting the 5.0
+                        opening on its own. */}
+                    <linearGradient id="heroOriginFadeGrad" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset={0} stopColor="#000" />
+                      <stop offset={firstBeatOffset} stopColor="#fff" />
+                      <stop offset={1} stopColor="#fff" />
+                    </linearGradient>
+                    <mask id="heroOriginFade" maskContentUnits="objectBoundingBox">
+                      {/* White past the right edge so the final round cap is not
+                          clipped; nothing left of the origin, so its cap cannot
+                          peek out as a nub at 0m. */}
+                      <rect x="0" y="-0.2" width="2" height="1.4" fill="#fff" />
+                      <rect x="0" y="-0.2" width="1" height="1.4" fill="url(#heroOriginFadeGrad)" />
+                    </mask>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--cinema-border)" />
                   <XAxis dataKey="timeMidpoint" tickFormatter={formatTime} stroke="#666" fontSize={11} />
@@ -250,6 +277,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                     stroke="var(--cinema-gold)"
                     strokeWidth={2.5}
                     fill="url(#heroGradient)"
+                    mask={showOrigin ? 'url(#heroOriginFade)' : undefined}
                     isAnimationActive={false}
                     dot={false}
                     activeDot={(props: any) => {

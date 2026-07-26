@@ -46,25 +46,34 @@ export function FilmCardMiniGraph({
   const hasData = !!dataPoints && dataPoints.length > 0
 
   // Derived data is computed unconditionally so the hooks below stay in a
-  // stable order across renders. The seed point in allPoints keeps every
-  // downstream calc safe when dataPoints is empty.
+  // stable order across renders. There is no longer a seed point standing in
+  // for the 0m origin, so anything reading allPoints has to guard its own
+  // length rather than assume at least one entry.
   const chartData = hasData ? dataPoints.map((dp) => ({
     ...dp,
     timeMidpoint: dp.timeMidpoint ?? Math.round(((dp.timeStart ?? 0) + (dp.timeEnd ?? 0)) / 2),
   })) : []
 
-  const allPoints: { timeMidpoint: number; score: number; label?: string }[] = [
-    { timeMidpoint: 0, score: 5 },
-    ...chartData.map((dp) => ({
+  // No neutral 0m origin on the cards. The large charts fade one in, but at
+  // 300px wide the fade spans about a dozen pixels, which is not enough to stop
+  // the jump from 5.0 to the first beat reading as a real opening climb. These
+  // cards are read as shape at thumbnail size, not as a level, and the dashed
+  // line already states where neutral sits. So the curve starts at the first
+  // measured beat.
+  //
+  // The time axis is still anchored at 0m, so the line begins slightly inset
+  // from the left edge rather than spanning the full width. That inset is the
+  // point: it shows measurement starting after the film does.
+  const allPoints: { timeMidpoint: number; score: number; label?: string }[] =
+    chartData.map((dp) => ({
       timeMidpoint: dp.timeMidpoint,
       score: dp.score,
       label: ((dp as any).labelFull ?? (dp as any).label) as string | undefined,
-    })),
-  ]
+    }))
 
   const times = allPoints.map((d) => d.timeMidpoint)
-  const minTime = Math.min(...times)
-  const maxTime = Math.max(...times)
+  const minTime = 0
+  const maxTime = times.length > 0 ? Math.max(...times) : 1
   const timeRange = maxTime - minTime || 1
 
   function timeToX(t: number): number {
@@ -78,19 +87,26 @@ export function FilmCardMiniGraph({
     label: d.label,
   }))
 
-  const linePath = linePoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
-  const fillPath =
-    linePath +
-    ` L${linePoints[linePoints.length - 1].x},${GRAPH_HEIGHT} L${linePoints[0].x},${GRAPH_HEIGHT} Z`
+  // Guarded because linePoints can now be empty: the seed point that used to
+  // make every downstream calculation safe is gone.
+  const hasLine = linePoints.length >= 2
+  const linePath = hasLine
+    ? linePoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
+    : ''
+  const fillPath = hasLine
+    ? linePath +
+      ` L${linePoints[linePoints.length - 1].x},${GRAPH_HEIGHT} L${linePoints[0].x},${GRAPH_HEIGHT} Z`
+    : ''
 
   const neutralY = scoreToY(5)
   const lastDp = chartData[chartData.length - 1]
   const endTime = runtime ?? lastDp?.timeMidpoint ?? maxTime
 
-  const gradientId = `miniGrad-${dataPoints?.length ?? 0}-${allPoints[1]?.timeMidpoint ?? 0}`
+  const gradientId = `miniGrad-${dataPoints?.length ?? 0}-${allPoints[0]?.timeMidpoint ?? 0}`
 
   const interpolateAtX = useCallback(
     (svgX: number): HoverInfo | null => {
+      if (linePoints.length < 2) return null
       if (svgX < linePoints[0].x || svgX > linePoints[linePoints.length - 1].x) return null
 
       for (let i = 0; i < linePoints.length - 1; i++) {
@@ -186,8 +202,28 @@ export function FilmCardMiniGraph({
           strokeDasharray="4 3"
         />
 
-        {/* Gold line */}
-        <path d={linePath} fill="none" stroke="var(--cinema-gold)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+        {/* Gold line, starting at the first measured beat */}
+        <path
+          d={linePath}
+          fill="none"
+          stroke="var(--cinema-gold)"
+          strokeWidth={1.8}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {/* A film with one measured beat cannot make a line. Before the 0m
+            origin was removed, the seed point paired with it to draw a short
+            stroke; without that seed the card would render an empty frame. Draw
+            the single beat as a point so the card still says something. */}
+        {linePoints.length === 1 && (
+          <circle
+            cx={linePoints[0].x}
+            cy={linePoints[0].y}
+            r={2.2}
+            fill="var(--cinema-gold)"
+          />
+        )}
 
         {/* Hover elements — all inside SVG so they're never clipped */}
         {hover && (

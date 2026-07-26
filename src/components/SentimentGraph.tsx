@@ -127,6 +127,19 @@ function CustomTooltip({
   const showSpoilers = spoilersRevealed === true
   const view = graphView ?? 'critics'
 
+  // The neutral start is a baseline, not a reading. Say so plainly instead of
+  // showing a score, a time window or a confidence level.
+  if (data.isStart) {
+    return (
+      <div className="bg-cinema-card border border-cinema-border rounded-lg p-3 max-w-xs shadow-xl">
+        <span className="text-cinema-cream font-semibold text-sm block mb-1">Start of film</span>
+        <p className="text-xs text-cinema-muted leading-relaxed">
+          Every film starts at a neutral 5. No viewer opinion yet.
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="bg-cinema-card border border-cinema-border rounded-lg p-3 max-w-xs shadow-xl">
       {showSpoilers && data.label && (
@@ -390,22 +403,46 @@ export default function SentimentGraph({
     : graphView === 'merged' && hasAudienceData ? 'Merged Sentiment'
     : 'Critics Sentiment'
 
-  // Prepend synthetic neutral starting point
-  const chartData = [
-    {
-      timeMidpoint: 0,
-      timeStart: 0,
-      timeEnd: 0,
-      score: 5,
-      label: '',
-      confidence: 'low' as const,
-      reviewEvidence: '',
-      fill: scoreColor(5),
-      userScore: hasAudienceData ? 5 : null,
-      mergedScore: hasAudienceData ? 5 : null,
-    } as (typeof realData)[0],
-    ...realData,
-  ]
+  // Neutral starting baseline.
+  // Every film starts at 5 because the viewer has no opinion yet. This is a
+  // definition, not a measurement, so it must never be drawn like a real beat:
+  // no dot, no confidence badge, no score readout, and the stroke fades in from
+  // transparent so the line reads as starting at the first measured beat.
+  const startRow = {
+    timeMidpoint: 0,
+    timeStart: 0,
+    timeEnd: 0,
+    score: 5,
+    label: '',
+    confidence: 'low' as const,
+    reviewEvidence: '',
+    fill: scoreColor(5),
+    userScore: hasAudienceData ? 5 : null,
+    mergedScore: hasAudienceData ? 5 : null,
+  } as (typeof realData)[0]
+
+  // The origin is only drawn when there are enough measured beats for the fade
+  // to be a small slice of the width. Points are evenly spaced, so with n real
+  // beats the fade spans 1/n of the chart: at 6 beats that is 17%, at 2 beats it
+  // is half the chart, at which point it stops de-emphasising the origin and
+  // starts dimming real data. Below the threshold the origin is dropped
+  // entirely, which is the same rule the card sparklines follow for the same
+  // reason: if the origin cannot be de-emphasised cleanly, do not draw it.
+  const MIN_BEATS_FOR_ORIGIN = 6
+  const showOrigin = realData.length >= MIN_BEATS_FOR_ORIGIN
+
+  const chartData = (showOrigin ? [{ ...startRow, isStart: true }, ...realData] : realData).map(
+    (row, i) => ({
+      ...row,
+      isStart: showOrigin && i === 0,
+    })
+  )
+
+  // The stroke dissolves to nothing at the 0m baseline and reaches full opacity
+  // at the first measured beat, so the line reads as beginning there rather than
+  // as a beat anyone recorded. Points are evenly spaced, so the first beat sits
+  // at 1/(n-1) across the line's bounding box.
+  const firstBeatOffset = chartData.length > 1 ? 1 / (chartData.length - 1) : 0
 
   // ── Visibility flags ──
   const showCritics = graphView === 'critics' || graphView === 'both'
@@ -561,6 +598,27 @@ export default function SentimentGraph({
                 <stop offset="5%" stopColor="#F5F0E8" stopOpacity={0.15} />
                 <stop offset="95%" stopColor="#F5F0E8" stopOpacity={0} />
               </linearGradient>
+              {/* Origin fade. The 0m point is the neutral baseline, not a
+                  measured beat, so the whole series fades in from transparent
+                  there to full strength at the first beat. A mask is used
+                  rather than three per-colour stroke gradients: it is
+                  colour-agnostic, so one definition serves critics, audience
+                  and merged, and it fades the area fill along with the line.
+                  The fill was the remaining problem — a stroke-only fade left a
+                  solid shaded wedge under the 0m to first-beat stretch, which
+                  went on asserting an opening climb the data does not contain. */}
+              <linearGradient id="graphOriginFadeGrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset={0} stopColor="#000" />
+                <stop offset={firstBeatOffset} stopColor="#fff" />
+                <stop offset={1} stopColor="#fff" />
+              </linearGradient>
+              <mask id="graphOriginFade" maskContentUnits="objectBoundingBox">
+                {/* White past the right edge so the final round cap is not
+                    clipped; nothing left of the origin, so its cap cannot peek
+                    out as a nub at 0m. */}
+                <rect x="0" y="-0.2" width="2" height="1.4" fill="#fff" />
+                <rect x="0" y="-0.2" width="1" height="1.4" fill="url(#graphOriginFadeGrad)" />
+              </mask>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--cinema-border)" />
             <XAxis
@@ -627,6 +685,7 @@ export default function SentimentGraph({
                 stroke="var(--cinema-gold)"
                 strokeWidth={2.5}
                 fill="url(#sentimentGradient)"
+                mask={showOrigin ? 'url(#graphOriginFade)' : undefined}
                 isAnimationActive={false}
                 dot={(props: any) => {
                   const { cx, cy, payload, index } = props
@@ -711,8 +770,12 @@ export default function SentimentGraph({
               />
             )}
 
-            {/* Lowest moment (shown with critics line, skip if it falls on the anchored 5.0 start) */}
-            {showCritics && lowestMoment && lowestMoment.time !== dataPoints[0]?.timeMidpoint && (
+            {/* Lowest moment (shown with critics line, skip only if it falls on
+                the 0m neutral baseline, which is not a measured beat). The old
+                guard compared against dataPoints[0], the first *real* beat, so
+                the marker vanished whenever a film's worst moment was its
+                opening one. */}
+            {showCritics && lowestMoment && lowestMoment.time !== 0 && (
               <ReferenceDot
                 x={lowestMoment.time}
                 y={lowestMoment.score}
@@ -731,11 +794,13 @@ export default function SentimentGraph({
                 stroke="var(--cinema-teal)"
                 strokeWidth={2}
                 fill="url(#userGradient)"
+                mask={showOrigin ? 'url(#graphOriginFade)' : undefined}
                 isAnimationActive={false}
                 connectNulls
                 dot={(props: any) => {
                   const { cx, cy, payload, index } = props
-                  if (cx == null || cy == null || payload.userScore == null) return <circle r={0} />
+                  if (cx == null || cy == null || payload.userScore == null || payload.isStart)
+                    return <circle r={0} />
                   return (
                     <circle
                       key={`user-dot-${index}`}
@@ -774,11 +839,13 @@ export default function SentimentGraph({
                 stroke="rgba(245,240,232,0.9)"
                 strokeWidth={2.5}
                 fill="url(#mergedGradient)"
+                mask={showOrigin ? 'url(#graphOriginFade)' : undefined}
                 isAnimationActive={false}
                 connectNulls
                 dot={(props: any) => {
                   const { cx, cy, payload, index } = props
-                  if (cx == null || cy == null || payload.mergedScore == null) return <circle r={0} />
+                  if (cx == null || cy == null || payload.mergedScore == null || payload.isStart)
+                    return <circle r={0} />
                   return (
                     <circle
                       key={`merged-dot-${index}`}
@@ -874,8 +941,8 @@ export default function SentimentGraph({
               msOverflowStyle: 'none',
             }}
           >
-            {chartData.slice(1).map((dp, i) => {
-              const chartIndex = i + 1
+            {chartData.filter((dp) => !dp.isStart).map((dp, i) => {
+              const chartIndex = showOrigin ? i + 1 : i
               const pillScore = getPillScore(dp)
               if (pillScore == null) return null
               const color = scoreColor(pillScore)
