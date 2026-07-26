@@ -105,10 +105,16 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
     ...dp,
     timeMidpoint: dp.timeMidpoint ?? Math.round((dp.timeStart + dp.timeEnd) / 2),
   }))
-  const chartData = [
-    { timeMidpoint: 0, timeStart: 0, timeEnd: 0, score: 5, label: '', confidence: 'low' },
-    ...realData,
-  ]
+  // Same threshold as SentimentGraph. With n measured beats the fade spans 1/n
+  // of the chart, so below 6 beats it covers enough width to dim real data
+  // rather than de-emphasise the origin. In that case no origin is drawn.
+  const showOrigin = realData.length >= 6
+  const chartData = showOrigin
+    ? [
+        { timeMidpoint: 0, timeStart: 0, timeEnd: 0, score: 5, label: '', confidence: 'low' },
+        ...realData,
+      ]
+    : realData
   const firstBeatOffset = chartData.length > 1 ? 1 / (chartData.length - 1) : 0
 
   return (
@@ -271,7 +277,7 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                     stroke="var(--cinema-gold)"
                     strokeWidth={2.5}
                     fill="url(#heroGradient)"
-                    mask="url(#heroOriginFade)"
+                    mask={showOrigin ? 'url(#heroOriginFade)' : undefined}
                     isAnimationActive={false}
                     dot={false}
                     activeDot={(props: any) => {

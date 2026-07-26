@@ -421,10 +421,22 @@ export default function SentimentGraph({
     mergedScore: hasAudienceData ? 5 : null,
   } as (typeof realData)[0]
 
-  const chartData = [{ ...startRow, isStart: true }, ...realData].map((row, i) => ({
-    ...row,
-    isStart: i === 0,
-  }))
+  // The origin is only drawn when there are enough measured beats for the fade
+  // to be a small slice of the width. Points are evenly spaced, so with n real
+  // beats the fade spans 1/n of the chart: at 6 beats that is 17%, at 2 beats it
+  // is half the chart, at which point it stops de-emphasising the origin and
+  // starts dimming real data. Below the threshold the origin is dropped
+  // entirely, which is the same rule the card sparklines follow for the same
+  // reason: if the origin cannot be de-emphasised cleanly, do not draw it.
+  const MIN_BEATS_FOR_ORIGIN = 6
+  const showOrigin = realData.length >= MIN_BEATS_FOR_ORIGIN
+
+  const chartData = (showOrigin ? [{ ...startRow, isStart: true }, ...realData] : realData).map(
+    (row, i) => ({
+      ...row,
+      isStart: showOrigin && i === 0,
+    })
+  )
 
   // The stroke dissolves to nothing at the 0m baseline and reaches full opacity
   // at the first measured beat, so the line reads as beginning there rather than
@@ -673,7 +685,7 @@ export default function SentimentGraph({
                 stroke="var(--cinema-gold)"
                 strokeWidth={2.5}
                 fill="url(#sentimentGradient)"
-                mask="url(#graphOriginFade)"
+                mask={showOrigin ? 'url(#graphOriginFade)' : undefined}
                 isAnimationActive={false}
                 dot={(props: any) => {
                   const { cx, cy, payload, index } = props
@@ -782,7 +794,7 @@ export default function SentimentGraph({
                 stroke="var(--cinema-teal)"
                 strokeWidth={2}
                 fill="url(#userGradient)"
-                mask="url(#graphOriginFade)"
+                mask={showOrigin ? 'url(#graphOriginFade)' : undefined}
                 isAnimationActive={false}
                 connectNulls
                 dot={(props: any) => {
@@ -827,7 +839,7 @@ export default function SentimentGraph({
                 stroke="rgba(245,240,232,0.9)"
                 strokeWidth={2.5}
                 fill="url(#mergedGradient)"
-                mask="url(#graphOriginFade)"
+                mask={showOrigin ? 'url(#graphOriginFade)' : undefined}
                 isAnimationActive={false}
                 connectNulls
                 dot={(props: any) => {
@@ -929,8 +941,8 @@ export default function SentimentGraph({
               msOverflowStyle: 'none',
             }}
           >
-            {chartData.slice(1).map((dp, i) => {
-              const chartIndex = i + 1
+            {chartData.filter((dp) => !dp.isStart).map((dp, i) => {
+              const chartIndex = showOrigin ? i + 1 : i
               const pillScore = getPillScore(dp)
               if (pillScore == null) return null
               const color = scoreColor(pillScore)

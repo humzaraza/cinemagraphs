@@ -46,8 +46,9 @@ export function FilmCardMiniGraph({
   const hasData = !!dataPoints && dataPoints.length > 0
 
   // Derived data is computed unconditionally so the hooks below stay in a
-  // stable order across renders. The seed point in allPoints keeps every
-  // downstream calc safe when dataPoints is empty.
+  // stable order across renders. There is no longer a seed point standing in
+  // for the 0m origin, so anything reading allPoints has to guard its own
+  // length rather than assume at least one entry.
   const chartData = hasData ? dataPoints.map((dp) => ({
     ...dp,
     timeMidpoint: dp.timeMidpoint ?? Math.round(((dp.timeStart ?? 0) + (dp.timeEnd ?? 0)) / 2),
@@ -210,6 +211,19 @@ export function FilmCardMiniGraph({
           strokeLinecap="round"
           strokeLinejoin="round"
         />
+
+        {/* A film with one measured beat cannot make a line. Before the 0m
+            origin was removed, the seed point paired with it to draw a short
+            stroke; without that seed the card would render an empty frame. Draw
+            the single beat as a point so the card still says something. */}
+        {linePoints.length === 1 && (
+          <circle
+            cx={linePoints[0].x}
+            cy={linePoints[0].y}
+            r={2.2}
+            fill="var(--cinema-gold)"
+          />
+        )}
 
         {/* Hover elements — all inside SVG so they're never clipped */}
         {hover && (
