@@ -217,13 +217,24 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                       <stop offset="50%" stopColor="var(--cinema-gold)" stopOpacity={0.1} />
                       <stop offset="95%" stopColor="var(--cinema-gold)" stopOpacity={0} />
                     </linearGradient>
-                    {/* Horizontal stroke fade: transparent at the 0m neutral
-                        baseline, full strength from the first measured beat on. */}
-                    <linearGradient id="heroStroke" x1="0" y1="0" x2="1" y2="0">
-                      <stop offset={0} stopColor="var(--cinema-gold)" stopOpacity={0} />
-                      <stop offset={firstBeatOffset} stopColor="var(--cinema-gold)" stopOpacity={1} />
-                      <stop offset={1} stopColor="var(--cinema-gold)" stopOpacity={1} />
+                    {/* Origin fade. The 0m point is the neutral baseline, not a
+                        measured beat, so the whole series fades in from
+                        transparent there to full strength at the first beat. A
+                        mask is used rather than a stroke gradient so the area
+                        fill fades with the line instead of asserting the 5.0
+                        opening on its own. */}
+                    <linearGradient id="heroOriginFadeGrad" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset={0} stopColor="#000" />
+                      <stop offset={firstBeatOffset} stopColor="#fff" />
+                      <stop offset={1} stopColor="#fff" />
                     </linearGradient>
+                    <mask id="heroOriginFade" maskContentUnits="objectBoundingBox">
+                      {/* White past the right edge so the final round cap is not
+                          clipped; nothing left of the origin, so its cap cannot
+                          peek out as a nub at 0m. */}
+                      <rect x="0" y="-0.2" width="2" height="1.4" fill="#fff" />
+                      <rect x="0" y="-0.2" width="1" height="1.4" fill="url(#heroOriginFadeGrad)" />
+                    </mask>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--cinema-border)" />
                   <XAxis dataKey="timeMidpoint" tickFormatter={formatTime} stroke="#666" fontSize={11} />
@@ -257,9 +268,10 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                   <Area
                     type="natural"
                     dataKey="score"
-                    stroke="url(#heroStroke)"
+                    stroke="var(--cinema-gold)"
                     strokeWidth={2.5}
                     fill="url(#heroGradient)"
+                    mask="url(#heroOriginFade)"
                     isAnimationActive={false}
                     dot={false}
                     activeDot={(props: any) => {

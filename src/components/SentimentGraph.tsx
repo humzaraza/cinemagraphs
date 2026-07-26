@@ -586,23 +586,27 @@ export default function SentimentGraph({
                 <stop offset="5%" stopColor="#F5F0E8" stopOpacity={0.15} />
                 <stop offset="95%" stopColor="#F5F0E8" stopOpacity={0} />
               </linearGradient>
-              {/* Horizontal stroke fades: transparent at the 0m baseline, full
-                  strength from the first measured beat onward. */}
-              <linearGradient id="criticsStroke" x1="0" y1="0" x2="1" y2="0">
-                <stop offset={0} stopColor="var(--cinema-gold)" stopOpacity={0} />
-                <stop offset={firstBeatOffset} stopColor="var(--cinema-gold)" stopOpacity={1} />
-                <stop offset={1} stopColor="var(--cinema-gold)" stopOpacity={1} />
+              {/* Origin fade. The 0m point is the neutral baseline, not a
+                  measured beat, so the whole series fades in from transparent
+                  there to full strength at the first beat. A mask is used
+                  rather than three per-colour stroke gradients: it is
+                  colour-agnostic, so one definition serves critics, audience
+                  and merged, and it fades the area fill along with the line.
+                  The fill was the remaining problem — a stroke-only fade left a
+                  solid shaded wedge under the 0m to first-beat stretch, which
+                  went on asserting an opening climb the data does not contain. */}
+              <linearGradient id="graphOriginFadeGrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset={0} stopColor="#000" />
+                <stop offset={firstBeatOffset} stopColor="#fff" />
+                <stop offset={1} stopColor="#fff" />
               </linearGradient>
-              <linearGradient id="audienceStroke" x1="0" y1="0" x2="1" y2="0">
-                <stop offset={0} stopColor="var(--cinema-teal)" stopOpacity={0} />
-                <stop offset={firstBeatOffset} stopColor="var(--cinema-teal)" stopOpacity={1} />
-                <stop offset={1} stopColor="var(--cinema-teal)" stopOpacity={1} />
-              </linearGradient>
-              <linearGradient id="mergedStroke" x1="0" y1="0" x2="1" y2="0">
-                <stop offset={0} stopColor="rgba(245,240,232,0.9)" stopOpacity={0} />
-                <stop offset={firstBeatOffset} stopColor="rgba(245,240,232,0.9)" stopOpacity={1} />
-                <stop offset={1} stopColor="rgba(245,240,232,0.9)" stopOpacity={1} />
-              </linearGradient>
+              <mask id="graphOriginFade" maskContentUnits="objectBoundingBox">
+                {/* White past the right edge so the final round cap is not
+                    clipped; nothing left of the origin, so its cap cannot peek
+                    out as a nub at 0m. */}
+                <rect x="0" y="-0.2" width="2" height="1.4" fill="#fff" />
+                <rect x="0" y="-0.2" width="1" height="1.4" fill="url(#graphOriginFadeGrad)" />
+              </mask>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--cinema-border)" />
             <XAxis
@@ -666,9 +670,10 @@ export default function SentimentGraph({
               <Area
                 type="monotone"
                 dataKey="score"
-                stroke="url(#criticsStroke)"
+                stroke="var(--cinema-gold)"
                 strokeWidth={2.5}
                 fill="url(#sentimentGradient)"
+                mask="url(#graphOriginFade)"
                 isAnimationActive={false}
                 dot={(props: any) => {
                   const { cx, cy, payload, index } = props
@@ -774,9 +779,10 @@ export default function SentimentGraph({
               <Area
                 type="monotone"
                 dataKey="userScore"
-                stroke="url(#audienceStroke)"
+                stroke="var(--cinema-teal)"
                 strokeWidth={2}
                 fill="url(#userGradient)"
+                mask="url(#graphOriginFade)"
                 isAnimationActive={false}
                 connectNulls
                 dot={(props: any) => {
@@ -818,9 +824,10 @@ export default function SentimentGraph({
               <Area
                 type="monotone"
                 dataKey="mergedScore"
-                stroke="url(#mergedStroke)"
+                stroke="rgba(245,240,232,0.9)"
                 strokeWidth={2.5}
                 fill="url(#mergedGradient)"
+                mask="url(#graphOriginFade)"
                 isAnimationActive={false}
                 connectNulls
                 dot={(props: any) => {
