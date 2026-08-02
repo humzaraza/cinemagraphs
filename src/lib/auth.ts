@@ -6,14 +6,26 @@ import { PrismaAdapter } from '@auth/prisma-adapter'
 import bcrypt from 'bcrypt'
 import { prisma } from './prisma'
 import { apiLogger } from './logger'
+import { serializeAuthError } from './auth-error'
 import { TERMS_VERSION } from '@/lib/legal/terms-version'
 import type { Adapter } from 'next-auth/adapters'
 
 export const authOptions: NextAuthOptions = {
   debug: process.env.NODE_ENV !== 'production',
   logger: {
+    // NextAuth v4 wraps provider failures in UnknownError, whose toJSON()
+    // returns only { name, message } — and for OAuth callback failures the
+    // message is usually ''. Spreading `metadata` straight into pino
+    // therefore logged `error: { name: 'OAuthCallbackError', message: '' }`
+    // and threw away every field that says what actually went wrong.
+    //
+    // serializeAuthError pulls out the preserved original stack plus the
+    // openid-client fields (error, error_description, response.body) that
+    // carry the provider's real answer, e.g. invalid_client. Token-bearing
+    // fields are redacted by the logger's redact config.
     error(code, metadata) {
-      apiLogger.error({ code, ...metadata }, 'NextAuth error')
+      const { error, ...rest } = (metadata ?? {}) as Record<string, unknown>
+      apiLogger.error({ code, ...rest, err: serializeAuthError(error) }, 'NextAuth error')
     },
     warn(code) {
       apiLogger.warn({ code }, 'NextAuth warning')
@@ -53,22 +65,47 @@ export const authOptions: NextAuthOptions = {
       },
     }),
   ],
+  // ---------------------------------------------------------------------
+  // DO NOT change sameSite to 'lax' on the four OAuth-flow cookies below.
+  //
+  // Sign in with Apple uses response_mode=form_post: appleid.apple.com
+  // returns the authorization result by auto-submitting an HTML form that
+  // POSTs cross-site to /api/auth/callback/apple. SameSite=Lax cookies are
+  // only sent on top-level navigations with *safe* methods (GET), so on a
+  // cross-site POST the browser withholds them. NextAuth then finds no
+  // state/nonce/PKCE cookie and throws OAuthCallbackError, which surfaces
+  // as an endless redirect back to /auth/signin.
+  //
+  // Google is unaffected because it uses response_mode=query (a GET
+  // redirect), which Lax permits — so this breakage looks provider-
+  // specific and is easy to misdiagnose as an Apple credential problem.
+  //
+  // History: f8f3c1a (2026-03-28) set these to 'none' to fix exactly this
+  // bug. 6c55529 (2026-05-10, "auth hardening") reverted them to 'lax',
+  // silently re-breaking Apple sign-in for three months. Please leave the
+  // comment attached to the code.
+  //
+  // csrfToken intentionally stays 'lax': NextAuth v4 only validates CSRF
+  // on same-site POSTs to /api/auth/signin/:provider and /signout, never
+  // on the OAuth callback, so it does not need to travel cross-site and
+  // is safer scoped tightly.
+  // ---------------------------------------------------------------------
   cookies: {
     pkceCodeVerifier: {
       name: '__Secure-next-auth.pkce.code_verifier',
-      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
+      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
     },
     state: {
       name: '__Secure-next-auth.state',
-      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
+      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
     },
     nonce: {
       name: '__Secure-next-auth.nonce',
-      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
+      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
     },
     callbackUrl: {
       name: '__Secure-next-auth.callback-url',
-      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
+      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
     },
     csrfToken: {
       name: '__Host-next-auth.csrf-token',

@@ -54,14 +54,44 @@ describe('middleware: lifted auth-specific protections', () => {
   it('triggers account-creation rate limit on /api/auth/callback/google', async () => {
     await middleware(makeRequest('http://localhost/api/auth/callback/google'))
 
-    // Path also matches /api/auth/callback so 'signin' fires first; both
-    // calls should be present, and we specifically assert the new one.
+    // Path also matches /api/auth/callback so 'signin-callback' fires first;
+    // both calls should be present, and we specifically assert this one.
     expect(mockCheckRateLimit).toHaveBeenCalledWith(
       'account-creation',
       '1.2.3.4',
       3,
       60 * 60 * 1000,
     )
+  })
+
+  // The callback used to share the 'signin' bucket, so one OAuth round trip
+  // burned two of ten slots and a user retrying a broken provider was 429'd
+  // after five attempts — with the 429 hiding the underlying error.
+  it('meters /api/auth/callback on its own bucket, not the signin bucket', async () => {
+    await middleware(makeRequest('http://localhost/api/auth/callback/apple', { method: 'POST' }))
+
+    expect(mockCheckRateLimit).toHaveBeenCalledWith(
+      'signin-callback',
+      '1.2.3.4',
+      30,
+      15 * 60 * 1000,
+    )
+    expect(mockCheckRateLimit).not.toHaveBeenCalledWith(
+      'signin',
+      '1.2.3.4',
+      10,
+      15 * 60 * 1000,
+    )
+  })
+
+  it('returns 429 with Retry-After when the callback bucket is exhausted', async () => {
+    mockCheckRateLimit.mockResolvedValueOnce({ limited: true, remaining: 0, retryAfterMs: 9000 })
+    const res = await middleware(
+      makeRequest('http://localhost/api/auth/callback/apple', { method: 'POST' }),
+    )
+
+    expect(res?.status).toBe(429)
+    expect(res?.headers.get('Retry-After')).toBe('9')
   })
 
   it('honeypot trap fires on /api/auth/* with _hp_website query', async () => {

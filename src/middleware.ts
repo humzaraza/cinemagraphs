@@ -65,8 +65,24 @@ export async function middleware(request: NextRequest) {
   // mobile (no Origin header) and from sign-in flows that legitimately
   // come from varying user agents.
 
-  if (pathname.startsWith('/api/auth/signin') || pathname.startsWith('/api/auth/callback')) {
+  // signin and callback are metered separately. A single OAuth round trip
+  // hits both paths, so pooling them meant one sign-in attempt consumed two
+  // of ten slots — a user retrying a failing provider was locked out after
+  // five tries, and the 429 ("Too many attempts") masked the real error.
+  // The callback is not a user-initiated attempt: the browser is redirected
+  // or form-POSTed there by the provider, so it gets its own, looser bucket.
+  if (pathname.startsWith('/api/auth/signin')) {
     const { limited, retryAfterMs } = await checkRateLimit('signin', ip, 10, 15 * 60 * 1000)
+    if (limited) {
+      return NextResponse.json(
+        { error: 'Too many attempts, please try again later.' },
+        { status: 429, headers: { 'Retry-After': Math.ceil(retryAfterMs / 1000).toString() } }
+      )
+    }
+  }
+
+  if (pathname.startsWith('/api/auth/callback')) {
+    const { limited, retryAfterMs } = await checkRateLimit('signin-callback', ip, 30, 15 * 60 * 1000)
     if (limited) {
       return NextResponse.json(
         { error: 'Too many attempts, please try again later.' },
