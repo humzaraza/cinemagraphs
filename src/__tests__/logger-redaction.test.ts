@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import pino from 'pino'
 import { redactConfig } from '@/lib/logger'
+import { serializeAuthError } from '@/lib/auth-error'
 
 // Construct a parallel pino instance using the actual production redact
 // config and capture output via a custom destination stream. This lets us
@@ -120,5 +121,78 @@ describe('logger redact config', () => {
 
     const out = lastLogged()
     expect(out.refresh_token).toBe('[Redacted]')
+  })
+})
+
+// Regression cover for the Apple sign-in outage: NextAuth v4 wraps provider
+// failures in UnknownError, whose toJSON() emits only { name, message } —
+// and the message is '' for OAuth callback failures. Logging `metadata`
+// directly produced records that named the error and said nothing else.
+describe('serializeAuthError', () => {
+  it('keeps the stack when the wrapper message is empty', () => {
+    const wrapped = Object.assign(new Error(''), {
+      name: 'OAuthCallbackError',
+      stack: 'OPError: invalid_client\n    at processTokenResponse',
+      code: 'ERR_OAUTH',
+    })
+
+    const out = serializeAuthError(wrapped) as Record<string, unknown>
+    expect(out.name).toBe('OAuthCallbackError')
+    expect(out.message).toBe('')
+    expect(out.stack).toContain('invalid_client')
+    expect(out.code).toBe('ERR_OAUTH')
+  })
+
+  it('surfaces openid-client error / error_description / response body', () => {
+    const opError = Object.assign(new Error('invalid_client'), {
+      name: 'OPError',
+      error: 'invalid_client',
+      error_description: 'Client authentication failed.',
+      response: { statusCode: 400, body: { error: 'invalid_client' } },
+    })
+
+    const out = serializeAuthError(opError) as Record<string, unknown>
+    expect(out.error).toBe('invalid_client')
+    expect(out.error_description).toBe('Client authentication failed.')
+    expect(out.response).toEqual({ statusCode: 400, body: { error: 'invalid_client' } })
+  })
+
+  it('walks the cause chain to the underlying provider error', () => {
+    const wrapped = Object.assign(new Error(''), {
+      name: 'OAuthCallbackError',
+      cause: Object.assign(new Error('invalid_client'), { error: 'invalid_client' }),
+    })
+
+    const out = serializeAuthError(wrapped) as Record<string, unknown>
+    const cause = out.cause as Record<string, unknown>
+    expect(cause.message).toBe('invalid_client')
+    expect(cause.error).toBe('invalid_client')
+  })
+
+  it('does not loop on a self-referential cause chain', () => {
+    const err = new Error('boom') as Error & { cause?: unknown }
+    err.cause = err
+
+    const out = serializeAuthError(err) as Record<string, unknown>
+    expect(JSON.stringify(out)).toContain('truncated')
+  })
+
+  it('handles non-object and nullish inputs', () => {
+    expect(serializeAuthError(undefined)).toBeUndefined()
+    expect(serializeAuthError(null)).toBeNull()
+    expect(serializeAuthError('plain string')).toEqual({ value: 'plain string' })
+  })
+
+  it('redacts tokens echoed back inside a provider error response body', () => {
+    const opError = Object.assign(new Error('bad grant'), {
+      name: 'OPError',
+      response: { statusCode: 400, body: { access_token: 'leaky', id_token: 'leaky' } },
+    })
+
+    testLogger.error({ err: serializeAuthError(opError) }, 'NextAuth error')
+
+    const out = lastLogged() as { err: { response: { body: Record<string, unknown> } } }
+    expect(out.err.response.body.access_token).toBe('[Redacted]')
+    expect(out.err.response.body.id_token).toBe('[Redacted]')
   })
 })

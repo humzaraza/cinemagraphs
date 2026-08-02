@@ -35,6 +35,22 @@ export const redactConfig = {
     'id_token',
     'access_token',
     'refresh_token',
+    // serializeAuthError() output. A failed OAuth token exchange can echo
+    // back a partial token payload in the provider response body, so the
+    // nested shapes it produces are redacted explicitly (pino's `*` only
+    // matches one level).
+    'err.body.access_token',
+    'err.body.id_token',
+    'err.body.refresh_token',
+    'err.response.body.access_token',
+    'err.response.body.id_token',
+    'err.response.body.refresh_token',
+    'err.cause.body.access_token',
+    'err.cause.body.id_token',
+    'err.cause.body.refresh_token',
+    'err.cause.response.body.access_token',
+    'err.cause.response.body.id_token',
+    'err.cause.response.body.refresh_token',
   ],
   censor: '[Redacted]',
 }
