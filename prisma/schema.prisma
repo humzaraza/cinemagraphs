@@ -566,6 +566,7 @@ model Activity {
   reviewId     String?
   filmId       String?
   replyId      String?
+  listId       String?
 
   actor      User  @relation("ActivityActor", fields: [actorId], references: [id], onDelete: Cascade)
   targetUser User? @relation("ActivityTargetUser", fields: [targetUserId], references: [id], onDelete: Cascade)

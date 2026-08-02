@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
+import { logActivity } from '@/lib/activity'
 
 export async function POST(
   request: NextRequest,
@@ -34,6 +35,10 @@ export async function POST(
       data: { listId: id, filmId },
       select: { id: true, filmId: true, addedAt: true },
     })
+
+    // A duplicate add throws above (unique constraint), so this cannot
+    // double-log for the same list/film pair.
+    await logActivity({ actorId: session.user.id, type: 'list_add', filmId, listId: id })
 
     return NextResponse.json(listFilm, { status: 201 })
   } catch (err) {
