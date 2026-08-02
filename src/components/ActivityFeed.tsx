@@ -138,7 +138,7 @@ function FeedSentence({ item }: { item: FeedItem }) {
 export default function ActivityFeed({ initialData }: { initialData: FriendsFeedPage }) {
   const [items, setItems] = useState<FeedItem[]>(initialData.items)
   const [page, setPage] = useState(initialData.page)
-  const [totalPages, setTotalPages] = useState(initialData.totalPages)
+  const [hasMore, setHasMore] = useState(initialData.hasMore)
   const [loading, setLoading] = useState(false)
 
   const handleLoadMore = async () => {
@@ -154,7 +154,7 @@ export default function ActivityFeed({ initialData }: { initialData: FriendsFeed
         return [...prev, ...data.items.filter((item) => !seen.has(item.id))]
       })
       setPage(data.page)
-      setTotalPages(data.totalPages)
+      setHasMore(data.hasMore)
     } catch {
       // Keep current items; the button stays visible for a retry.
     } finally {
@@ -178,7 +178,7 @@ export default function ActivityFeed({ initialData }: { initialData: FriendsFeed
         </button>
       </div>
 
-      {items.length === 0 && page >= totalPages ? (
+      {items.length === 0 && !hasMore ? (
         <div className="text-center py-16">
           <h2 className="font-[family-name:var(--font-playfair)] text-xl font-bold text-cinema-cream mb-2">
             Your feed starts with people
@@ -213,7 +213,7 @@ export default function ActivityFeed({ initialData }: { initialData: FriendsFeed
             ))}
           </ul>
 
-          {page < totalPages && (
+          {hasMore && (
             <div className="flex justify-center mt-8">
               <button
                 onClick={handleLoadMore}

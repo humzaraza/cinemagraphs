@@ -41,9 +41,8 @@ export interface FeedItem {
 
 export interface FriendsFeedPage {
   items: FeedItem[]
-  total: number
   page: number
-  totalPages: number
+  hasMore: boolean
 }
 
 function uniqueIds(ids: (string | null)[]): string[] {
@@ -60,33 +59,32 @@ function uniqueIds(ids: (string | null)[]): string[] {
  * never render in someone else's feed.
  */
 export async function getFriendsFeed(viewerId: string, page: number): Promise<FriendsFeedPage> {
+  // Banned members are excluded at the follow-resolution step (matching
+  // /api/users/search), so their ids never enter the actor scope below.
   const follows = await prisma.follow.findMany({
-    where: { followerId: viewerId },
+    where: { followerId: viewerId, following: { role: { not: 'BANNED' } } },
     select: { followingId: true },
   })
   const followedIds = follows.map((f) => f.followingId)
   if (followedIds.length === 0) {
-    return { items: [], total: 0, page, totalPages: 0 }
+    return { items: [], page, hasMore: false }
   }
 
-  const where = {
-    actorId: { in: followedIds },
-    type: { in: FEED_TYPES },
-  }
-
-  const [rows, total] = await Promise.all([
-    prisma.activity.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * FEED_PAGE_SIZE,
-      take: FEED_PAGE_SIZE + FEED_OVERFETCH,
-      include: {
-        actor: { select: { id: true, name: true, image: true } },
-        targetUser: { select: { id: true, name: true, image: true } },
-      },
-    }),
-    prisma.activity.count({ where }),
-  ])
+  const rows = await prisma.activity.findMany({
+    where: {
+      actorId: { in: followedIds },
+      type: { in: FEED_TYPES },
+    },
+    orderBy: { createdAt: 'desc' },
+    skip: (page - 1) * FEED_PAGE_SIZE,
+    take: FEED_PAGE_SIZE + FEED_OVERFETCH,
+    include: {
+      actor: { select: { id: true, name: true, image: true } },
+      // role is an internal filter input for the follow branch below; it is
+      // stripped before the item is shaped and never leaves this module.
+      targetUser: { select: { id: true, name: true, image: true, role: true } },
+    },
+  })
 
   const reviewIds = uniqueIds(rows.map((r) => r.reviewId))
   const filmIds = uniqueIds(rows.map((r) => r.filmId))
@@ -139,8 +137,11 @@ export async function getFriendsFeed(viewerId: string, page: number): Promise<Fr
           return [{ ...base, type: 'review', review: { id: review.id }, film: review.film }]
         }
         case 'follow': {
-          if (!row.targetUser) return []
-          return [{ ...base, type: 'follow', targetUser: row.targetUser }]
+          // A banned target must not render, mirroring the approved-review
+          // drop and the actor-scope filter above.
+          if (!row.targetUser || row.targetUser.role === 'BANNED') return []
+          const { id, name, image } = row.targetUser
+          return [{ ...base, type: 'follow', targetUser: { id, name, image } }]
         }
         case 'watchlist': {
           const film = row.filmId ? filmById.get(row.filmId) : undefined
@@ -159,10 +160,16 @@ export async function getFriendsFeed(viewerId: string, page: number): Promise<Fr
     })
     .slice(0, FEED_PAGE_SIZE)
 
-  return {
-    items,
-    total,
-    page,
-    totalPages: Math.ceil(total / FEED_PAGE_SIZE),
-  }
+  // hasMore is derived from the raw fetch window rather than a count query:
+  // rows past FEED_PAGE_SIZE sit exactly where the next page's skip starts,
+  // so their presence means a further fetch returns raw rows. This covers
+  // both a full window (more rows may exist beyond it) and a partial tail
+  // (rows 21..26 that this page's trim left for the next fetch). Checking
+  // for a completely full window, or for surplus survivors, would each
+  // strand reachable tail rows. A count query here would leak the volume
+  // of suppressed activity (private lists, flagged reviews) to the viewer,
+  // which is why total/totalPages are gone.
+  const hasMore = rows.length > FEED_PAGE_SIZE
+
+  return { items, page, hasMore }
 }

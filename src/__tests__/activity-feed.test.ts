@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockFollowFindMany = vi.fn()
 const mockActivityFindMany = vi.fn()
-const mockActivityCount = vi.fn()
 const mockUserReviewFindMany = vi.fn()
 const mockFilmFindMany = vi.fn()
 const mockListFindMany = vi.fn()
@@ -14,7 +13,6 @@ vi.mock('@/lib/prisma', () => ({
     },
     activity: {
       findMany: (...args: unknown[]) => mockActivityFindMany(...args),
-      count: (...args: unknown[]) => mockActivityCount(...args),
     },
     userReview: {
       findMany: (...args: unknown[]) => mockUserReviewFindMany(...args),
@@ -57,7 +55,6 @@ beforeEach(() => {
   // tests override what they need.
   mockFollowFindMany.mockResolvedValue([{ followingId: 'u-1' }])
   mockActivityFindMany.mockResolvedValue([])
-  mockActivityCount.mockResolvedValue(0)
   mockUserReviewFindMany.mockResolvedValue([])
   mockFilmFindMany.mockResolvedValue([])
   mockListFindMany.mockResolvedValue([])
@@ -69,9 +66,8 @@ describe('getFriendsFeed: follow scoping', () => {
 
     const feed = await getFriendsFeed('viewer-1', 1)
 
-    expect(feed).toEqual({ items: [], total: 0, page: 1, totalPages: 0 })
+    expect(feed).toEqual({ items: [], page: 1, hasMore: false })
     expect(mockActivityFindMany).not.toHaveBeenCalled()
-    expect(mockActivityCount).not.toHaveBeenCalled()
   })
 
   it('scopes the activity query to followed actor ids only', async () => {
@@ -86,6 +82,25 @@ describe('getFriendsFeed: follow scoping', () => {
     )
   })
 
+  it('excludes banned members: a followed member with role BANNED contributes no rows', async () => {
+    // The role filter lives in the follow query itself, so a banned
+    // member's follow row never comes back and their id never reaches
+    // the activity query's actor scope.
+    mockFollowFindMany.mockResolvedValue([{ followingId: 'u-good' }])
+
+    await getFriendsFeed('viewer-1', 1)
+
+    expect(mockFollowFindMany).toHaveBeenCalledWith({
+      where: { followerId: 'viewer-1', following: { role: { not: 'BANNED' } } },
+      select: { followingId: true },
+    })
+    expect(mockActivityFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ actorId: { in: ['u-good'] } }),
+      })
+    )
+  })
+
   it('excludes likes and replies from the feed via the type filter', async () => {
     await getFriendsFeed('viewer-1', 1)
 
@@ -93,8 +108,6 @@ describe('getFriendsFeed: follow scoping', () => {
     expect(where.type.in).toEqual(['review', 'follow', 'watchlist', 'list_add'])
     expect(where.type.in).not.toContain('like')
     expect(where.type.in).not.toContain('reply')
-    // The count shares the same where, so total matches what is visible.
-    expect(mockActivityCount).toHaveBeenCalledWith({ where })
   })
 })
 
@@ -103,7 +116,6 @@ describe('getFriendsFeed: referent resolution and dropping', () => {
     mockActivityFindMany.mockResolvedValue([
       activityRow({ id: 'act-r', type: 'review', reviewId: 'r-1', filmId: 'f-1' }),
     ])
-    mockActivityCount.mockResolvedValue(1)
     mockUserReviewFindMany.mockResolvedValue([
       { id: 'r-1', user: ACTOR, film: FILM },
     ])
@@ -135,7 +147,6 @@ describe('getFriendsFeed: referent resolution and dropping', () => {
     mockActivityFindMany.mockResolvedValue([
       activityRow({ id: 'act-r', type: 'review', reviewId: 'r-flagged', filmId: 'f-1' }),
     ])
-    mockActivityCount.mockResolvedValue(1)
     // The status: 'approved' filter means a flagged review comes back empty.
     mockUserReviewFindMany.mockResolvedValue([])
     mockFilmFindMany.mockResolvedValue([FILM])
@@ -150,7 +161,6 @@ describe('getFriendsFeed: referent resolution and dropping', () => {
       activityRow({ id: 'act-private', type: 'list_add', filmId: 'f-1', listId: 'l-private' }),
       activityRow({ id: 'act-public', type: 'list_add', filmId: 'f-1', listId: 'l-public' }),
     ])
-    mockActivityCount.mockResolvedValue(2)
     mockFilmFindMany.mockResolvedValue([FILM])
     // The isPublic: true filter means only the public list comes back.
     mockListFindMany.mockResolvedValue([{ id: 'l-public', name: 'Noir Essentials' }])
@@ -173,7 +183,6 @@ describe('getFriendsFeed: referent resolution and dropping', () => {
       activityRow({ id: 'act-f', type: 'follow', targetUserId: 'u-gone', targetUser: null }),
       activityRow({ id: 'act-ok', type: 'watchlist', filmId: 'f-1' }),
     ])
-    mockActivityCount.mockResolvedValue(3)
     mockFilmFindMany.mockResolvedValue([FILM])
 
     const feed = await getFriendsFeed('viewer-1', 1)
@@ -181,28 +190,51 @@ describe('getFriendsFeed: referent resolution and dropping', () => {
     expect(feed.items.map((i) => i.id)).toEqual(['act-ok'])
   })
 
-  it('keeps a follow row whose target user resolved', async () => {
-    const target = { id: 'u-2', name: 'Ben', image: null }
+  it('keeps a follow row whose target user resolved, stripping the internal role field', async () => {
     mockActivityFindMany.mockResolvedValue([
-      activityRow({ id: 'act-f', type: 'follow', targetUserId: 'u-2', targetUser: target }),
+      activityRow({
+        id: 'act-f',
+        type: 'follow',
+        targetUserId: 'u-2',
+        targetUser: { id: 'u-2', name: 'Ben', image: null, role: 'USER' },
+      }),
     ])
-    mockActivityCount.mockResolvedValue(1)
 
     const feed = await getFriendsFeed('viewer-1', 1)
 
     expect(feed.items).toHaveLength(1)
     expect(feed.items[0].type).toBe('follow')
-    expect(feed.items[0].targetUser).toEqual(target)
+    expect(feed.items[0].targetUser).toEqual({ id: 'u-2', name: 'Ben', image: null })
+  })
+
+  it('drops a follow row whose target user is banned', async () => {
+    mockActivityFindMany.mockResolvedValue([
+      activityRow({
+        id: 'act-banned',
+        type: 'follow',
+        targetUserId: 'u-bad',
+        targetUser: { id: 'u-bad', name: 'Mal', image: null, role: 'BANNED' },
+      }),
+      activityRow({
+        id: 'act-ok',
+        type: 'follow',
+        targetUserId: 'u-2',
+        targetUser: { id: 'u-2', name: 'Ben', image: null, role: 'USER' },
+      }),
+    ])
+
+    const feed = await getFriendsFeed('viewer-1', 1)
+
+    expect(feed.items.map((i) => i.id)).toEqual(['act-ok'])
   })
 })
 
 describe('getFriendsFeed: pagination', () => {
-  it('over-fetches, trims survivors to the page size, and reports totals', async () => {
+  it('over-fetches, trims survivors to the page size, and reports hasMore from a full window', async () => {
     const rows = Array.from({ length: FEED_PAGE_SIZE + 6 }, (_, i) =>
       activityRow({ id: `act-${i}`, type: 'watchlist', filmId: 'f-1' })
     )
     mockActivityFindMany.mockResolvedValue(rows)
-    mockActivityCount.mockResolvedValue(45)
     mockFilmFindMany.mockResolvedValue([FILM])
 
     const feed = await getFriendsFeed('viewer-1', 2)
@@ -215,8 +247,36 @@ describe('getFriendsFeed: pagination', () => {
       })
     )
     expect(feed.items).toHaveLength(FEED_PAGE_SIZE)
-    expect(feed.total).toBe(45)
     expect(feed.page).toBe(2)
-    expect(feed.totalPages).toBe(3)
+    expect(feed.hasMore).toBe(true)
+  })
+
+  it('reports hasMore: false when the raw window ends at the page boundary', async () => {
+    const rows = Array.from({ length: FEED_PAGE_SIZE }, (_, i) =>
+      activityRow({ id: `act-${i}`, type: 'watchlist', filmId: 'f-1' })
+    )
+    mockActivityFindMany.mockResolvedValue(rows)
+    mockFilmFindMany.mockResolvedValue([FILM])
+
+    const feed = await getFriendsFeed('viewer-1', 1)
+
+    expect(feed.items).toHaveLength(FEED_PAGE_SIZE)
+    expect(feed.hasMore).toBe(false)
+  })
+
+  it('reports hasMore from raw rows, not survivors: a dropped tail row still signals a next page', async () => {
+    // 21 raw rows; the 21st sits exactly where page 2's skip starts, so
+    // hasMore must be true even though that row drops at render time.
+    const rows = Array.from({ length: FEED_PAGE_SIZE }, (_, i) =>
+      activityRow({ id: `act-${i}`, type: 'watchlist', filmId: 'f-1' })
+    )
+    rows.push(activityRow({ id: 'act-dropped', type: 'watchlist', filmId: 'f-gone' }))
+    mockActivityFindMany.mockResolvedValue(rows)
+    mockFilmFindMany.mockResolvedValue([FILM])
+
+    const feed = await getFriendsFeed('viewer-1', 1)
+
+    expect(feed.items).toHaveLength(FEED_PAGE_SIZE)
+    expect(feed.hasMore).toBe(true)
   })
 })
