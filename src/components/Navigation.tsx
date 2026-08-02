@@ -27,6 +27,7 @@ export default function Navigation() {
   }, [drawerOpen])
 
   const navLinks = [
+    ...(session?.user ? [{ href: '/activity', label: 'Activity' }] : []),
     { href: '/films/browse', label: 'Browse' },
     { href: '/members', label: 'Members' },
     { href: '/categories', label: 'Categories' },
