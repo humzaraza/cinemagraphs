@@ -131,6 +131,19 @@ function FeedSentence({ item, incoming }: { item: FeedItem; incoming: boolean })
           </Link>
         </>
       )
+    case 'reply_to_comment':
+      if (!item.review || !item.film) return null
+      return (
+        <>
+          <ActorLink user={item.actor} /> replied to your comment on{' '}
+          <Link
+            href={`/reviews/${item.review.id}`}
+            className="text-cinema-gold hover:text-cinema-gold/80 transition-colors"
+          >
+            {item.film.title}
+          </Link>
+        </>
+      )
     case 'watchlist':
       if (!item.film) return null
       return (
@@ -301,7 +314,7 @@ export default function ActivityFeed({
                   <p className="text-sm text-cinema-cream">
                     <FeedSentence item={item} incoming={activeTab === 'incoming'} />
                   </p>
-                  {item.type === 'reply' && item.reply && (
+                  {(item.type === 'reply' || item.type === 'reply_to_comment') && item.reply && (
                     <p className="text-sm text-cinema-muted mt-0.5">{item.reply.body}</p>
                   )}
                   <p className="text-xs text-cinema-muted mt-0.5">{timeAgo(item.createdAt)}</p>

@@ -1,7 +1,14 @@
 import { prisma } from './prisma'
 import { apiLogger } from './logger'
 
-export type ActivityType = 'review' | 'follow' | 'watchlist' | 'like' | 'reply' | 'list_add'
+export type ActivityType =
+  | 'review'
+  | 'follow'
+  | 'watchlist'
+  | 'like'
+  | 'reply'
+  | 'reply_to_comment'
+  | 'list_add'
 
 export interface LogActivityInput {
   actorId: string

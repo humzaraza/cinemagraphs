@@ -323,18 +323,18 @@ describe('getIncomingFeed: query scoping', () => {
       expect.objectContaining({
         where: {
           targetUserId: 'viewer-1',
-          type: { in: ['follow', 'like', 'reply'] },
+          type: { in: ['follow', 'like', 'reply', 'reply_to_comment'] },
           actorId: { not: 'viewer-1' },
         },
       })
     )
   })
 
-  it('requests only follow, like, and reply types', async () => {
+  it('requests only follow, like, reply, and reply_to_comment types', async () => {
     await getIncomingFeed('viewer-1', 1)
 
     const where = mockActivityFindMany.mock.calls[0][0].where
-    expect(where.type.in).toEqual(['follow', 'like', 'reply'])
+    expect(where.type.in).toEqual(['follow', 'like', 'reply', 'reply_to_comment'])
     expect(where.type.in).not.toContain('review')
     expect(where.type.in).not.toContain('watchlist')
     expect(where.type.in).not.toContain('list_add')
@@ -474,6 +474,34 @@ describe('getIncomingFeed: referent resolution and dropping', () => {
 
     expect(feed.items).toEqual([])
   })
+
+  it('keeps a reply_to_comment row, preserving its type and truncating its body', async () => {
+    mockActivityFindMany.mockResolvedValue([
+      incomingRow({ id: 'act-rtc', type: 'reply_to_comment', reviewId: 'r-1', replyId: 'rr-1' }),
+    ])
+    mockUserReviewFindMany.mockResolvedValue([{ id: 'r-1', film: FILM }])
+    mockReviewReplyFindMany.mockResolvedValue([{ id: 'rr-1', body: 'x'.repeat(300) }])
+
+    const feed = await getIncomingFeed('viewer-1', 1)
+
+    expect(feed.items).toHaveLength(1)
+    expect(feed.items[0].type).toBe('reply_to_comment')
+    expect(feed.items[0].review).toEqual({ id: 'r-1' })
+    expect(feed.items[0].film).toEqual(FILM)
+    expect(feed.items[0].reply).toEqual({ id: 'rr-1', body: `${'x'.repeat(120)}…` })
+  })
+
+  it('drops a reply_to_comment row whose reply was hard-deleted', async () => {
+    mockActivityFindMany.mockResolvedValue([
+      incomingRow({ id: 'act-rtc', type: 'reply_to_comment', reviewId: 'r-1', replyId: 'rr-gone' }),
+    ])
+    mockUserReviewFindMany.mockResolvedValue([{ id: 'r-1', film: FILM }])
+    mockReviewReplyFindMany.mockResolvedValue([])
+
+    const feed = await getIncomingFeed('viewer-1', 1)
+
+    expect(feed.items).toEqual([])
+  })
 })
 
 describe('getIncomingFeed: pagination', () => {
@@ -530,7 +558,7 @@ describe('hasUnreadIncoming', () => {
       expect.objectContaining({
         where: {
           targetUserId: 'viewer-1',
-          type: { in: ['follow', 'like', 'reply'] },
+          type: { in: ['follow', 'like', 'reply', 'reply_to_comment'] },
           actorId: { not: 'viewer-1' },
           createdAt: { gt: lastSeen },
         },
