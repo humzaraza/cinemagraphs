@@ -2,7 +2,9 @@
 
 ## Overview
 
-This document covers rotating the Apple Sign In client secret JWT and, when needed, the underlying .p8 private key.
+The web Apple Sign In client secret is **minted at request time** from the .p8 private key. There is no six-month JWT to regenerate and no expiry deadline to track.
+
+This document covers that setup, the legacy static-JWT fallback it replaced, and rotating the underlying .p8 when needed.
 
 ## Current configuration
 
@@ -14,136 +16,105 @@ This document covers rotating the Apple Sign In client secret JWT and, when need
 | Bundle ID (mobile) | `ca.cinemagraphs.app` |
 | .p8 file location | `~/Desktop/Cinemagraphs/AuthKey_SCR59ABFVK.p8` |
 | Encrypted backup | Apple Notes (iCloud sync) |
-| Current JWT expiry | September 2026 (approximate; decode current APPLE_SECRET to confirm) |
+| `APPLE_PRIVATE_KEY` | base64-encoded .p8 — the live mechanism |
+| `APPLE_SECRET` | pre-signed JWT — fallback only, used when `APPLE_PRIVATE_KEY` is unset |
 
-## What APPLE_SECRET actually is
+## How the client secret works
 
-`APPLE_SECRET` in Vercel is NOT the .p8 file directly. It is a JWT signed with the .p8 private key, carrying these claims:
+Apple has no fixed client secret. The `client_secret` sent to their token endpoint is an ES256 JWT signed with the .p8, carrying:
 
 - `iss`: Team ID (`639P4Q2VAB`)
-- `iat`: Issued-at timestamp
-- `exp`: Expiry (max 6 months from issue per Apple's spec)
+- `iat` / `exp`: issued-at and expiry (Apple caps `exp` at 6 months out)
 - `aud`: `https://appleid.apple.com`
 - `sub`: Services ID (`ca.cinemagraphs.web`)
 - Header `kid`: Key ID (`SCR59ABFVK`)
 
-This JWT is what NextAuth's AppleProvider uses to authenticate the web sign-in callback. Apple verifies the signature using the public key associated with `kid` in their developer portal.
+`src/lib/apple-client-secret.ts` signs one of these on demand with a **30-minute** lifetime, cached in module memory and re-signed once it is within 5 minutes of expiring.
 
-**Mobile flow does NOT use APPLE_SECRET.** `/api/auth/mobile/apple` only verifies inbound identity tokens from Apple via `appleSignin.verifyIdToken(token, { audience: APPLE_ID })`. JWT expiry breaks the web NextAuth sign-in flow only; mobile sign-in continues working through any APPLE_SECRET expiry.
+The hook is a getter in `src/lib/auth.ts`:
 
-## Two rotation scenarios
+```ts
+AppleProvider({
+  clientId: process.env.APPLE_ID!,
+  get clientSecret(): string {
+    return resolveAppleClientSecret()
+  },
+})
+```
 
-### Scenario A: JWT regeneration (routine, every 6 months)
+NextAuth v4's `AuthHandler` calls `init()` on every request, and `parseProviders()` runs `Object.entries()` over the provider options — which evaluates getters. So this resolves per auth request rather than being frozen at module load, and correctness does not depend on how long a serverless instance survives.
 
-The JWT has a max 6-month expiry. Before it expires, web sign-in via NextAuth will start failing with Apple-side validation errors. Regenerate the JWT from the existing .p8 and update `APPLE_SECRET` in Vercel.
+**Fallback is automatic.** If `APPLE_PRIVATE_KEY` is unset, or the key fails to parse or sign, `resolveAppleClientSecret()` logs and returns `APPLE_SECRET`. It never throws — it runs inside NextAuth's provider parsing, where an exception would become an opaque 500 on every auth route.
 
-### Scenario B: Full .p8 rotation (security event)
+**Mobile flow does not use either variable.** `/api/auth/mobile/apple` only verifies inbound identity tokens via `appleSignin.verifyIdToken`. Nothing here affects mobile sign-in.
 
-If the .p8 is compromised or the team wants a fresh key, generate a new one in the Apple Developer portal. This produces a new Key ID and a new .p8 file. Then run Scenario A's procedure with the new key.
+## One-time setup (already done — recorded for a rebuild)
 
-## Pre-rotation checklist
-
-- [ ] Confirm Apple Notes encrypted backup is current (open the note, verify the .p8 contents are present)
-- [ ] Confirm the .p8 file is at the documented path: `~/Desktop/Cinemagraphs/AuthKey_SCR59ABFVK.p8`
-- [ ] Have access to Vercel env vars (Project Settings → Environment Variables)
-- [ ] Have access to Apple Developer portal (https://developer.apple.com/account) if doing Scenario B
-- [ ] Plan a low-traffic deploy window for the env var update (rotation is fast but a misconfigured value breaks all web sign-ins)
-
-## Procedure: JWT regeneration (Scenario A)
-
-1. **Generate the new JWT locally:**
+1. Base64-encode the .p8 (avoids newline mangling in dashboard fields):
 
    ```bash
-   APPLE_KEY_PATH=~/Desktop/Cinemagraphs/AuthKey_SCR59ABFVK.p8 \
-     node scripts/generate-apple-client-secret.mjs
+   base64 -i ~/Desktop/Cinemagraphs/AuthKey_SCR59ABFVK.p8 | tr -d '\n' | pbcopy
    ```
 
-   The script outputs a JWT to stdout. Copy it.
+2. Vercel → cinemagraphs → Settings → Environment Variables → Add:
+   - `APPLE_PRIVATE_KEY` = the base64 string, marked **Sensitive**, Production (add Preview too if testing Apple sign-in there)
+   - Optionally `APPLE_TEAM_ID` and `APPLE_KEY_ID` — both default to the values in the table above if unset
 
-2. **Decode the JWT to confirm claims (optional sanity check):**
+3. Leave `APPLE_SECRET` in place as the fallback until the new path is confirmed working.
 
-   Paste the JWT at https://jwt.io. Confirm:
-   - `iss` is `639P4Q2VAB`
-   - `sub` is `ca.cinemagraphs.web`
-   - `aud` is `https://appleid.apple.com`
-   - `exp` is approximately 6 months in the future
-   - Header `kid` is `SCR59ABFVK`
+4. Redeploy. Env var changes do not affect existing deployments.
 
-3. **Update Vercel env var:**
+5. Verify (below), then optionally delete `APPLE_SECRET`.
 
-   - Vercel dashboard → cinemagraphs project → Settings → Environment Variables
-   - Find `APPLE_SECRET`
-   - Click "..." → Edit
-   - Replace the value with the new JWT
-   - Save (apply to Production environment)
+## Rotating the .p8 (security event, or Apple key expiry)
 
-4. **Trigger a redeploy:**
+Regenerating the client secret JWT is no longer a scenario — it happens automatically. Only the .p8 itself is ever rotated.
 
-   Either push a no-op commit, or in Vercel: Deployments → latest → "..." → Redeploy.
+1. Apple Developer portal → Certificates, Identifiers & Profiles → Keys → "+"
+2. Name it, enable "Sign In with Apple", Configure → select the existing Primary App ID → Save → Continue → Register
+3. Note the new Key ID. Download the .p8 — **Apple allows this once.**
+4. Store at `~/Desktop/Cinemagraphs/AuthKey_<NEW_KEY_ID>.p8` and update the encrypted Apple Notes backup
+5. In Vercel, update **both**:
+   - `APPLE_PRIVATE_KEY` = base64 of the new .p8
+   - `APPLE_KEY_ID` = the new Key ID
 
-   Env var changes don't take effect until redeploy.
+   These must change together — the `kid` header must match the key that signed the token, or Apple returns `invalid_client`.
+6. Redeploy, then verify below
+7. Only after confirming production works: Apple portal → Keys → old key → Revoke. This is one-way.
+8. Delete the old .p8 from local disk
 
-5. **Verify post-deploy:** see Post-rotation verification below.
+## Verification
 
-## Procedure: Full key rotation (Scenario B)
-
-1. **Generate a new key in Apple Developer portal:**
-
-   - Go to https://developer.apple.com/account → Certificates, Identifiers & Profiles → Keys
-   - Click the "+" button to create a new key
-   - Name it (e.g., `Cinemagraphs Sign In Key 2026`)
-   - Enable "Sign In with Apple"
-   - Click "Configure" next to Sign In with Apple → choose the existing Primary App ID → Save
-   - Click Continue → Register
-   - Note the new Key ID (10-character alphanumeric)
-   - Click Download. Apple lets you download the .p8 file ONCE.
-   - Move the file to `~/Desktop/Cinemagraphs/AuthKey_<NEW_KEY_ID>.p8`
-   - Update the encrypted Apple Notes backup with the new file contents
-
-2. **Update `scripts/generate-apple-client-secret.mjs`:**
-
-   Edit the `KEY_ID` constant to the new Key ID.
-
-3. **Run Scenario A** with the new .p8 path.
-
-4. **After confirming the new key works, revoke the old key:**
-
-   Apple Developer portal → Keys → click the old key → Revoke.
-
-   This is a one-way action. Do not revoke until the new key is confirmed working in production.
-
-5. **Delete the old .p8 file** from local disk after revocation.
-
-## Post-rotation verification
-
-- [ ] Visit https://cinemagraphs.ca/auth/signin
-- [ ] Click "Sign in with Apple"
-- [ ] Complete the flow with a test account (or your own — Apple Sign In handles repeat sign-ins idempotently)
-- [ ] Verify the user lands on the post-sign-in page successfully
-- [ ] Check Vercel runtime logs for any `AppleProvider` errors in the 5 minutes following the test
-- [ ] If using a fresh test account: confirm the User record was created in the database with `provider: 'apple'` in the linked Account table
+- [ ] https://cinemagraphs.ca/auth/signin → "Sign in with Apple" → complete the flow
+- [ ] Lands signed in, not back on the sign-in page
+- [ ] Vercel logs, filter `callback/apple`: the entry should be a `302` with an **empty** Messages column. Any `{"level":"error"...}` payload means it failed — expand it for `err.error`, `err.error_description`, and the provider response body.
+- [ ] Fresh test account: confirm the `Account` row was created with `provider: 'apple'`
 
 ## Rollback
 
-If the new `APPLE_SECRET` breaks production sign-ins:
+Delete `APPLE_PRIVATE_KEY` in Vercel and redeploy. The provider falls straight back to `APPLE_SECRET`. That is the entire procedure — which is why `APPLE_SECRET` should be kept populated with a valid JWT even though it is unused.
 
-1. Vercel dashboard → Settings → Environment Variables → `APPLE_SECRET`
-2. Click "..." → "Show Value History" (Vercel keeps recent values)
-3. Restore the previous value
-4. Redeploy
+If `APPLE_SECRET` has since expired and the key path is broken, regenerate a static JWT with `scripts/generate-apple-client-secret.mjs` (see its header) and paste it in.
 
-If Vercel's history doesn't have the previous value (unlikely but possible after long enough), and you've already revoked the old key in Apple, the only path forward is to roll forward — fix whatever was wrong with the new JWT and regenerate.
+## Do not break this again
 
-This is why **never revoke the old key until the new one is confirmed in production**.
+Two failure modes have taken Apple sign-in down. Both were invisible in the logs at the time.
 
-## Important dates
+**1. Cookie SameSite (May 10 → Aug 2, 2026 — ~3 months of outage).**
 
-- **Current APPLE_SECRET expires:** September 2026 (approximate; decode the current value at jwt.io to confirm exactly)
-- **Recommended rotation window:** August 2026 (one month before expiry, leaves time for issues)
-- **.p8 itself does not expire.** Apple keys persist until manually revoked.
+Apple uses `response_mode=form_post`: `appleid.apple.com` auto-submits a form that POSTs **cross-site** to `/api/auth/callback/apple`. Browsers withhold `SameSite=Lax` cookies on cross-site POSTs, so the state/nonce/PKCE cookies never arrive and NextAuth throws `OAuthCallbackError`. Google is unaffected because it uses `response_mode=query`, a GET redirect — which makes the breakage look Apple-specific and invites misdiagnosis as a credential problem.
+
+`f8f3c1a` set those cookies to `sameSite: 'none'` to fix it. `6c55529` ("auth hardening") reverted them to `'lax'` and silently re-broke it. `src/__tests__/apple-signin-cookies.test.ts` now asserts this; do not delete it.
+
+**2. Empty error logs.**
+
+NextAuth v4 wraps provider errors in `UnknownError`, whose `toJSON()` returns only `{ name, message }` — and `message` is `''` for callback failures. Logging the `metadata` object directly produced records that named the error and said nothing else, which is why the cookie bug survived three months. `src/lib/auth-error.ts` unwraps the preserved stack and the openid-client fields; the logger config uses it.
 
 ## Related files
 
-- `src/lib/auth.ts`: NextAuth AppleProvider config (uses APPLE_ID and APPLE_SECRET)
-- `src/app/api/auth/mobile/apple/route.ts`: mobile Apple Sign In verification (uses APPLE_ID only, NOT affected by APPLE_SECRET expiry)
-- `scripts/generate-apple-client-secret.mjs`: regen helper script
+- `src/lib/apple-client-secret.ts` — runtime minting, caching, fallback
+- `src/lib/auth.ts` — AppleProvider config, cookie SameSite policy, NextAuth error logger
+- `src/lib/auth-error.ts` — error unwrapping so failures are diagnosable
+- `src/app/api/auth/mobile/apple/route.ts` — mobile verification, unaffected by any of the above
+- `scripts/generate-apple-client-secret.mjs` — static JWT generator, fallback path only
+- `src/__tests__/apple-client-secret.test.ts`, `src/__tests__/apple-signin-cookies.test.ts` — regression cover

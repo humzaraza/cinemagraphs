@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 /**
- * Generates a new Apple Sign In client secret JWT.
+ * Generates a static Apple Sign In client secret JWT.
+ *
+ * FALLBACK PATH ONLY. Production mints its own client secret per request
+ * from APPLE_PRIVATE_KEY (see src/lib/apple-client-secret.ts), so this is
+ * needed only to repopulate the APPLE_SECRET fallback — e.g. before
+ * temporarily removing APPLE_PRIVATE_KEY to roll back.
  *
  * Reads the .p8 private key from the path in APPLE_KEY_PATH env var.
  * Outputs the JWT to stdout. Copy that output into the APPLE_SECRET

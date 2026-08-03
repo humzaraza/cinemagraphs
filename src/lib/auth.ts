@@ -7,6 +7,7 @@ import bcrypt from 'bcrypt'
 import { prisma } from './prisma'
 import { apiLogger } from './logger'
 import { serializeAuthError } from './auth-error'
+import { resolveAppleClientSecret } from './apple-client-secret'
 import { TERMS_VERSION } from '@/lib/legal/terms-version'
 import type { Adapter } from 'next-auth/adapters'
 
@@ -39,7 +40,15 @@ export const authOptions: NextAuthOptions = {
     }),
     AppleProvider({
       clientId: process.env.APPLE_ID!,
-      clientSecret: process.env.APPLE_SECRET!,
+      // A getter, not a value. NextAuth v4's AuthHandler calls init() on
+      // every request, and parseProviders() runs Object.entries() over these
+      // options — so this is re-read per auth request rather than frozen at
+      // module load. That is what lets the secret be short-lived without
+      // depending on how long a serverless instance survives.
+      // Falls back to APPLE_SECRET when APPLE_PRIVATE_KEY is unset.
+      get clientSecret(): string {
+        return resolveAppleClientSecret()
+      },
     }),
     CredentialsProvider({
       name: 'Email',
