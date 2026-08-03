@@ -33,7 +33,7 @@ function Avatar({ user }: { user: FeedActor }) {
         alt={displayName(user)}
         width={36}
         height={36}
-        className="rounded-full shrink-0"
+        className="rounded-full shrink-0 object-cover"
       />
     )
   }

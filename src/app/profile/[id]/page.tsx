@@ -262,7 +262,7 @@ export default function ProfilePage() {
             alt={displayName}
             width={64}
             height={64}
-            className="rounded-full"
+            className="rounded-full object-cover"
           />
         ) : (
           <div
@@ -1162,7 +1162,7 @@ function FollowModal({
                           alt={u.name}
                           width={32}
                           height={32}
-                          className="rounded-full"
+                          className="rounded-full object-cover"
                         />
                       ) : (
                         <div

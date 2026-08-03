@@ -109,7 +109,7 @@ export default async function ReviewPage({ params }: Props) {
                     alt={user.name}
                     width={36}
                     height={36}
-                    className="rounded-full"
+                    className="rounded-full object-cover"
                   />
                 ) : (
                   <div className="w-9 h-9 rounded-full bg-cinema-gold/20 flex items-center justify-center text-cinema-gold text-sm">
