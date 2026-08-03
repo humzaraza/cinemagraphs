@@ -244,7 +244,7 @@ function AuthorHeader({ user, createdAt }: { user: ReplyUser; createdAt: string 
       {user.name ? (
         <Link href={`/profile/${user.id}`} className="flex items-center gap-2 group cursor-pointer">
           {user.image ? (
-            <Image src={user.image} alt={user.name} width={28} height={28} className="rounded-full" />
+            <Image src={user.image} alt={user.name} width={28} height={28} className="rounded-full object-cover" />
           ) : (
             <div className="w-7 h-7 rounded-full bg-cinema-gold/20 flex items-center justify-center text-cinema-gold text-xs">
               {user.name[0]}

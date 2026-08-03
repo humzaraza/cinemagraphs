@@ -625,7 +625,7 @@ function ReviewCard({
                   alt={review.user.name}
                   width={28}
                   height={28}
-                  className="rounded-full"
+                  className="rounded-full object-cover"
                 />
               ) : (
                 <div className="w-7 h-7 rounded-full bg-cinema-gold/20 flex items-center justify-center text-cinema-gold text-xs">

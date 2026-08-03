@@ -176,7 +176,7 @@ function MemberCard({ user }: { user: MemberUser }) {
             alt={user.name}
             width={44}
             height={44}
-            className="rounded-full"
+            className="rounded-full object-cover"
           />
         ) : (
           <div
