@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signIn, signOut, useSession } from 'next-auth/react'
@@ -9,6 +9,35 @@ export default function Navigation() {
   const pathname = usePathname()
   const { data: session } = useSession()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [hasUnread, setHasUnread] = useState(false)
+  // Tracks whether the unread check has run for the current sign-in, so the
+  // effect below fetches once on mount rather than on every route change.
+  const unreadFetchedRef = useRef(false)
+  const prevPathnameRef = useRef(pathname)
+
+  useEffect(() => {
+    const prevPathname = prevPathnameRef.current
+    prevPathnameRef.current = pathname
+    if (!session?.user?.id) {
+      unreadFetchedRef.current = false
+      return
+    }
+    // Visiting /activity marks activity seen, so leaving that page is the one
+    // navigation that should re-check (and clear) the dot. No polling.
+    const leftActivity = prevPathname === '/activity' && pathname !== '/activity'
+    if (unreadFetchedRef.current && !leftActivity) return
+    unreadFetchedRef.current = true
+    let cancelled = false
+    fetch('/api/activity/unread')
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) setHasUnread(Boolean(data.unread))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [pathname, session?.user?.id])
 
   // Close drawer on route change
   useEffect(() => {
@@ -34,6 +63,19 @@ export default function Navigation() {
     { href: '/about', label: 'About' },
     ...(session?.user?.role === 'ADMIN' ? [{ href: '/admin', label: 'Admin' }] : []),
   ]
+
+  // Rendered next to the Activity label in both the desktop nav and the
+  // mobile drawer. The sr-only text keeps the dot from being a visual-only
+  // signal for screen readers.
+  const unreadDot = hasUnread ? (
+    <>
+      <span
+        aria-hidden="true"
+        className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-cinema-gold align-middle"
+      />
+      <span className="sr-only">unread activity</span>
+    </>
+  ) : null
 
   return (
     <>
@@ -75,6 +117,7 @@ export default function Navigation() {
                   }`}
                 >
                   {link.label}
+                  {link.href === '/activity' && unreadDot}
                 </Link>
               ))}
 
@@ -176,6 +219,7 @@ export default function Navigation() {
               }`}
             >
               {link.label}
+              {link.href === '/activity' && unreadDot}
             </Link>
           ))}
         </div>

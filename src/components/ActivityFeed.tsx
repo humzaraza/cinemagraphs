@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { tmdbImageUrl } from '@/lib/utils'
@@ -205,6 +205,12 @@ export default function ActivityFeed({
 
   const feed = feeds[activeTab]
   const loading = loadingTab === activeTab
+
+  // Visiting the page is what marks activity seen. Fire-and-forget: a
+  // failure just leaves the nav's unread dot until a later visit.
+  useEffect(() => {
+    fetch('/api/activity/seen', { method: 'POST' }).catch(() => {})
+  }, [])
 
   const handleLoadMore = async () => {
     // Capture the tab at click time so a mid-fetch tab switch still appends
