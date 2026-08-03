@@ -6,11 +6,15 @@ const mockUserReviewFindMany = vi.fn()
 const mockFilmFindMany = vi.fn()
 const mockListFindMany = vi.fn()
 const mockReviewReplyFindMany = vi.fn()
+const mockUserFindUnique = vi.fn()
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     follow: {
       findMany: (...args: unknown[]) => mockFollowFindMany(...args),
+    },
+    user: {
+      findUnique: (...args: unknown[]) => mockUserFindUnique(...args),
     },
     activity: {
       findMany: (...args: unknown[]) => mockActivityFindMany(...args),
@@ -30,7 +34,12 @@ vi.mock('@/lib/prisma', () => ({
   },
 }))
 
-import { getFriendsFeed, getIncomingFeed, FEED_PAGE_SIZE } from '@/lib/activity-feed'
+import {
+  getFriendsFeed,
+  getIncomingFeed,
+  hasUnreadIncoming,
+  FEED_PAGE_SIZE,
+} from '@/lib/activity-feed'
 
 const ACTOR = { id: 'u-1', name: 'Ana', image: null }
 
@@ -63,6 +72,7 @@ beforeEach(() => {
   mockFilmFindMany.mockResolvedValue([])
   mockListFindMany.mockResolvedValue([])
   mockReviewReplyFindMany.mockResolvedValue([])
+  mockUserFindUnique.mockResolvedValue({ lastSeenActivityAt: null })
 })
 
 describe('getFriendsFeed: follow scoping', () => {
@@ -501,5 +511,107 @@ describe('getIncomingFeed: pagination', () => {
     const feed = await getIncomingFeed('viewer-1', 1)
 
     expect(feed).toEqual({ items: [], page: 1, hasMore: false })
+  })
+})
+
+describe('hasUnreadIncoming', () => {
+  it('is true when a qualifying row exists after lastSeenActivityAt, filtered in the query', async () => {
+    const lastSeen = new Date('2026-07-30T00:00:00Z')
+    mockUserFindUnique.mockResolvedValue({ lastSeenActivityAt: lastSeen })
+    mockActivityFindMany.mockResolvedValue([incomingRow({ id: 'act-new' })])
+
+    await expect(hasUnreadIncoming('viewer-1')).resolves.toBe(true)
+
+    expect(mockUserFindUnique).toHaveBeenCalledWith({
+      where: { id: 'viewer-1' },
+      select: { lastSeenActivityAt: true },
+    })
+    expect(mockActivityFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          targetUserId: 'viewer-1',
+          type: { in: ['follow', 'like', 'reply'] },
+          actorId: { not: 'viewer-1' },
+          createdAt: { gt: lastSeen },
+        },
+        skip: 0,
+      })
+    )
+  })
+
+  it('is false when lastSeenActivityAt is newer than all rows', async () => {
+    const lastSeen = new Date('2026-08-02T00:00:00Z')
+    mockUserFindUnique.mockResolvedValue({ lastSeenActivityAt: lastSeen })
+    // The createdAt > lastSeen filter excludes every row at the query level.
+    mockActivityFindMany.mockResolvedValue([])
+
+    await expect(hasUnreadIncoming('viewer-1')).resolves.toBe(false)
+
+    const where = mockActivityFindMany.mock.calls[0][0].where
+    expect(where.createdAt).toEqual({ gt: lastSeen })
+  })
+
+  it('treats a null lastSeenActivityAt as everything unread, omitting the createdAt filter', async () => {
+    mockUserFindUnique.mockResolvedValue({ lastSeenActivityAt: null })
+    mockActivityFindMany.mockResolvedValue([incomingRow({ id: 'act-old' })])
+
+    await expect(hasUnreadIncoming('viewer-1')).resolves.toBe(true)
+
+    const where = mockActivityFindMany.mock.calls[0][0].where
+    expect(where).not.toHaveProperty('createdAt')
+  })
+
+  it('is false when every candidate row would be dropped by the feed (banned actor, unapproved review, deleted reply)', async () => {
+    // The invariant that matters: a row only counts as unread if the
+    // Incoming tab would actually render it, so the dot never points at
+    // an empty tab.
+    mockActivityFindMany.mockResolvedValue([
+      incomingRow({
+        id: 'act-banned',
+        actorId: 'u-bad',
+        actor: { id: 'u-bad', name: 'Mal', image: null, role: 'BANNED' },
+      }),
+      incomingRow({ id: 'act-like', type: 'like', reviewId: 'r-flagged' }),
+      incomingRow({ id: 'act-reply', type: 'reply', reviewId: 'r-1', replyId: 'rr-gone' }),
+    ])
+    // r-flagged is not approved so only r-1 resolves; rr-gone was
+    // hard-deleted so the reply referent is missing.
+    mockUserReviewFindMany.mockResolvedValue([{ id: 'r-1', film: FILM }])
+    mockReviewReplyFindMany.mockResolvedValue([])
+
+    await expect(hasUnreadIncoming('viewer-1')).resolves.toBe(false)
+
+    // Pin the approved-status filter on this path too: the drop above only
+    // proves anything if the query itself is what excludes flagged reviews.
+    expect(mockUserReviewFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: { in: ['r-flagged', 'r-1'] }, status: 'approved' },
+      })
+    )
+  })
+
+  it('treats a missing viewer row like a null lastSeenActivityAt', async () => {
+    mockUserFindUnique.mockResolvedValue(null)
+    mockActivityFindMany.mockResolvedValue([incomingRow({ id: 'act-any' })])
+
+    await expect(hasUnreadIncoming('viewer-1')).resolves.toBe(true)
+
+    const where = mockActivityFindMany.mock.calls[0][0].where
+    expect(where).not.toHaveProperty('createdAt')
+  })
+
+  it('is false when the only rows are self-targeted, excluded via the actorId filter', async () => {
+    // Self-targeted rows never leave the database: the query carries the
+    // same actorId exclusion as getIncomingFeed, so they cannot count as
+    // unread any more than they can render.
+    mockActivityFindMany.mockResolvedValue([])
+
+    await expect(hasUnreadIncoming('viewer-1')).resolves.toBe(false)
+
+    expect(mockActivityFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ actorId: { not: 'viewer-1' } }),
+      })
+    )
   })
 })
