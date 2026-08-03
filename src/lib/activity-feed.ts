@@ -12,7 +12,7 @@ const FEED_OVERFETCH = 6
 const FEED_TYPES = ['review', 'follow', 'watchlist', 'list_add']
 
 // Incoming (notifications) types: activity that targeted the viewer.
-const INCOMING_TYPES = ['follow', 'like', 'reply']
+const INCOMING_TYPES = ['follow', 'like', 'reply', 'reply_to_comment']
 
 // Reply bodies are previews in the feed, not full threads; truncation happens
 // here in the shaping step so every client renders the same preview.
@@ -37,7 +37,7 @@ export interface FeedList {
 
 export interface FeedItem {
   id: string
-  type: 'review' | 'follow' | 'watchlist' | 'list_add' | 'like' | 'reply'
+  type: 'review' | 'follow' | 'watchlist' | 'list_add' | 'like' | 'reply' | 'reply_to_comment'
   createdAt: string
   actor: FeedActor
   targetUser: FeedActor | null
@@ -270,7 +270,8 @@ async function resolveIncomingWindow(
         if (!review) return []
         return [{ ...base, type: 'like', review: { id: review.id }, film: review.film }]
       }
-      case 'reply': {
+      case 'reply':
+      case 'reply_to_comment': {
         const review = row.reviewId ? reviewById.get(row.reviewId) : undefined
         // Reply deletion is a hard delete that leaves the activity row
         // behind, so a resolved review is not enough on its own.
@@ -279,7 +280,7 @@ async function resolveIncomingWindow(
         return [
           {
             ...base,
-            type: 'reply',
+            type: row.type === 'reply' ? 'reply' : 'reply_to_comment',
             review: { id: review.id },
             film: review.film,
             reply: { id: reply.id, body: truncateReplyBody(reply.body) },
@@ -296,7 +297,8 @@ async function resolveIncomingWindow(
 
 /**
  * Incoming feed: activity by others that targeted the viewer (new followers,
- * likes and replies on the viewer's reviews).
+ * likes and replies on the viewer's reviews, and replies to the viewer's
+ * comments on any review).
  *
  * Not Redis-cached: per-user data. Query, resolution, and drop logic live in
  * resolveIncomingWindow.

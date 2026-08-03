@@ -60,10 +60,12 @@ export async function POST(
     // nesting, so the rule (a comment can have replies; a reply cannot) is
     // enforced here: replying to anything that itself has a parent is
     // rejected, and the parent must belong to this review.
+    let parent: { id: string; reviewId: string; parentReplyId: string | null; userId: string } | null =
+      null
     if (typeof parentReplyId === 'string') {
-      const parent = await prisma.reviewReply.findUnique({
+      parent = await prisma.reviewReply.findUnique({
         where: { id: parentReplyId },
-        select: { id: true, reviewId: true, parentReplyId: true },
+        select: { id: true, reviewId: true, parentReplyId: true, userId: true },
       })
       if (!parent) {
         return NextResponse.json({ error: 'Comment not found' }, { status: 404 })
@@ -99,6 +101,22 @@ export async function POST(
       reviewId,
       replyId: reply.id,
     })
+
+    // Notify the parent comment's author too, unless:
+    // - there is no parent (a top-level comment has no comment author to notify);
+    // - the parent author is the review author, who already receives the
+    //   'reply' row above; a second row would render as two notifications;
+    // - the parent author is the replier, since a self-targeted row can
+    //   never render and should not be written.
+    if (parent && parent.userId !== review.userId && parent.userId !== session.user.id) {
+      await logActivity({
+        actorId: session.user.id,
+        type: 'reply_to_comment',
+        targetUserId: parent.userId,
+        reviewId,
+        replyId: reply.id,
+      })
+    }
 
     return NextResponse.json(reply, { status: 201, ...PRIVATE_CACHE_HEADERS })
   } catch (err) {
