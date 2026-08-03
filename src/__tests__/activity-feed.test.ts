@@ -5,6 +5,7 @@ const mockActivityFindMany = vi.fn()
 const mockUserReviewFindMany = vi.fn()
 const mockFilmFindMany = vi.fn()
 const mockListFindMany = vi.fn()
+const mockReviewReplyFindMany = vi.fn()
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
@@ -23,10 +24,13 @@ vi.mock('@/lib/prisma', () => ({
     list: {
       findMany: (...args: unknown[]) => mockListFindMany(...args),
     },
+    reviewReply: {
+      findMany: (...args: unknown[]) => mockReviewReplyFindMany(...args),
+    },
   },
 }))
 
-import { getFriendsFeed, FEED_PAGE_SIZE } from '@/lib/activity-feed'
+import { getFriendsFeed, getIncomingFeed, FEED_PAGE_SIZE } from '@/lib/activity-feed'
 
 const ACTOR = { id: 'u-1', name: 'Ana', image: null }
 
@@ -58,6 +62,7 @@ beforeEach(() => {
   mockUserReviewFindMany.mockResolvedValue([])
   mockFilmFindMany.mockResolvedValue([])
   mockListFindMany.mockResolvedValue([])
+  mockReviewReplyFindMany.mockResolvedValue([])
 })
 
 describe('getFriendsFeed: follow scoping', () => {
@@ -133,6 +138,7 @@ describe('getFriendsFeed: referent resolution and dropping', () => {
         film: FILM,
         review: { id: 'r-1' },
         list: null,
+        reply: null,
       },
     ])
     // The status filter is applied in the query itself.
@@ -278,5 +284,222 @@ describe('getFriendsFeed: pagination', () => {
 
     expect(feed.items).toHaveLength(FEED_PAGE_SIZE)
     expect(feed.hasMore).toBe(true)
+  })
+})
+
+const INCOMING_ACTOR = { id: 'u-2', name: 'Ben', image: null, role: 'USER' }
+
+function incomingRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'act-in-1',
+    actorId: 'u-2',
+    type: 'follow',
+    createdAt: new Date('2026-08-01T12:00:00Z'),
+    targetUserId: 'viewer-1',
+    reviewId: null,
+    filmId: null,
+    replyId: null,
+    listId: null,
+    actor: INCOMING_ACTOR,
+    ...overrides,
+  }
+}
+
+describe('getIncomingFeed: query scoping', () => {
+  it('targets the viewer and excludes self-targeted rows via the actorId filter', async () => {
+    await getIncomingFeed('viewer-1', 1)
+
+    expect(mockActivityFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          targetUserId: 'viewer-1',
+          type: { in: ['follow', 'like', 'reply'] },
+          actorId: { not: 'viewer-1' },
+        },
+      })
+    )
+  })
+
+  it('requests only follow, like, and reply types', async () => {
+    await getIncomingFeed('viewer-1', 1)
+
+    const where = mockActivityFindMany.mock.calls[0][0].where
+    expect(where.type.in).toEqual(['follow', 'like', 'reply'])
+    expect(where.type.in).not.toContain('review')
+    expect(where.type.in).not.toContain('watchlist')
+    expect(where.type.in).not.toContain('list_add')
+  })
+})
+
+describe('getIncomingFeed: referent resolution and dropping', () => {
+  it('shapes a follow row from the actor alone, stripping the internal role field', async () => {
+    mockActivityFindMany.mockResolvedValue([incomingRow({ id: 'act-f', type: 'follow' })])
+
+    const feed = await getIncomingFeed('viewer-1', 1)
+
+    expect(feed.items).toEqual([
+      {
+        id: 'act-f',
+        type: 'follow',
+        createdAt: '2026-08-01T12:00:00.000Z',
+        actor: { id: 'u-2', name: 'Ben', image: null },
+        targetUser: null,
+        film: null,
+        review: null,
+        list: null,
+        reply: null,
+      },
+    ])
+  })
+
+  it('drops rows whose actor is banned', async () => {
+    mockActivityFindMany.mockResolvedValue([
+      incomingRow({
+        id: 'act-banned',
+        actorId: 'u-bad',
+        actor: { id: 'u-bad', name: 'Mal', image: null, role: 'BANNED' },
+      }),
+      incomingRow({ id: 'act-ok' }),
+    ])
+
+    const feed = await getIncomingFeed('viewer-1', 1)
+
+    expect(feed.items.map((i) => i.id)).toEqual(['act-ok'])
+  })
+
+  it('keeps a like row whose review is approved and shapes it with the review film', async () => {
+    mockActivityFindMany.mockResolvedValue([
+      incomingRow({ id: 'act-l', type: 'like', reviewId: 'r-1' }),
+    ])
+    mockUserReviewFindMany.mockResolvedValue([{ id: 'r-1', film: FILM }])
+
+    const feed = await getIncomingFeed('viewer-1', 1)
+
+    expect(feed.items).toHaveLength(1)
+    expect(feed.items[0].type).toBe('like')
+    expect(feed.items[0].review).toEqual({ id: 'r-1' })
+    expect(feed.items[0].film).toEqual(FILM)
+    // The status filter is applied in the query itself.
+    expect(mockUserReviewFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: { in: ['r-1'] }, status: 'approved' },
+      })
+    )
+  })
+
+  it('drops a like row whose review is not approved', async () => {
+    mockActivityFindMany.mockResolvedValue([
+      incomingRow({ id: 'act-l', type: 'like', reviewId: 'r-flagged' }),
+    ])
+    // The status: 'approved' filter means a flagged review comes back empty.
+    mockUserReviewFindMany.mockResolvedValue([])
+
+    const feed = await getIncomingFeed('viewer-1', 1)
+
+    expect(feed.items).toEqual([])
+  })
+
+  it('keeps a reply row and truncates its body to the preview length', async () => {
+    mockActivityFindMany.mockResolvedValue([
+      incomingRow({ id: 'act-rp', type: 'reply', reviewId: 'r-1', replyId: 'rr-1' }),
+    ])
+    mockUserReviewFindMany.mockResolvedValue([{ id: 'r-1', film: FILM }])
+    mockReviewReplyFindMany.mockResolvedValue([{ id: 'rr-1', body: 'x'.repeat(300) }])
+
+    const feed = await getIncomingFeed('viewer-1', 1)
+
+    expect(feed.items).toHaveLength(1)
+    expect(feed.items[0].type).toBe('reply')
+    expect(feed.items[0].review).toEqual({ id: 'r-1' })
+    expect(feed.items[0].film).toEqual(FILM)
+    expect(feed.items[0].reply).toEqual({ id: 'rr-1', body: `${'x'.repeat(120)}…` })
+  })
+
+  it('does not split a surrogate pair at the truncation boundary', async () => {
+    // 119 ASCII chars + an astral emoji = 121 UTF-16 code units, so a naive
+    // slice(0, 120) would cut between the high and low surrogate.
+    mockActivityFindMany.mockResolvedValue([
+      incomingRow({ id: 'act-rp', type: 'reply', reviewId: 'r-1', replyId: 'rr-1' }),
+    ])
+    mockUserReviewFindMany.mockResolvedValue([{ id: 'r-1', film: FILM }])
+    mockReviewReplyFindMany.mockResolvedValue([{ id: 'rr-1', body: `${'a'.repeat(119)}😀` }])
+
+    const feed = await getIncomingFeed('viewer-1', 1)
+
+    expect(feed.items[0].reply).toEqual({ id: 'rr-1', body: `${'a'.repeat(119)}…` })
+  })
+
+  it('leaves a short reply body untouched', async () => {
+    mockActivityFindMany.mockResolvedValue([
+      incomingRow({ id: 'act-rp', type: 'reply', reviewId: 'r-1', replyId: 'rr-1' }),
+    ])
+    mockUserReviewFindMany.mockResolvedValue([{ id: 'r-1', film: FILM }])
+    mockReviewReplyFindMany.mockResolvedValue([{ id: 'rr-1', body: 'Great catch on the score.' }])
+
+    const feed = await getIncomingFeed('viewer-1', 1)
+
+    expect(feed.items[0].reply).toEqual({ id: 'rr-1', body: 'Great catch on the score.' })
+  })
+
+  it('drops a reply row whose reply was hard-deleted even though its review resolves', async () => {
+    mockActivityFindMany.mockResolvedValue([
+      incomingRow({ id: 'act-rp', type: 'reply', reviewId: 'r-1', replyId: 'rr-gone' }),
+    ])
+    mockUserReviewFindMany.mockResolvedValue([{ id: 'r-1', film: FILM }])
+    mockReviewReplyFindMany.mockResolvedValue([])
+
+    const feed = await getIncomingFeed('viewer-1', 1)
+
+    expect(feed.items).toEqual([])
+  })
+
+  it('drops a reply row whose review is gone even though its reply resolves', async () => {
+    mockActivityFindMany.mockResolvedValue([
+      incomingRow({ id: 'act-rp', type: 'reply', reviewId: 'r-gone', replyId: 'rr-1' }),
+    ])
+    mockUserReviewFindMany.mockResolvedValue([])
+    mockReviewReplyFindMany.mockResolvedValue([{ id: 'rr-1', body: 'Orphaned.' }])
+
+    const feed = await getIncomingFeed('viewer-1', 1)
+
+    expect(feed.items).toEqual([])
+  })
+})
+
+describe('getIncomingFeed: pagination', () => {
+  it('over-fetches, trims survivors to the page size, and reports hasMore from a full window', async () => {
+    const rows = Array.from({ length: FEED_PAGE_SIZE + 6 }, (_, i) =>
+      incomingRow({ id: `act-${i}` })
+    )
+    mockActivityFindMany.mockResolvedValue(rows)
+
+    const feed = await getIncomingFeed('viewer-1', 2)
+
+    expect(mockActivityFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: { createdAt: 'desc' },
+        skip: FEED_PAGE_SIZE,
+        take: FEED_PAGE_SIZE + 6,
+      })
+    )
+    expect(feed.items).toHaveLength(FEED_PAGE_SIZE)
+    expect(feed.page).toBe(2)
+    expect(feed.hasMore).toBe(true)
+  })
+
+  it('reports hasMore: false when the raw window ends at the page boundary', async () => {
+    const rows = Array.from({ length: FEED_PAGE_SIZE }, (_, i) => incomingRow({ id: `act-${i}` }))
+    mockActivityFindMany.mockResolvedValue(rows)
+
+    const feed = await getIncomingFeed('viewer-1', 1)
+
+    expect(feed.items).toHaveLength(FEED_PAGE_SIZE)
+    expect(feed.hasMore).toBe(false)
+  })
+
+  it('returns the empty shape when nothing targets the viewer', async () => {
+    const feed = await getIncomingFeed('viewer-1', 1)
+
+    expect(feed).toEqual({ items: [], page: 1, hasMore: false })
   })
 })
