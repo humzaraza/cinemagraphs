@@ -74,6 +74,7 @@ model User {
   liveReactionSessions LiveReactionSession[]
   watchlistItems       Watchlist[]
   lastFilmAddedAt      DateTime?
+  lastSeenActivityAt   DateTime?
   followers            Follow[]              @relation("following")
   following            Follow[]              @relation("follower")
   announcements        Announcement[]

@@ -193,25 +193,31 @@ export async function getFriendsFeed(viewerId: string, page: number): Promise<Fr
 }
 
 /**
- * Incoming feed: activity by others that targeted the viewer (new followers,
- * likes and replies on the viewer's reviews).
+ * Shared core of the Incoming feed: one fetch window of activity that
+ * targeted the viewer, with referents resolved and unrenderable rows
+ * dropped. getIncomingFeed and hasUnreadIncoming both go through here so
+ * the unread indicator can never disagree with what the feed renders.
  *
- * Not Redis-cached: per-user data. Same referent-resolution-and-drop pattern
- * as getFriendsFeed. The actorId exclusion is load bearing: the reply route
- * logs a row even when the replier is the review author, so self-targeted
- * rows exist in the table and must never render as notifications. Banned
- * actors are filtered per row here because Incoming has no follow-resolution
- * step to filter them upstream.
+ * Same referent-resolution-and-drop pattern as getFriendsFeed. The actorId
+ * exclusion is load bearing: the reply route logs a row even when the
+ * replier is the review author, so self-targeted rows exist in the table
+ * and must never render as notifications. Banned actors are filtered per
+ * row here because Incoming has no follow-resolution step to filter them
+ * upstream.
  */
-export async function getIncomingFeed(viewerId: string, page: number): Promise<FriendsFeedPage> {
+async function resolveIncomingWindow(
+  viewerId: string,
+  options: { skip: number; newerThan?: Date }
+): Promise<{ items: FeedItem[]; rawCount: number }> {
   const rows = await prisma.activity.findMany({
     where: {
       targetUserId: viewerId,
       type: { in: INCOMING_TYPES },
       actorId: { not: viewerId },
+      ...(options.newerThan ? { createdAt: { gt: options.newerThan } } : {}),
     },
     orderBy: { createdAt: 'desc' },
-    skip: (page - 1) * FEED_PAGE_SIZE,
+    skip: options.skip,
     take: FEED_PAGE_SIZE + FEED_OVERFETCH,
     include: {
       // role is an internal filter input for the banned drop below; it is
@@ -244,51 +250,88 @@ export async function getIncomingFeed(viewerId: string, page: number): Promise<F
   const reviewById = new Map(reviews.map((r) => [r.id, r]))
   const replyById = new Map(replies.map((r) => [r.id, r]))
 
-  const items = rows
-    .flatMap((row): FeedItem[] => {
-      if (row.actor.role === 'BANNED') return []
-      const base = {
-        id: row.id,
-        createdAt: row.createdAt.toISOString(),
-        actor: { id: row.actor.id, name: row.actor.name, image: row.actor.image },
-        targetUser: null,
-        film: null,
-        review: null,
-        list: null,
-        reply: null,
+  const items = rows.flatMap((row): FeedItem[] => {
+    if (row.actor.role === 'BANNED') return []
+    const base = {
+      id: row.id,
+      createdAt: row.createdAt.toISOString(),
+      actor: { id: row.actor.id, name: row.actor.name, image: row.actor.image },
+      targetUser: null,
+      film: null,
+      review: null,
+      list: null,
+      reply: null,
+    }
+    switch (row.type) {
+      case 'follow':
+        return [{ ...base, type: 'follow' }]
+      case 'like': {
+        const review = row.reviewId ? reviewById.get(row.reviewId) : undefined
+        if (!review) return []
+        return [{ ...base, type: 'like', review: { id: review.id }, film: review.film }]
       }
-      switch (row.type) {
-        case 'follow':
-          return [{ ...base, type: 'follow' }]
-        case 'like': {
-          const review = row.reviewId ? reviewById.get(row.reviewId) : undefined
-          if (!review) return []
-          return [{ ...base, type: 'like', review: { id: review.id }, film: review.film }]
-        }
-        case 'reply': {
-          const review = row.reviewId ? reviewById.get(row.reviewId) : undefined
-          // Reply deletion is a hard delete that leaves the activity row
-          // behind, so a resolved review is not enough on its own.
-          const reply = row.replyId ? replyById.get(row.replyId) : undefined
-          if (!review || !reply) return []
-          return [
-            {
-              ...base,
-              type: 'reply',
-              review: { id: review.id },
-              film: review.film,
-              reply: { id: reply.id, body: truncateReplyBody(reply.body) },
-            },
-          ]
-        }
-        default:
-          return []
+      case 'reply': {
+        const review = row.reviewId ? reviewById.get(row.reviewId) : undefined
+        // Reply deletion is a hard delete that leaves the activity row
+        // behind, so a resolved review is not enough on its own.
+        const reply = row.replyId ? replyById.get(row.replyId) : undefined
+        if (!review || !reply) return []
+        return [
+          {
+            ...base,
+            type: 'reply',
+            review: { id: review.id },
+            film: review.film,
+            reply: { id: reply.id, body: truncateReplyBody(reply.body) },
+          },
+        ]
       }
-    })
-    .slice(0, FEED_PAGE_SIZE)
+      default:
+        return []
+    }
+  })
 
-  // Same raw-window derivation as getFriendsFeed; see the comment there.
-  const hasMore = rows.length > FEED_PAGE_SIZE
+  return { items, rawCount: rows.length }
+}
 
-  return { items, page, hasMore }
+/**
+ * Incoming feed: activity by others that targeted the viewer (new followers,
+ * likes and replies on the viewer's reviews).
+ *
+ * Not Redis-cached: per-user data. Query, resolution, and drop logic live in
+ * resolveIncomingWindow.
+ */
+export async function getIncomingFeed(viewerId: string, page: number): Promise<FriendsFeedPage> {
+  const { items, rawCount } = await resolveIncomingWindow(viewerId, {
+    skip: (page - 1) * FEED_PAGE_SIZE,
+  })
+
+  return {
+    items: items.slice(0, FEED_PAGE_SIZE),
+    page,
+    // Same raw-window derivation as getFriendsFeed; see the comment there.
+    hasMore: rawCount > FEED_PAGE_SIZE,
+  }
+}
+
+/**
+ * Whether the viewer has any unread Incoming activity: at least one row newer
+ * than their lastSeenActivityAt (a null lastSeenActivityAt means everything
+ * is unread) that survives the same drops as the rendered feed. Sharing
+ * resolveIncomingWindow with getIncomingFeed is what guarantees the unread
+ * dot never points at an empty tab: a row only counts as unread if page 1
+ * would actually render it.
+ */
+export async function hasUnreadIncoming(viewerId: string): Promise<boolean> {
+  const viewer = await prisma.user.findUnique({
+    where: { id: viewerId },
+    select: { lastSeenActivityAt: true },
+  })
+  const lastSeen = viewer?.lastSeenActivityAt ?? null
+
+  const { items } = await resolveIncomingWindow(viewerId, {
+    skip: 0,
+    ...(lastSeen ? { newerThan: lastSeen } : {}),
+  })
+  return items.length > 0
 }
