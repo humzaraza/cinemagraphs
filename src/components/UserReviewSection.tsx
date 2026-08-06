@@ -92,6 +92,52 @@ function selectBeats(
   }))
 }
 
+/**
+ * Chrome for a beat slider the viewer has not rated: no gold track fill and a
+ * hollow ivory ring for the thumb. Tailwind's `accent-*` utility only recolors
+ * a *solid* native thumb, so the ring needs real rules against the vendor
+ * pseudo-elements, and those only apply once the input itself opts out of the
+ * native appearance. Scoped to this class so the rated sliders and the
+ * overall-rating slider keep their default accent styling.
+ */
+const UNRATED_SLIDER_CSS = `
+.beat-slider-unrated {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+.beat-slider-unrated::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(240, 230, 211, 0.15);
+}
+.beat-slider-unrated::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 9999px;
+  background: transparent;
+  border: 2px solid rgba(240, 230, 211, 0.45);
+}
+.beat-slider-unrated::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(240, 230, 211, 0.15);
+}
+.beat-slider-unrated::-moz-range-progress {
+  background: transparent;
+}
+.beat-slider-unrated::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: transparent;
+  border: 2px solid rgba(240, 230, 211, 0.45);
+}
+`
+
 interface ExistingReview {
   id: string
   overallRating: number
@@ -160,17 +206,10 @@ export default function UserReviewSection({
   const hasBeats = beats.length > 0
   const selectedBeats = useMemo(() => selectBeats(beats, taggingEnabled), [beats, taggingEnabled])
 
-  // Initialize beat ratings (both graph-sourced and wiki-sourced beats default to 5.5)
-  useEffect(() => {
-    if (hasBeats && selectedBeats.length > 0 && !myReview && !editing) {
-      const initial: Record<string, number> = {}
-      for (const { beat } of selectedBeats) {
-        initial[beat.label] = 5.5
-      }
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): sync-external-state pattern; revisit when migrating to derived state
-      setBeatRatings(initial)
-    }
-  }, [hasBeats, selectedBeats, myReview, editing])
+  // beatRatings holds ONLY the beats the viewer deliberately rated. There is
+  // no seeding pass: an untouched beat has no key, renders as unrated, and is
+  // never sent. A slider's onChange is what promotes a beat to rated.
+  const ratedCount = Object.keys(beatRatings).length
 
   const fetchReviews = useCallback(async (p: number) => {
     try {
@@ -208,15 +247,17 @@ export default function UserReviewSection({
     if (!myReview) return
     setOverallRating(myReview.overallRating)
     setThoughts(formatReviewProse(myReview))
-    // Seed a slider value for every CURRENT beat: the stored rating when
-    // one exists, otherwise the same 5.5 default create mode uses. A stored
-    // null (or empty) map means no beat assertions were saved, and a partial
-    // map happens when the film's beats changed since the review. Either
-    // way, the values the sliders display are exactly the values a resubmit
-    // would send.
+    // Seed only the beats this review actually rated: a stored value, and a
+    // beat still in the current selection. No default fill. A review that
+    // rated 2 of 8 beats reopens with those 2 rated and the other 6 unrated,
+    // so resubmitting unchanged rewrites exactly what was there. Stored
+    // labels the film no longer shows are dropped, since the viewer has no
+    // slider to keep or clear them with.
+    const stored = myReview.beatRatings ?? {}
     const seeded: Record<string, number> = {}
     for (const { beat } of selectedBeats) {
-      seeded[beat.label] = myReview.beatRatings?.[beat.label] ?? 5.5
+      const value = stored[beat.label]
+      if (typeof value === 'number') seeded[beat.label] = value
     }
     setBeatRatings(seeded)
     setEditing(true)
@@ -237,9 +278,12 @@ export default function UserReviewSection({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          // Send beatRatings only when the viewer rated at least one beat.
+          // undefined is dropped by JSON.stringify, and the route stores an
+          // absent key as SQL NULL rather than an empty map.
           overallRating,
           beginning: thoughts.trim() || undefined,
-          beatRatings: hasBeats ? beatRatings : undefined,
+          beatRatings: hasBeats && ratedCount > 0 ? beatRatings : undefined,
         }),
       })
 
@@ -398,7 +442,13 @@ export default function UserReviewSection({
             {/* Beat Sliders — shown for any film with beats (NLP graph or Wikipedia source) */}
             {hasBeats && selectedBeats.length > 0 && (
               <div>
-                <p className="text-sm text-cinema-muted mb-4">Rate each story beat:</p>
+                <style>{UNRATED_SLIDER_CSS}</style>
+                <div className="flex items-baseline justify-between gap-3 mb-4">
+                  <p className="text-sm text-cinema-muted">Rate each story beat:</p>
+                  <p className="text-xs text-cinema-muted shrink-0" aria-live="polite">
+                    {ratedCount} of {selectedBeats.length} rated
+                  </p>
+                </div>
                 <div className="space-y-3">
                   {selectedBeats.map(({ beat, tag }) => {
                     const borderColor =
@@ -407,6 +457,13 @@ export default function UserReviewSection({
                         : tag === 'lowest'
                           ? 'rgba(239,68,68,0.3)'
                           : 'rgba(255,255,255,0.06)'
+                    // A beat is rated iff it has a key. The slider still needs
+                    // a numeric position when unrated, so it falls back to the
+                    // midpoint for display only; that 5.5 never enters state
+                    // and never reaches the request body.
+                    const rating = beatRatings[beat.label]
+                    const isRated = rating !== undefined
+                    const beatName = beat.labelFull ?? beat.label
                     return (
                       <div
                         key={beat.label}
@@ -420,10 +477,12 @@ export default function UserReviewSection({
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex-1 mr-3">
                             <span
-                              className="text-sm text-cinema-cream leading-snug block"
-                              title={beat.labelFull ?? beat.label}
+                              className={`text-sm leading-snug block ${
+                                isRated ? 'text-cinema-cream' : 'text-cinema-cream/45'
+                              }`}
+                              title={beatName}
                             >
-                              {beat.labelFull ?? beat.label}
+                              {beatName}
                             </span>
                             {tag === 'peak' && (
                               <span className="text-[10px] text-cinema-teal mt-0.5 inline-block">
@@ -436,23 +495,51 @@ export default function UserReviewSection({
                               </span>
                             )}
                           </div>
-                          <span className="text-cinema-gold font-bold text-lg shrink-0">
-                            {beatRatings[beat.label]?.toFixed(1) ?? '5.0'}
-                          </span>
+                          {isRated ? (
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span className="text-cinema-gold font-bold text-lg">
+                                {rating.toFixed(1)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setBeatRatings((prev) => {
+                                    const next = { ...prev }
+                                    delete next[beat.label]
+                                    return next
+                                  })
+                                }
+                                aria-label={`Clear your rating for ${beatName}`}
+                                className="flex items-center justify-center rounded text-cinema-muted hover:text-cinema-cream focus-visible:text-cinema-cream transition-colors"
+                                style={{ minWidth: 44, minHeight: 44 }}
+                              >
+                                <span aria-hidden="true" className="text-base leading-none">
+                                  ✕
+                                </span>
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-cinema-cream/40 text-sm shrink-0">
+                              Not rated
+                            </span>
+                          )}
                         </div>
                         <input
                           type="range"
                           min={1}
                           max={10}
                           step={0.5}
-                          value={beatRatings[beat.label] ?? 5}
+                          value={beatRatings[beat.label] ?? 5.5}
+                          aria-valuetext={isRated ? undefined : 'Not rated'}
                           onChange={(e) =>
                             setBeatRatings((prev) => ({
                               ...prev,
                               [beat.label]: parseFloat(e.target.value),
                             }))
                           }
-                          className="w-full accent-cinema-gold"
+                          className={
+                            isRated ? 'w-full accent-cinema-gold' : 'w-full beat-slider-unrated'
+                          }
                         />
                         <div className="flex justify-between text-[10px] text-cinema-muted/50 mt-1">
                           <span>Hated it</span>
@@ -463,6 +550,9 @@ export default function UserReviewSection({
                     )
                   })}
                 </div>
+                <p className="text-xs text-cinema-muted/70 mt-3">
+                  Beats you skip are left out of your arc.
+                </p>
               </div>
             )}
 
