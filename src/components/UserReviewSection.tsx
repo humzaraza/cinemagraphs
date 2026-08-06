@@ -208,9 +208,17 @@ export default function UserReviewSection({
     if (!myReview) return
     setOverallRating(myReview.overallRating)
     setThoughts(formatReviewProse(myReview))
-    if (myReview.beatRatings) {
-      setBeatRatings(myReview.beatRatings)
+    // Seed a slider value for every CURRENT beat: the stored rating when
+    // one exists, otherwise the same 5.5 default create mode uses. A stored
+    // null (or empty) map means no beat assertions were saved, and a partial
+    // map happens when the film's beats changed since the review. Either
+    // way, the values the sliders display are exactly the values a resubmit
+    // would send.
+    const seeded: Record<string, number> = {}
+    for (const { beat } of selectedBeats) {
+      seeded[beat.label] = myReview.beatRatings?.[beat.label] ?? 5.5
     }
+    setBeatRatings(seeded)
     setEditing(true)
     setSubmitted(false)
   }
