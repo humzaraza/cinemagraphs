@@ -86,11 +86,14 @@ function applySelect(row: Record<string, unknown>, select: Select): Record<strin
   return out
 }
 
-function expectPublicShape(review: Record<string, unknown>) {
-  expect(review).not.toHaveProperty('status')
+/**
+ * What holds on every single-review read path, whatever the viewer: raw
+ * moderator text and the internal sentiment score never ship, updatedAt is
+ * not part of any review payload, and the public fields are intact.
+ */
+function expectNarrowedReview(review: Record<string, unknown>) {
   expect(review).not.toHaveProperty('flagReason')
   expect(review).not.toHaveProperty('sentiment')
-  expect(review).not.toHaveProperty('userId')
   expect(review).not.toHaveProperty('updatedAt')
   expect(review).toMatchObject({
     id: 'r1',
@@ -100,6 +103,13 @@ function expectPublicShape(review: Record<string, unknown>) {
     beatRatings: { 'Act 1': 8 },
     user: { id: 'author-1', name: 'Alice', image: null },
   })
+}
+
+/** The above, plus the two fields only a visibility check may look at. */
+function expectPublicShape(review: Record<string, unknown>) {
+  expectNarrowedReview(review)
+  expect(review).not.toHaveProperty('status')
+  expect(review).not.toHaveProperty('userId')
 }
 
 beforeEach(() => {
@@ -254,16 +264,28 @@ describe('POST /api/films/[id]/reviews (create and edit responses)', () => {
   })
 })
 
-describe('getReviewById (public review detail page)', () => {
-  it('selects the public shape plus film, never status or flagReason', async () => {
+describe('getReviewById (review detail page loader)', () => {
+  it('selects the public shape plus the two fields canViewReview needs, never flagReason or sentiment', async () => {
     mocks.prisma.userReview.findUnique.mockImplementation(async ({ select }: { select: Select }) =>
       applySelect(FULL_REVIEW_ROW, select),
     )
 
     const { getReviewById } = await import('@/lib/review-detail')
-    const review = await getReviewById('r1')
+    const review = (await getReviewById('r1')) as unknown as Record<string, unknown>
     expect(review).not.toBeNull()
-    expectPublicShape(review as unknown as Record<string, unknown>)
-    expect((review as unknown as { film: unknown }).film).toBeDefined()
+
+    // Everything the other public read paths guarantee still holds here.
+    expectNarrowedReview(review)
+
+    // status and userId are present on purpose, widened in the
+    // review-page-status-guard PR rather than drifted: /reviews/[id] has to
+    // run canViewReview, and publicReviewSelect carries neither field. This
+    // one loader selects them on top of it; the page destructures both off
+    // before rendering. publicReviewSelect itself stays narrow, which the
+    // expectPublicShape cases above pin for every other caller.
+    expect(review).toHaveProperty('status', 'approved')
+    expect(review).toHaveProperty('userId', 'author-1')
+
+    expect(review.film).toBeDefined()
   })
 })
