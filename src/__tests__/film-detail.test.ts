@@ -17,6 +17,7 @@ import {
   getUserReviewForFilm,
   getFilmAudienceData,
   getWatchlistStatus,
+  ownerReviewSelect,
 } from '@/lib/film-detail'
 
 beforeEach(() => {
@@ -111,7 +112,7 @@ describe('getUserReviewForFilm', () => {
     expect(result).toEqual({ id: 'r1' })
     expect(mocks.prisma.userReview.findUnique).toHaveBeenCalledWith({
       where: { userId_filmId: { userId: 'user-1', filmId: 'film-1' } },
-      include: { user: { select: { id: true, name: true, image: true } } },
+      select: ownerReviewSelect,
     })
   })
 })

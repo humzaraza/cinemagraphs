@@ -1,5 +1,6 @@
 import { cache } from 'react'
 import { prisma } from '@/lib/prisma'
+import { publicReviewSelect } from '@/lib/film-detail'
 
 /**
  * Shared data-access for the standalone review page (/reviews/[id]).
@@ -25,8 +26,8 @@ import { prisma } from '@/lib/prisma'
 export const getReviewById = cache(async (reviewId: string) => {
   return prisma.userReview.findUnique({
     where: { id: reviewId },
-    include: {
-      user: { select: { id: true, name: true, image: true } },
+    select: {
+      ...publicReviewSelect,
       film: {
         select: {
           id: true,

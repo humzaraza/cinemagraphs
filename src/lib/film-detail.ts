@@ -20,6 +20,38 @@ const REVIEWS_PAGE_SIZE = 5
 
 const reviewUserSelect = { select: { id: true, name: true, image: true } } as const
 
+/**
+ * Fields of a UserReview that are safe on any public read path. Moderation
+ * metadata (status, flagReason) and internal fields (sentiment, userId,
+ * updatedAt) must never reach unauthenticated callers, so every public
+ * query selects exactly this shape instead of using `include` (which would
+ * fetch every scalar).
+ */
+export const publicReviewSelect = {
+  id: true,
+  overallRating: true,
+  beginning: true,
+  middle: true,
+  ending: true,
+  otherThoughts: true,
+  combinedText: true,
+  beatRatings: true,
+  createdAt: true,
+  user: reviewUserSelect,
+} as const
+
+/**
+ * The public shape plus `status`, for the owner's view of their own review.
+ * The owner needs status to render the Live / Under review / Rejected badge.
+ * flagReason stays excluded even here: it is raw moderator text and stays
+ * server-side. Surfacing a flag reason to authors should be a deliberate
+ * product decision with sanitized copy, not this field.
+ */
+export const ownerReviewSelect = {
+  ...publicReviewSelect,
+  status: true,
+} as const
+
 // ---------------------------------------------------------------------------
 // Reviews
 // ---------------------------------------------------------------------------
@@ -56,7 +88,7 @@ export async function getFilmReviewsPage(
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit,
-      include: { user: reviewUserSelect },
+      select: publicReviewSelect,
     }),
     prisma.userReview.count({ where: listFilter }),
   ])
@@ -109,7 +141,7 @@ export async function getFilmReviewsPage(
 export async function getUserReviewForFilm(filmId: string, userId: string) {
   return prisma.userReview.findUnique({
     where: { userId_filmId: { userId, filmId } },
-    include: { user: reviewUserSelect },
+    select: ownerReviewSelect,
   })
 }
 

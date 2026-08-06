@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
 import { parseBackdropBannerValue } from '@/lib/banner-validation'
+import { publicReviewSelect } from '@/lib/film-detail'
 
 export async function GET(
   _request: NextRequest,
@@ -24,7 +25,8 @@ export async function GET(
         userReviews: {
           where: { status: 'approved' },
           orderBy: { createdAt: 'desc' },
-          include: {
+          select: {
+            ...publicReviewSelect,
             film: {
               select: {
                 id: true,
