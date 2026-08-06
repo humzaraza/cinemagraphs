@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
+import { canViewReview } from '@/lib/review-detail'
 
 const PRIVATE_CACHE_HEADERS = { headers: { 'Cache-Control': 'private, no-store' } }
 
@@ -62,15 +63,13 @@ export async function GET(
     const { userId: authorId, status, ...publicFields } = review
     const isOwner = viewerId !== null && authorId === viewerId
 
-    // Visibility: approved reviews are public; flagged and rejected reviews
-    // resolve only for their owner. This is deliberately stricter than the
-    // web page at src/app/reviews/[id]/page.tsx, whose loader
-    // (src/lib/review-detail.ts getReviewById) applies no status filter
-    // because reviews currently go live as approved. A new JSON surface
-    // should not extend that exposure to moderated content. The miss is a
-    // 404 rather than a 403, with the same body as a missing id, so the
-    // response does not reveal that a hidden review exists.
-    if (status !== 'approved' && !isOwner) {
+    // Visibility comes from canViewReview in src/lib/review-detail.ts, the
+    // single rule shared with the web page at src/app/reviews/[id]/page.tsx:
+    // approved reviews are public, flagged and rejected ones resolve only
+    // for their author. The miss is a 404 rather than a 403, with the same
+    // body as a missing id, so the response does not reveal that a hidden
+    // review exists.
+    if (!canViewReview(status, authorId, viewerId)) {
       return NextResponse.json({ error: 'Review not found' }, { status: 404 })
     }
 

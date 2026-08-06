@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { getReviewById } from '@/lib/review-detail'
+import { canViewReview, getReviewById } from '@/lib/review-detail'
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import ReviewComments from '@/components/ReviewComments'
 import { formatReviewProse } from '@/lib/review-prose'
@@ -15,10 +15,22 @@ export const dynamic = 'force-dynamic'
 
 type Props = { params: Promise<{ id: string }> }
 
+const NOT_FOUND_METADATA: Metadata = { title: 'Review Not Found | Cinemagraphs' }
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params
-  const review = await getReviewById(id)
-  if (!review) return { title: 'Review Not Found | Cinemagraphs' }
+
+  const [found, session] = await Promise.all([
+    getReviewById(id),
+    getMobileOrServerSession().catch(() => null),
+  ])
+  if (!found) return NOT_FOUND_METADATA
+
+  // Same visibility rule as the page render: a review the viewer may not
+  // see gets the metadata of a review that does not exist, so the title and
+  // description never leak a hidden review's contents.
+  const { status, userId: authorId, ...review } = found
+  if (!canViewReview(status, authorId, session?.user?.id ?? null)) return NOT_FOUND_METADATA
 
   const authorName = review.user.name ?? 'Anonymous'
   const title = `${authorName}'s review of ${review.film.title} | Cinemagraphs`
@@ -43,14 +55,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ReviewPage({ params }: Props) {
   const { id } = await params
 
-  // The page itself is public; the session only personalizes the comment
-  // thread (composer vs sign-in prompt, owner-only delete controls).
-  const [review, session] = await Promise.all([
+  // The session decides visibility for a non-approved review (owner only)
+  // and personalizes the comment thread (composer vs sign-in prompt,
+  // owner-only delete controls).
+  const [found, session] = await Promise.all([
     getReviewById(id),
     getMobileOrServerSession().catch(() => null),
   ])
 
-  if (!review) notFound()
+  if (!found) notFound()
+
+  // status and userId exist only for the visibility check; destructure them
+  // off so nothing below can render moderation state. A review the viewer
+  // may not see 404s exactly like a missing id, matching
+  // GET /api/reviews/[id], so the response does not reveal it exists.
+  const { status, userId: authorId, ...review } = found
+  if (!canViewReview(status, authorId, session?.user?.id ?? null)) notFound()
 
   const { film, user } = review
   const year = film.releaseDate ? new Date(film.releaseDate).getFullYear() : null
