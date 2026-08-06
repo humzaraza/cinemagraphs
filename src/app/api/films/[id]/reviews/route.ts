@@ -6,7 +6,7 @@ import { maybeBlendAndUpdate } from '@/lib/review-blender'
 import { apiLogger } from '@/lib/logger'
 import { checkSuspension } from '@/lib/middleware'
 import { invalidateFilmCache } from '@/lib/cache'
-import { getFilmReviewsPage, getUserReviewForFilm } from '@/lib/film-detail'
+import { getFilmReviewsPage, getUserReviewForFilm, ownerReviewSelect } from '@/lib/film-detail'
 import { logActivity } from '@/lib/activity'
 import { Prisma } from '@/generated/prisma/client'
 
@@ -220,9 +220,7 @@ export async function POST(
           status: editStatus,
           flagReason: editFlagReason,
         },
-        include: {
-          user: { select: { id: true, name: true, image: true } },
-        },
+        select: ownerReviewSelect,
       })
 
       invalidateFilmCache(filmId).catch(() => {})
@@ -245,9 +243,7 @@ export async function POST(
         status,
         flagReason,
       },
-      include: {
-        user: { select: { id: true, name: true, image: true } },
-      },
+      select: ownerReviewSelect,
     })
 
     if (review.status === 'approved') {
