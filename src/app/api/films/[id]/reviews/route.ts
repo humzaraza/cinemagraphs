@@ -8,6 +8,7 @@ import { checkSuspension } from '@/lib/middleware'
 import { invalidateFilmCache } from '@/lib/cache'
 import { getFilmReviewsPage, getUserReviewForFilm } from '@/lib/film-detail'
 import { logActivity } from '@/lib/activity'
+import { Prisma } from '@/generated/prisma/client'
 
 // TEMPORARY: auto-moderation bypass per admin request. When false, every
 // new review and every edit goes live as `approved` — autoModerate() is
@@ -81,7 +82,11 @@ export async function POST(
 
     const film = await prisma.film.findUnique({
       where: { id: filmId },
-      select: { id: true },
+      select: {
+        id: true,
+        sentimentGraph: { select: { dataPoints: true } },
+        filmBeats: { select: { beats: true } },
+      },
     })
     if (!film) {
       return NextResponse.json({ error: 'Film not found' }, { status: 404 })
@@ -92,6 +97,58 @@ export async function POST(
 
     if (typeof overallRating !== 'number' || overallRating < 1 || overallRating > 10) {
       return NextResponse.json({ error: 'Overall rating must be between 1 and 10' }, { status: 400 })
+    }
+
+    // Normalize beatRatings before either write path. Absent or null means
+    // the reviewer submitted no beat ratings at all.
+    let normalizedBeatRatings: Record<string, number> | null = null
+    if (beatRatings !== undefined && beatRatings !== null) {
+      if (typeof beatRatings !== 'object' || Array.isArray(beatRatings)) {
+        return NextResponse.json(
+          { error: 'Beat ratings must be an object mapping beat labels to scores' },
+          { status: 400 }
+        )
+      }
+      for (const [label, value] of Object.entries(beatRatings as Record<string, unknown>)) {
+        if (typeof value !== 'number' || !Number.isFinite(value)) {
+          return NextResponse.json(
+            { error: `Beat rating for "${label}" must be a number` },
+            { status: 400 }
+          )
+        }
+        if (value < 1 || value > 10) {
+          return NextResponse.json(
+            { error: `Beat rating for "${label}" must be between 1 and 10` },
+            { status: 400 }
+          )
+        }
+      }
+
+      // Keep only keys that match a beat label the composer actually offers,
+      // mirroring the film page's precedence: sentiment-graph beats when a
+      // graph exists, wiki-sourced filmBeats otherwise. Unknown keys are
+      // dropped rather than rejected: a stale client whose cached beat
+      // labels have since been regenerated should still be able to submit,
+      // minus the beats that no longer exist.
+      const labelSource = film.sentimentGraph
+        ? film.sentimentGraph.dataPoints
+        : film.filmBeats?.beats
+      const validLabels = new Set(
+        Array.isArray(labelSource)
+          ? (labelSource as unknown as { label?: unknown }[])
+              .map((p) => p?.label)
+              .filter((l): l is string => typeof l === 'string')
+          : []
+      )
+      const filtered: Record<string, number> = {}
+      for (const [label, value] of Object.entries(beatRatings as Record<string, number>)) {
+        if (validLabels.has(label)) filtered[label] = value
+      }
+
+      // An empty map after filtering means the reviewer asserted nothing
+      // about the film's shape. Store null to say that honestly; {} would
+      // read as an assertion of nothing.
+      normalizedBeatRatings = Object.keys(filtered).length > 0 ? filtered : null
     }
 
     // Build combined text from non-empty sections
@@ -115,7 +172,7 @@ export async function POST(
     let flagReason: string | null = null
     if (AUTO_MODERATION_ENABLED) {
       const moderation = autoModerate(
-        beatRatings || null,
+        normalizedBeatRatings,
         [beginning, middle, ending, otherThoughts],
         user?.createdAt ?? new Date()
       )
@@ -136,7 +193,7 @@ export async function POST(
       let editFlagReason: string | null = null
       if (AUTO_MODERATION_ENABLED) {
         const editModeration = autoModerate(
-          beatRatings || null,
+          normalizedBeatRatings,
           [beginning, middle, ending, otherThoughts],
           user?.createdAt ?? new Date()
         )
@@ -158,7 +215,7 @@ export async function POST(
           ending: ending || null,
           otherThoughts: otherThoughts || null,
           combinedText,
-          beatRatings: beatRatings || null,
+          beatRatings: normalizedBeatRatings ?? Prisma.DbNull,
           sentiment,
           status: editStatus,
           flagReason: editFlagReason,
@@ -183,7 +240,7 @@ export async function POST(
         ending: ending || null,
         otherThoughts: otherThoughts || null,
         combinedText,
-        beatRatings: beatRatings || null,
+        beatRatings: normalizedBeatRatings ?? Prisma.DbNull,
         sentiment,
         status,
         flagReason,
