@@ -1,14 +1,20 @@
 /**
  * Fail-closed target check for the local dev seed script.
  *
- * The seed script writes users, films, graphs and reviews. The Neon database
- * behind DATABASE_URL is shared between Vercel Preview and Production, so a
- * seed run pointed at the wrong connection string writes fixture rows into
- * production. This module is the one thing standing between those two
- * outcomes, so it is pure (no env reads, no I/O) and independently testable.
+ * There are two Neon branches. The dev branch's endpoint host contains
+ * "cool-lake"; the production branch's contains "plain-shadow" and is used
+ * only by Vercel deployments. Locally, .env.local points both DATABASE_URL and
+ * DIRECT_URL at the dev branch.
+ *
+ * The seed script writes users, films, graphs and reviews, so it must only
+ * ever run against dev, and nothing about the seed command itself enforces
+ * that. A mistyped or copy-pasted connection string, or a shell that already
+ * exports a production URL, would send the same fixture rows into production.
+ * This module is what stands in the way, so it is pure (no env reads, no I/O)
+ * and independently testable.
  *
  * Fail-closed means: every path that cannot positively prove the target is the
- * dev database throws. There is no path that returns on uncertainty.
+ * dev branch throws. There is no path that returns on uncertainty.
  *
  * Thrown messages name the host, because hosts are not secrets and naming the
  * host is the whole point of the error. They never include the connection
