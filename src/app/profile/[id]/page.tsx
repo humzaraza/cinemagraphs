@@ -9,6 +9,7 @@ import ShareModal from '@/components/ShareModal'
 import EditProfileModal from '@/components/EditProfileModal'
 import NewListModal from '@/components/NewListModal'
 import ProfileBanner from '@/components/ProfileBanner'
+import ReviewBeatOverlay from '@/components/ReviewBeatOverlay'
 import LikeButton, { type LikeButtonMode } from '@/components/LikeButton'
 import { useReviewLikes, type ReviewLikesMap } from '@/hooks/useReviewLikes'
 import { useReplyCounts, type ReplyCountsMap } from '@/hooks/useReplyCounts'
@@ -811,9 +812,15 @@ function ReviewCard({
 
           {/* Mini Sentiment Graph */}
           {hasBeatRatings && film.sentimentGraph && (
-            <MiniGraph
+            <ReviewBeatOverlay
               dataPoints={film.sentimentGraph.dataPoints}
-              beatRatings={review.beatRatings!}
+              beatRatings={review.beatRatings}
+              width={200}
+              height={40}
+              padding={2}
+              strokeWidth={1.5}
+              dashArray="3 2"
+              dotRadius={2}
             />
           )}
 
@@ -880,60 +887,6 @@ function ReviewCard({
         </div>
       </div>
     </div>
-  )
-}
-
-function MiniGraph({
-  dataPoints,
-  beatRatings,
-}: {
-  dataPoints: DataPoint[]
-  beatRatings: Record<string, number>
-}) {
-  const width = 200
-  const height = 40
-  const padding = 2
-
-  // Build gold line from external data
-  const goldPath = dataPoints
-    .map((dp, i) => {
-      const x = padding + (i / Math.max(dataPoints.length - 1, 1)) * (width - padding * 2)
-      const y = height - padding - ((dp.score - 1) / 9) * (height - padding * 2)
-      return `${i === 0 ? 'M' : 'L'}${x},${y}`
-    })
-    .join(' ')
-
-  // Build teal line from user beat ratings
-  const matchedBeats = dataPoints
-    .map((dp, i) => {
-      const rating = beatRatings[dp.label]
-      if (rating === undefined) return null
-      const x = padding + (i / Math.max(dataPoints.length - 1, 1)) * (width - padding * 2)
-      const y = height - padding - ((rating - 1) / 9) * (height - padding * 2)
-      return { x, y }
-    })
-    .filter(Boolean) as { x: number; y: number }[]
-
-  const tealPath = matchedBeats
-    .map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`)
-    .join(' ')
-
-  return (
-    <svg width={width} height={height} className="w-full" viewBox={`0 0 ${width} ${height}`}>
-      {goldPath && (
-        <path d={goldPath} fill="none" stroke="var(--cinema-gold)" strokeWidth="1.5" opacity="0.6" />
-      )}
-      {tealPath && (
-        <path
-          d={tealPath}
-          fill="none"
-          stroke="var(--cinema-teal)"
-          strokeWidth="1.5"
-          strokeDasharray="3 2"
-          opacity="0.8"
-        />
-      )}
-    </svg>
   )
 }
 

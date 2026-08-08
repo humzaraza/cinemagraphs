@@ -5,7 +5,9 @@ import type { Metadata } from 'next'
 import { canViewReview, getReviewById } from '@/lib/review-detail'
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import ReviewComments from '@/components/ReviewComments'
+import ReviewBeatOverlay from '@/components/ReviewBeatOverlay'
 import { formatReviewProse } from '@/lib/review-prose'
+import { buildBeatOverlay } from '@/lib/beat-overlay'
 import { tmdbImageUrl, formatDate, truncate } from '@/lib/utils'
 import type { SentimentDataPoint } from '@/lib/types'
 
@@ -16,6 +18,10 @@ export const dynamic = 'force-dynamic'
 type Props = { params: Promise<{ id: string }> }
 
 const NOT_FOUND_METADATA: Metadata = { title: 'Review Not Found | Cinemagraphs' }
+
+// One geometry for the gate, the legend counts, and the rendered svg, so the
+// legend can never describe a different overlay than the one drawn.
+const GRAPH_GEOMETRY = { width: 600, height: 120, padding: 6 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params
@@ -78,7 +84,10 @@ export default async function ReviewPage({ params }: Props) {
   const dataPoints =
     (film.sentimentGraph?.dataPoints as unknown as SentimentDataPoint[] | null) ?? []
   const beatRatings = review.beatRatings as Record<string, number> | null
-  const hasGraph = beatRatings !== null && dataPoints.length > 1
+  // Same run/dot rule the svg draws with; a legacy row holding null, {}, or
+  // only unmatched labels renders no graph block and no legend.
+  const overlay = buildBeatOverlay(dataPoints, beatRatings, GRAPH_GEOMETRY)
+  const hasGraph = dataPoints.length > 1 && overlay.ratedCount > 0
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
@@ -168,7 +177,16 @@ export default async function ReviewPage({ params }: Props) {
 
         {hasGraph && (
           <div className="space-y-1">
-            <ReviewBeatGraph dataPoints={dataPoints} beatRatings={beatRatings} />
+            <ReviewBeatOverlay
+              dataPoints={dataPoints}
+              beatRatings={beatRatings}
+              width={GRAPH_GEOMETRY.width}
+              height={GRAPH_GEOMETRY.height}
+              padding={GRAPH_GEOMETRY.padding}
+              strokeWidth={2}
+              dashArray="5 3"
+              dotRadius={3.5}
+            />
             <div className="flex items-center gap-4 text-[10px] text-cinema-muted">
               <span className="flex items-center gap-1.5">
                 <span className="inline-block w-4 border-t-2 border-cinema-gold/60" />
@@ -176,7 +194,7 @@ export default async function ReviewPage({ params }: Props) {
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="inline-block w-4 border-t-2 border-dashed border-cinema-teal/80" />
-                This review&apos;s beats
+                This review&apos;s beats ({overlay.ratedCount} of {overlay.totalBeats})
               </span>
             </div>
           </div>
@@ -193,61 +211,5 @@ export default async function ReviewPage({ params }: Props) {
         <ReviewComments reviewId={review.id} currentUserId={session?.user?.id} />
       </section>
     </div>
-  )
-}
-
-/**
- * Server-rendered copy of the profile page's MiniGraph (a local, non-exported
- * function there) at page scale: the film's arc in gold, the reviewer's beat
- * ratings overlaid in dashed teal. Extract to a shared component when a third
- * caller appears.
- */
-function ReviewBeatGraph({
-  dataPoints,
-  beatRatings,
-}: {
-  dataPoints: SentimentDataPoint[]
-  beatRatings: Record<string, number>
-}) {
-  const width = 600
-  const height = 120
-  const padding = 6
-
-  const goldPath = dataPoints
-    .map((dp, i) => {
-      const x = padding + (i / Math.max(dataPoints.length - 1, 1)) * (width - padding * 2)
-      const y = height - padding - ((dp.score - 1) / 9) * (height - padding * 2)
-      return `${i === 0 ? 'M' : 'L'}${x},${y}`
-    })
-    .join(' ')
-
-  const matchedBeats = dataPoints
-    .map((dp, i) => {
-      const rating = beatRatings[dp.label]
-      if (rating === undefined) return null
-      const x = padding + (i / Math.max(dataPoints.length - 1, 1)) * (width - padding * 2)
-      const y = height - padding - ((rating - 1) / 9) * (height - padding * 2)
-      return { x, y }
-    })
-    .filter(Boolean) as { x: number; y: number }[]
-
-  const tealPath = matchedBeats.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
-
-  return (
-    <svg width={width} height={height} className="w-full" viewBox={`0 0 ${width} ${height}`}>
-      {goldPath && (
-        <path d={goldPath} fill="none" stroke="var(--cinema-gold)" strokeWidth="2" opacity="0.6" />
-      )}
-      {tealPath && (
-        <path
-          d={tealPath}
-          fill="none"
-          stroke="var(--cinema-teal)"
-          strokeWidth="2"
-          strokeDasharray="5 3"
-          opacity="0.8"
-        />
-      )}
-    </svg>
   )
 }
