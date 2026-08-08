@@ -193,7 +193,15 @@ export default async function ReviewPage({ params }: Props) {
                 Film arc
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="inline-block w-4 border-t-2 border-dashed border-cinema-teal/80" />
+                {/* With no consecutive run there is no teal line on the graph,
+                    so the swatch shows the dot the graph actually draws. */}
+                {overlay.ratedRuns.length > 0 ? (
+                  <span className="inline-block w-4 border-t-2 border-dashed border-cinema-teal/80" />
+                ) : (
+                  <span className="inline-flex w-4 justify-center">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-cinema-teal" />
+                  </span>
+                )}
                 This review&apos;s beats ({overlay.ratedCount} of {overlay.totalBeats})
               </span>
             </div>
