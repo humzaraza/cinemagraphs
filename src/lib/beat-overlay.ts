@@ -57,6 +57,45 @@ export interface BeatOverlayDataPoint {
 }
 
 /**
+ * Consecutive-run grouping of the rated beats as index arrays, including
+ * runs of one. A rating only counts when its label matches a dataPoint and
+ * its value is a number; a gap in the indices ends the run. This is the one
+ * place the run rule lives: buildBeatOverlay maps these index runs to
+ * points, and hasDrawableArc reads their lengths.
+ */
+function ratedIndexRuns(
+  dataPoints: BeatOverlayDataPoint[],
+  beatRatings: Record<string, number> | null | undefined
+): number[][] {
+  const runs: number[][] = []
+  if (!beatRatings) return runs
+  let run: number[] = []
+  dataPoints.forEach((dp, i) => {
+    if (typeof beatRatings[dp.label] !== 'number') return
+    if (run.length > 0 && i !== run[run.length - 1] + 1) {
+      runs.push(run)
+      run = []
+    }
+    run.push(i)
+  })
+  if (run.length > 0) runs.push(run)
+  return runs
+}
+
+/**
+ * Whether the review has at least one drawable run: two or more rated beats
+ * at adjacent indices in dataPoints. Geometry never changes the answer, so
+ * none is taken; this is the shareability rule for a review's overlay.
+ */
+export function hasDrawableArc(
+  dataPoints: BeatOverlayDataPoint[] | null | undefined,
+  beatRatings: Record<string, number> | null | undefined
+): boolean {
+  if (!dataPoints) return false
+  return ratedIndexRuns(dataPoints, beatRatings).some((run) => run.length >= 2)
+}
+
+/**
  * Builds the svg paths for a beat overlay graph.
  *
  * The gold path spans every data point continuously. The teal overlay only
@@ -110,39 +149,22 @@ export function buildBeatOverlay(
     .map((dp, i) => `${i === 0 ? 'M' : 'L'}${xAt(i)},${yAt(dp.score)}`)
     .join(' ')
 
-  const rated: { index: number; x: number; y: number }[] = []
-  if (beatRatings) {
-    dataPoints.forEach((dp, i) => {
-      const rating = beatRatings[dp.label]
-      if (typeof rating !== 'number') return
-      rated.push({ index: i, x: xAt(i), y: yAt(rating) })
-    })
-  }
+  const ratings = beatRatings ?? {}
+  const pointAt = (i: number) => ({ x: xAt(i), y: yAt(ratings[dataPoints[i].label]) })
+  const runs = ratedIndexRuns(dataPoints, beatRatings).map((run) => run.map(pointAt))
 
   const toPath = (run: { x: number; y: number }[]) =>
     run.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
 
-  const runs: { x: number; y: number }[][] = []
-  let run: { x: number; y: number }[] = []
-  let prevIndex = Number.NaN
-  for (const beat of rated) {
-    if (run.length > 0 && beat.index !== prevIndex + 1) {
-      runs.push(run)
-      run = []
-    }
-    run.push({ x: beat.x, y: beat.y })
-    prevIndex = beat.index
-  }
-  if (run.length > 0) runs.push(run)
-
   const ratedRuns = runs.filter((r) => r.length >= 2).map(toPath)
+  const dots = runs.flat().map(({ x, y }) => ({ x, y }))
 
   return {
     goldPath,
     ratedRuns,
     runs,
-    dots: rated.map(({ x, y }) => ({ x, y })),
-    ratedCount: rated.length,
+    dots,
+    ratedCount: dots.length,
     totalBeats: dataPoints.length,
   }
 }

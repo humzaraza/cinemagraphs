@@ -2,10 +2,16 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 
 interface Props {
   reviewId: string
+  filmId: string
   filmTitle: string
+  /** From hasDrawableArc: the review has a run of two or more adjacent rated beats. */
+  hasArc: boolean
+  ratedBeatCount: number
+  totalBeatCount: number
   onClose: () => void
 }
 
@@ -26,7 +32,15 @@ const STYLE_DIMS: Record<StyleChoice, { w: number; h: number }> = {
   'cinematic': { w: 1080, h: 608 },
 }
 
-export default function ShareModal({ reviewId, filmTitle, onClose }: Props) {
+export default function ShareModal({
+  reviewId,
+  filmId,
+  filmTitle,
+  hasArc,
+  ratedBeatCount,
+  totalBeatCount,
+  onClose,
+}: Props) {
   const [activeStyle, setActiveStyle] = useState<StyleChoice>('graph-hero')
   const [images, setImages] = useState<Record<StyleChoice, StyleImage | null>>({
     'graph-hero': null,
@@ -69,17 +83,28 @@ export default function ShareModal({ reviewId, filmTitle, onClose }: Props) {
   }, [reviewId])
 
   useEffect(() => {
+    // No drawable arc means no poster to generate; the no-arc phase renders
+    // an explanation instead, so skip the fetches entirely.
+    if (!hasArc) return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(lint): fetch-on-mount pattern; revisit when migrating to Suspense or React Query
     generate()
-  }, [generate])
+  }, [generate, hasArc])
 
   const activeImage = images[activeStyle]
   const anyImage = images['graph-hero'] || images['cinematic']
   const allDone = pendingCount <= 0
   const stillLoading = !allDone && !activeImage
 
-  // Phase: loading if nothing yet, preview if any image loaded, error if all done and nothing
-  const phase = !anyImage && !allDone ? 'loading' : anyImage ? 'preview' : 'error'
+  // Phase: no-arc if the review can't produce a poster (not a failure, so it
+  // never routes through error); otherwise loading if nothing yet, preview
+  // if any image loaded, error if all done and nothing
+  const phase = !hasArc
+    ? 'no-arc'
+    : !anyImage && !allDone
+      ? 'loading'
+      : anyImage
+        ? 'preview'
+        : 'error'
 
   const handleShare = async () => {
     if (!activeImage) return
@@ -137,7 +162,7 @@ export default function ShareModal({ reviewId, filmTitle, onClose }: Props) {
         </div>
 
         {/* Style Toggle */}
-        {phase !== 'loading' && (
+        {(phase === 'preview' || phase === 'error') && (
           <div className="flex gap-2 mb-4">
             {(['graph-hero', 'cinematic'] as StyleChoice[]).map((style) => {
               const isActive = activeStyle === style
@@ -163,6 +188,26 @@ export default function ShareModal({ reviewId, filmTitle, onClose }: Props) {
                 </button>
               )
             })}
+          </div>
+        )}
+
+        {/* No drawable arc: guidance, not an error */}
+        {phase === 'no-arc' && (
+          <div className="flex flex-col items-center gap-4 py-10 text-center">
+            <p className="text-sm text-cinema-cream/80 max-w-xs leading-relaxed">
+              Share images draw the arc of your review. A shareable arc needs at
+              least two beats rated next to each other.
+            </p>
+            <p className="text-xs text-cinema-muted">
+              You rated {ratedBeatCount} of {totalBeatCount} beats.
+            </p>
+            <Link
+              href={`/films/${filmId}#reviews`}
+              className="px-5 py-2 rounded-lg text-sm font-semibold transition-colors"
+              style={{ border: '1px solid rgba(200,169,110,0.4)', color: '#c8a96e' }}
+            >
+              Go to this film
+            </Link>
           </div>
         )}
 
