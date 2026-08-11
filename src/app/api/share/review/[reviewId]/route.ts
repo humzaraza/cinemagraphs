@@ -5,6 +5,7 @@ import satori from 'satori'
 import sharp from 'sharp'
 import React from 'react'
 import { fetchTmdbImageAsDataUri } from '@/lib/tmdb-image'
+import { buildBeatOverlay } from '@/lib/beat-overlay'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,15 +46,32 @@ function truncateAtWord(text: string, maxLen: number): string {
   return truncated + '...'
 }
 
-// Build user's sentiment data points from their beatRatings
-function buildUserDataPoints(
+// The film's beat structure as stored on SentimentGraph.dataPoints; the
+// poster only reads these three fields.
+interface GraphBeat {
+  label: string
+  score: number
+  timeMidpoint?: number
+}
+
+// Build user's sentiment data points from their beatRatings. Keeps each rated
+// beat's timeMidpoint so the graph can place it at its true position in the
+// runtime. The typeof check (not a bare undefined test) keeps a legacy null
+// rating from becoming a NaN coordinate.
+// Exported for tests only; Next.js ignores non-handler exports from route
+// files (precedent: buildSparklinePng in src/app/api/og/list/route.ts).
+export function buildUserDataPoints(
   beatRatings: Record<string, number> | null,
-  graphLabels: { label: string; score: number }[]
-): { label: string; score: number }[] {
+  graphLabels: GraphBeat[]
+): GraphBeat[] {
   if (!beatRatings || !graphLabels.length) return []
   return graphLabels
-    .filter((dp) => beatRatings[dp.label] !== undefined)
-    .map((dp) => ({ label: dp.label, score: beatRatings[dp.label] }))
+    .filter((dp) => typeof beatRatings[dp.label] === 'number')
+    .map((dp) => ({
+      label: dp.label,
+      score: beatRatings[dp.label],
+      timeMidpoint: dp.timeMidpoint,
+    }))
 }
 
 // Padding to prevent dots at edges from being clipped
@@ -78,27 +96,61 @@ function computeYLabels(yFloor: number): number[] {
   return labels
 }
 
-function buildLinePath(points: { score: number }[], w: number, h: number, yFloor: number): string {
-  if (points.length < 2) return ''
-  const range = 10 - yFloor
-  const drawW = w - GRAPH_PAD_LEFT - GRAPH_PAD_RIGHT
-  const drawH = h - GRAPH_PAD_TOP - GRAPH_PAD_BOTTOM
-  return points
-    .map((dp, i) => {
-      const px = GRAPH_PAD_LEFT + (i / (points.length - 1)) * drawW
-      const py = GRAPH_PAD_TOP + drawH - ((dp.score - yFloor) / range) * drawH
-      return `${i === 0 ? 'M' : 'L'}${px.toFixed(1)},${py.toFixed(1)}`
-    })
-    .join(' ')
-}
+// Shared graph geometry for both poster styles. Every coordinate comes from
+// buildBeatOverlay, so rated beats sit at their true timeMidpoint fraction of
+// the runtime (falling back to index spacing when timing data is absent) and
+// the "0m"/runtime x-axis labels are honest. Lines and fills are built one
+// per consecutive run of rated beats: a single edge-to-edge fill would
+// re-assert, in a softer colour, the exact ratings a broken line stopped
+// asserting across unrated gaps. A run of one contributes no line and no
+// fill, only its dot.
+//
+// The y floor stays dynamic (computeYFloor), unlike the review page's fixed
+// floor of 1, so the poster deliberately shows a different vertical shape
+// than the review page for the same ratings.
+// Exported for tests only, like buildUserDataPoints above.
+export function buildPosterGraph(
+  dataPoints: GraphBeat[],
+  beatRatings: Record<string, number> | null,
+  gw: number,
+  gh: number,
+  runtimeMin: number | null
+): {
+  yFloor: number
+  linePaths: string[]
+  fillPaths: string[]
+  dots: { x: number; y: number }[]
+} {
+  const userPoints = buildUserDataPoints(beatRatings, dataPoints)
+  const yFloor = computeYFloor(userPoints)
+  const overlay = buildBeatOverlay(dataPoints, beatRatings, {
+    width: gw,
+    height: gh,
+    padding: {
+      top: GRAPH_PAD_TOP,
+      right: GRAPH_PAD_RIGHT,
+      bottom: GRAPH_PAD_BOTTOM,
+      left: GRAPH_PAD_LEFT,
+    },
+    yFloor,
+    yCeiling: 10,
+    runtimeMinutes: runtimeMin ?? undefined,
+  })
 
-function buildFillPath(points: { score: number }[], w: number, h: number, yFloor: number): string {
-  if (points.length < 2) return ''
-  const drawW = w - GRAPH_PAD_LEFT - GRAPH_PAD_RIGHT
-  const line = buildLinePath(points, w, h, yFloor)
-  const lastX = GRAPH_PAD_LEFT + drawW
-  const firstX = GRAPH_PAD_LEFT
-  return `${line} L${lastX.toFixed(1)},${h.toFixed(1)} L${firstX.toFixed(1)},${h.toFixed(1)} Z`
+  const drawableRuns = overlay.runs.filter((run) => run.length >= 2)
+  const toLine = (run: { x: number; y: number }[]) =>
+    run.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
+
+  return {
+    yFloor,
+    linePaths: drawableRuns.map(toLine),
+    fillPaths: drawableRuns.map((run) => {
+      const firstX = run[0].x
+      const lastX = run[run.length - 1].x
+      return `${toLine(run)} L${lastX.toFixed(1)},${gh.toFixed(1)} L${firstX.toFixed(1)},${gh.toFixed(1)} Z`
+    }),
+    dots: overlay.dots,
+  }
 }
 
 function yForScore(score: number, h: number, yFloor: number): number {
@@ -109,14 +161,16 @@ function yForScore(score: number, h: number, yFloor: number): number {
 
 // Build graph panel with Y-axis labels + SVG chart (for Cinematic Overlay — with container)
 function buildGraphPanel(
-  points: { score: number }[],
+  dataPoints: GraphBeat[],
+  beatRatings: Record<string, number> | null,
   gw: number,
-  gh: number
+  gh: number,
+  runtimeMin: number | null
 ): React.ReactElement {
-  const yFloor = computeYFloor(points)
+  const { yFloor, linePaths, fillPaths, dots } = buildPosterGraph(
+    dataPoints, beatRatings, gw, gh, runtimeMin
+  )
   const range = 10 - yFloor
-  const linePath = buildLinePath(points, gw, gh, yFloor)
-  const fillPath = buildFillPath(points, gw, gh, yFloor)
   const midScore = yFloor + range / 2
   const midY = yForScore(midScore, gh, yFloor)
 
@@ -130,28 +184,24 @@ function buildGraphPanel(
     })
   )
 
-  // Fill under curve with very subtle gold tint
-  if (fillPath) {
+  // Fill under each run with very subtle gold tint
+  fillPaths.forEach((d, i) => {
     svgChildren.push(
-      React.createElement('path', { key: 'fill', d: fillPath, fill: `${GOLD}0D` })
+      React.createElement('path', { key: `fill${i}`, d, fill: `${GOLD}0D` })
     )
-  }
+  })
 
-  // Gold line
-  if (linePath) {
+  // Gold line per run
+  linePaths.forEach((d, i) => {
     svgChildren.push(
-      React.createElement('path', { key: 'line', d: linePath, fill: 'none', stroke: GOLD, strokeWidth: 3.5 })
+      React.createElement('path', { key: `line${i}`, d, fill: 'none', stroke: GOLD, strokeWidth: 3.5 })
     )
-  }
+  })
 
   // Dots
-  const drawW = gw - GRAPH_PAD_LEFT - GRAPH_PAD_RIGHT
-  const drawH = gh - GRAPH_PAD_TOP - GRAPH_PAD_BOTTOM
-  points.forEach((dp, i) => {
-    const px = GRAPH_PAD_LEFT + (i / (points.length - 1)) * drawW
-    const py = GRAPH_PAD_TOP + drawH - ((dp.score - yFloor) / range) * drawH
+  dots.forEach((p, i) => {
     svgChildren.push(
-      React.createElement('circle', { key: `d${i}`, cx: px, cy: py, r: 5, fill: GOLD })
+      React.createElement('circle', { key: `d${i}`, cx: p.x, cy: p.y, r: 5, fill: GOLD })
     )
   })
 
@@ -183,15 +233,16 @@ function buildGraphPanel(
 
 // Build borderless graph (for Graph Hero — no container, faint grid lines, gold area gradient)
 function buildBorderlessGraph(
-  points: { score: number }[],
+  dataPoints: GraphBeat[],
+  beatRatings: Record<string, number> | null,
   gw: number,
   gh: number,
   runtimeMin?: number | null
 ): React.ReactElement {
-  const yFloor = computeYFloor(points)
+  const { yFloor, linePaths, fillPaths, dots } = buildPosterGraph(
+    dataPoints, beatRatings, gw, gh, runtimeMin ?? null
+  )
   const range = 10 - yFloor
-  const linePath = buildLinePath(points, gw, gh, yFloor)
-  const fillPath = buildFillPath(points, gw, gh, yFloor)
 
   const svgChildren: React.ReactElement[] = []
 
@@ -207,32 +258,28 @@ function buildBorderlessGraph(
     )
   }
 
-  // Gold area fill — very subtle so poster bleeds through
-  if (fillPath) {
+  // Gold area fill per run — very subtle so poster bleeds through
+  fillPaths.forEach((d, i) => {
     svgChildren.push(
-      React.createElement('path', { key: 'fill', d: fillPath, fill: `${GOLD}0D` })
+      React.createElement('path', { key: `fill${i}`, d, fill: `${GOLD}0D` })
     )
-  }
+  })
 
-  // Gold line — slightly thicker
-  if (linePath) {
+  // Gold line per run — slightly thicker
+  linePaths.forEach((d, i) => {
     svgChildren.push(
-      React.createElement('path', { key: 'line', d: linePath, fill: 'none', stroke: GOLD, strokeWidth: 4 })
+      React.createElement('path', { key: `line${i}`, d, fill: 'none', stroke: GOLD, strokeWidth: 4 })
     )
-  }
+  })
 
   // Dots — slightly larger
-  const drawW2 = gw - GRAPH_PAD_LEFT - GRAPH_PAD_RIGHT
-  const drawH2 = gh - GRAPH_PAD_TOP - GRAPH_PAD_BOTTOM
-  points.forEach((dp, i) => {
-    const px = GRAPH_PAD_LEFT + (i / (points.length - 1)) * drawW2
-    const py = GRAPH_PAD_TOP + drawH2 - ((dp.score - yFloor) / range) * drawH2
+  dots.forEach((p, i) => {
     // Outer glow
     svgChildren.push(
-      React.createElement('circle', { key: `glow${i}`, cx: px, cy: py, r: 10, fill: `${GOLD}30` })
+      React.createElement('circle', { key: `glow${i}`, cx: p.x, cy: p.y, r: 10, fill: `${GOLD}30` })
     )
     svgChildren.push(
-      React.createElement('circle', { key: `d${i}`, cx: px, cy: py, r: 6, fill: GOLD })
+      React.createElement('circle', { key: `d${i}`, cx: p.x, cy: p.y, r: 6, fill: GOLD })
     )
   })
 
@@ -299,7 +346,8 @@ function buildCinematicPoster(
   username: string,
   quoteText: string,
   backdropSrc: string | null,
-  userPoints: { label: string; score: number }[],
+  dataPoints: GraphBeat[],
+  beatRatings: Record<string, number> | null,
   hasGraph: boolean,
   runtimeMin: number | null
 ): React.ReactElement {
@@ -457,7 +505,7 @@ function buildCinematicPoster(
 
     // Graph panel + x-axis runtime labels
     const graphChildren: (React.ReactElement | null)[] = [
-      buildGraphPanel(userPoints, graphSvgW, graphH),
+      buildGraphPanel(dataPoints, beatRatings, graphSvgW, graphH, runtimeMin),
     ]
     if (runtimeLabel) {
       graphChildren.push(
@@ -564,7 +612,7 @@ export async function GET(
     const quoteText = review.combinedText ? truncateAtWord(review.combinedText, 140) : ''
     const username = review.user.name || review.user.email.split('@')[0]
     const beatRatings = review.beatRatings as Record<string, number> | null
-    const graphLabels = (review.film.sentimentGraph?.dataPoints as { label: string; score: number }[]) || []
+    const graphLabels = (review.film.sentimentGraph?.dataPoints as unknown as GraphBeat[]) || []
     // Pre-fetch poster + backdrop as data URIs. Satori cannot decode WebP/AVIF
     // (its image handler throws "u is not iterable"), and TMDB serves WebP based
     // on Cloudflare cache state, so we hand satori bytes directly rather than
@@ -624,7 +672,7 @@ export async function GET(
     if (style === 'cinematic') {
       const cinElement = buildCinematicPoster(
         filmTitle, year, director, score, username, quoteText,
-        backdropSrc, userPoints, hasGraph, review.film.runtime
+        backdropSrc, graphLabels, beatRatings, hasGraph, review.film.runtime
       )
       const cinSvg = await satori(cinElement, { width: 1080, height: 608, fonts: satoriFonts })
       const cinPng = await sharp(Buffer.from(cinSvg)).png().toBuffer()
@@ -729,7 +777,7 @@ export async function GET(
               position: 'absolute', top: 1260, left: 40, right: 40, height: graphH,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             },
-          }, buildBorderlessGraph(userPoints, graphW, graphH, review.film.runtime))
+          }, buildBorderlessGraph(graphLabels, beatRatings, graphW, graphH, review.film.runtime))
         : null,
 
       // Compact quote

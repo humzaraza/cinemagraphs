@@ -152,3 +152,227 @@ describe('buildBeatOverlay', () => {
     expect(result.ratedCount).toBe(2)
   })
 })
+
+// ── Extended geometry: per-side padding, custom y range, time-based x, runs ──
+
+// Mirror math for the generalized geometry, kept separate from the legacy
+// helpers above so the original cases stay byte-for-byte untouched.
+interface SidePad {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+function xAtPadded(i: number, total: number, width: number, pad: SidePad): number {
+  return pad.left + (i / Math.max(total - 1, 1)) * (width - pad.left - pad.right)
+}
+function xAtTime(
+  timeMidpoint: number,
+  runtimeMinutes: number,
+  width: number,
+  pad: SidePad
+): number {
+  const clamped = Math.min(Math.max(timeMidpoint / runtimeMinutes, 0), 1)
+  return pad.left + clamped * (width - pad.left - pad.right)
+}
+function yAtRange(
+  value: number,
+  height: number,
+  pad: SidePad,
+  yFloor: number,
+  yCeiling: number
+): number {
+  return (
+    height - pad.bottom - ((value - yFloor) / (yCeiling - yFloor)) * (height - pad.top - pad.bottom)
+  )
+}
+
+function timedBeats(
+  entries: { score: number; timeMidpoint?: number }[]
+): { label: string; score: number; timeMidpoint?: number }[] {
+  return entries.map((e, i) => ({ label: `Beat ${i + 1}`, ...e }))
+}
+
+describe('buildBeatOverlay extended geometry', () => {
+  const PAD: SidePad = { top: 14, right: 12, bottom: 6, left: 12 }
+
+  it('per-side padding produces the expected drawable box', () => {
+    const dataPoints = beats([5, 6, 7])
+    const ratings = { 'Beat 1': 1, 'Beat 2': 5, 'Beat 3': 10 }
+    const geometry = { width: 600, height: 120, padding: PAD }
+    const result = buildBeatOverlay(dataPoints, ratings, geometry)
+
+    // Left and right edges of the drawable box.
+    expect(result.dots[0].x).toBe(12)
+    expect(result.dots[2].x).toBe(600 - 12)
+    // Score 1 (default floor) maps to the bottom pad, 10 to the top pad.
+    expect(result.dots[0].y).toBe(120 - 6)
+    expect(result.dots[2].y).toBe(14)
+    expect(result.dots[1].x).toBe(xAtPadded(1, 3, 600, PAD))
+    expect(result.dots[1].y).toBe(yAtRange(5, 120, PAD, 1, 10))
+  })
+
+  it('a custom yFloor changes y as expected', () => {
+    const dataPoints = beats([5, 6, 7])
+    const ratings = { 'Beat 1': 5, 'Beat 2': 7.5, 'Beat 3': 10 }
+    const uniform: SidePad = { top: 6, right: 6, bottom: 6, left: 6 }
+    const result = buildBeatOverlay(dataPoints, ratings, {
+      width: 600,
+      height: 120,
+      padding: 6,
+      yFloor: 5,
+      yCeiling: 10,
+    })
+
+    // The floor score now sits at the bottom of the drawable box and the
+    // midpoint of the range sits halfway up it.
+    expect(result.dots[0].y).toBe(120 - 6)
+    expect(result.dots[1].y).toBe(yAtRange(7.5, 120, uniform, 5, 10))
+    expect(result.dots[1].y).toBe(6 + (120 - 12) / 2)
+    expect(result.dots[2].y).toBe(6)
+  })
+
+  it('explicit yFloor 1 and yCeiling 10 match the default output exactly', () => {
+    const dataPoints = beats([2, 8, 5, 9])
+    const ratings = { 'Beat 1': 3, 'Beat 2': 7, 'Beat 4': 10 }
+    const withDefaults = buildBeatOverlay(dataPoints, ratings, GEOMETRY)
+    const explicit = buildBeatOverlay(dataPoints, ratings, {
+      ...GEOMETRY,
+      yFloor: 1,
+      yCeiling: 10,
+    })
+
+    expect(explicit).toEqual(withDefaults)
+  })
+
+  it('time-based x places a beat at its runtime fraction, not its index', () => {
+    const dataPoints = timedBeats([
+      { score: 5, timeMidpoint: 22.5 },
+      { score: 6, timeMidpoint: 60 },
+      { score: 7, timeMidpoint: 110 },
+    ])
+    const ratings = { 'Beat 1': 4, 'Beat 2': 6, 'Beat 3': 8 }
+    const geometry = { width: 600, height: 120, padding: PAD, runtimeMinutes: 120 }
+    const result = buildBeatOverlay(dataPoints, ratings, geometry)
+
+    expect(result.dots[0].x).toBe(xAtTime(22.5, 120, 600, PAD))
+    expect(result.dots[0].x).toBe(12 + (22.5 / 120) * (600 - 24))
+    expect(result.dots[0].x).not.toBe(xAtPadded(0, 3, 600, PAD))
+    expect(result.dots[1].x).toBe(xAtTime(60, 120, 600, PAD))
+    expect(result.dots[2].x).toBe(xAtTime(110, 120, 600, PAD))
+  })
+
+  it('time-based x clamps a midpoint outside the runtime to the drawable range', () => {
+    const dataPoints = timedBeats([
+      { score: 5, timeMidpoint: -3 },
+      { score: 6, timeMidpoint: 130 },
+    ])
+    const ratings = { 'Beat 1': 4, 'Beat 2': 6 }
+    const geometry = { width: 600, height: 120, padding: PAD, runtimeMinutes: 120 }
+    const result = buildBeatOverlay(dataPoints, ratings, geometry)
+
+    expect(result.dots[0].x).toBe(12)
+    expect(result.dots[1].x).toBe(600 - 12)
+  })
+
+  const badRuntimes: [string, number | undefined][] = [
+    ['absent', undefined],
+    ['zero', 0],
+    ['negative', -90],
+  ]
+  it.each(badRuntimes)('falls back to index spacing when runtimeMinutes is %s', (_name, runtimeMinutes) => {
+    const dataPoints = timedBeats([
+      { score: 5, timeMidpoint: 22.5 },
+      { score: 6, timeMidpoint: 60 },
+      { score: 7, timeMidpoint: 110 },
+    ])
+    const ratings = { 'Beat 1': 4, 'Beat 2': 6, 'Beat 3': 8 }
+    const result = buildBeatOverlay(dataPoints, ratings, {
+      width: 600,
+      height: 120,
+      padding: PAD,
+      runtimeMinutes,
+    })
+
+    expect(result.dots.map((d) => d.x)).toEqual([
+      xAtPadded(0, 3, 600, PAD),
+      xAtPadded(1, 3, 600, PAD),
+      xAtPadded(2, 3, 600, PAD),
+    ])
+  })
+
+  const badMidpoints: [string, number | undefined][] = [
+    ['missing', undefined],
+    ['NaN', Number.NaN],
+    ['non-numeric', 'forty-two' as unknown as number],
+  ]
+  it.each(badMidpoints)('falls back to index spacing when any timeMidpoint is %s', (_name, badMidpoint) => {
+    const dataPoints = timedBeats([
+      { score: 5, timeMidpoint: 22.5 },
+      { score: 6, timeMidpoint: badMidpoint },
+      { score: 7, timeMidpoint: 110 },
+    ])
+    const ratings = { 'Beat 1': 4, 'Beat 2': 6, 'Beat 3': 8 }
+    const result = buildBeatOverlay(dataPoints, ratings, {
+      width: 600,
+      height: 120,
+      padding: PAD,
+      runtimeMinutes: 120,
+    })
+
+    expect(result.dots.map((d) => d.x)).toEqual([
+      xAtPadded(0, 3, 600, PAD),
+      xAtPadded(1, 3, 600, PAD),
+      xAtPadded(2, 3, 600, PAD),
+    ])
+  })
+
+  it('runs groups consecutive rated beats into point arrays and ratedRuns matches', () => {
+    const dataPoints = beats([5, 6, 7, 8, 9])
+    // Beat 3 unrated: runs are indices 0-1 and 3-4.
+    const ratings = { 'Beat 1': 4, 'Beat 2': 5, 'Beat 4': 6, 'Beat 5': 7 }
+    const result = buildBeatOverlay(dataPoints, ratings, GEOMETRY)
+
+    expect(result.runs).toEqual([
+      [
+        { x: xAt(0, 5), y: yAt(4) },
+        { x: xAt(1, 5), y: yAt(5) },
+      ],
+      [
+        { x: xAt(3, 5), y: yAt(6) },
+        { x: xAt(4, 5), y: yAt(7) },
+      ],
+    ])
+    expect(result.ratedRuns).toEqual(
+      result.runs.map((run) =>
+        run.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
+      )
+    )
+  })
+
+  it('a lone rated beat yields one dot and no run of length two or more', () => {
+    const dataPoints = beats([5, 6, 7, 8])
+    const ratings = { 'Beat 3': 9 }
+    const result = buildBeatOverlay(dataPoints, ratings, GEOMETRY)
+
+    expect(result.dots).toEqual([{ x: xAt(2, 4), y: yAt(9) }])
+    expect(result.runs.every((run) => run.length < 2)).toBe(true)
+    expect(result.ratedRuns).toHaveLength(0)
+  })
+
+  it('a run of two plus an isolated beat: runs holds both, ratedRuns only the pair', () => {
+    const dataPoints = beats([5, 6, 7, 8, 9, 4])
+    // Indices 0-1 form a run; index 4 is isolated (3 and 5 unrated).
+    const ratings = { 'Beat 1': 3, 'Beat 2': 4, 'Beat 5': 8 }
+    const result = buildBeatOverlay(dataPoints, ratings, GEOMETRY)
+
+    expect(result.runs).toEqual([
+      [
+        { x: xAt(0, 6), y: yAt(3) },
+        { x: xAt(1, 6), y: yAt(4) },
+      ],
+      [{ x: xAt(4, 6), y: yAt(8) }],
+    ])
+    expect(result.ratedRuns).toHaveLength(1)
+  })
+})
