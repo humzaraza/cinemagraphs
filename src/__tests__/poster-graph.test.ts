@@ -13,6 +13,8 @@ vi.mock('sharp', () => ({ default: vi.fn() }))
 import {
   buildUserDataPoints,
   buildPosterGraph,
+  buildRulerTicks,
+  formatRulerLabel,
 } from '@/app/api/share/review/[reviewId]/route'
 
 // Poster graph paddings, mirrored from the route's constants.
@@ -166,5 +168,76 @@ describe('buildPosterGraph', () => {
       xIndex(0, FILM_BEATS.length),
       xIndex(1, FILM_BEATS.length),
     ])
+  })
+})
+
+describe('formatRulerLabel', () => {
+  it('formats zero, sub-hour, on-the-hour, and past-hour minutes', () => {
+    expect(formatRulerLabel(0)).toBe('0m')
+    expect(formatRulerLabel(15)).toBe('15m')
+    expect(formatRulerLabel(45)).toBe('45m')
+    expect(formatRulerLabel(60)).toBe('1h')
+    expect(formatRulerLabel(120)).toBe('2h')
+    expect(formatRulerLabel(90)).toBe('1h 30m')
+    expect(formatRulerLabel(150)).toBe('2h 30m')
+  })
+})
+
+describe('buildRulerTicks', () => {
+  it('a 116 minute film gets 30-minute ticks with none at the runtime', () => {
+    const ticks = buildRulerTicks(116, GW)
+
+    expect(ticks.map((t) => t.minute)).toEqual([0, 30, 60, 90])
+    expect(ticks.map((t) => t.label)).toEqual(['0m', '30m', '1h', '1h 30m'])
+    expect(ticks.some((t) => t.minute === 116)).toBe(false)
+  })
+
+  it('a runtime on an exact interval multiple still gets no tick at the runtime', () => {
+    const ticks = buildRulerTicks(120, GW)
+
+    expect(ticks.map((t) => t.minute)).toEqual([0, 30, 60, 90])
+  })
+
+  it('an 88 minute film uses the 15-minute interval and a sensible count', () => {
+    const ticks = buildRulerTicks(88, GW)
+
+    expect(ticks.map((t) => t.minute)).toEqual([0, 15, 30, 45, 60, 75])
+    expect(ticks.map((t) => t.label)).toEqual(['0m', '15m', '30m', '45m', '1h', '1h 15m'])
+  })
+
+  it('a 195 minute film stays within three to seven ticks', () => {
+    const ticks = buildRulerTicks(195, GW)
+
+    expect(ticks.map((t) => t.minute)).toEqual([0, 30, 60, 90, 120, 150, 180])
+    expect(ticks.length).toBeGreaterThanOrEqual(3)
+    expect(ticks.length).toBeLessThanOrEqual(7)
+  })
+
+  it('places each tick at its minute fraction of the drawable width', () => {
+    const ticks = buildRulerTicks(116, GW)
+
+    for (const tick of ticks) {
+      expect(tick.x).toBeCloseTo(
+        PAD_LEFT + (tick.minute / 116) * (GW - PAD_LEFT - PAD_RIGHT),
+        10
+      )
+    }
+  })
+
+  it('shares the plot coordinate space: a tick and a dot at the same minute coincide', () => {
+    const filmBeats = [
+      { label: 'B1', score: 5, timeMidpoint: 30 },
+      { label: 'B2', score: 6, timeMidpoint: 80 },
+    ]
+    const { dots } = buildPosterGraph(filmBeats, { B1: 7, B2: 8 }, GW, GH, RUNTIME)
+    const ticks = buildRulerTicks(RUNTIME, GW)
+
+    expect(ticks[1].minute).toBe(30)
+    expect(dots[0].x).toBeCloseTo(ticks[1].x, 10)
+  })
+
+  it('yields no ticks for a null or zero runtime', () => {
+    expect(buildRulerTicks(null, GW)).toEqual([])
+    expect(buildRulerTicks(0, GW)).toEqual([])
   })
 })

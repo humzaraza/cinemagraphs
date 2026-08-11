@@ -80,6 +80,90 @@ const GRAPH_PAD_BOTTOM = 6
 const GRAPH_PAD_LEFT = 12
 const GRAPH_PAD_RIGHT = 12
 
+// X-axis ruler: round-minute ticks spanning the runtime. timeMidpoint is an
+// estimate (the pipeline midpoints equal buckets of the runtime, it does not
+// observe timing), so the axis marks round intervals rather than pairing any
+// label with a beat, and no tick lands on the exact runtime; that would
+// re-assert precision at the right edge that the data does not have.
+const RULER_INTERVALS = [5, 10, 15, 30, 60, 120, 240]
+
+// 15-minute ticks under 90 minutes, 30-minute from there up; then step along
+// the ladder while the tick count is outside 3..7 (clamped at the ends, so a
+// short of under ~11 minutes can degenerate to fewer ticks).
+function rulerInterval(runtimeMin: number): number {
+  let idx = RULER_INTERVALS.indexOf(runtimeMin < 90 ? 15 : 30)
+  const tickCount = (interval: number) => Math.ceil(runtimeMin / interval)
+  while (tickCount(RULER_INTERVALS[idx]) > 7 && idx < RULER_INTERVALS.length - 1) idx++
+  while (tickCount(RULER_INTERVALS[idx]) < 3 && idx > 0) idx--
+  return RULER_INTERVALS[idx]
+}
+
+// Exported for tests only, like buildUserDataPoints above.
+export function formatRulerLabel(minutes: number): string {
+  if (minutes === 0) return '0m'
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  if (h === 0) return `${m}m`
+  if (m === 0) return `${h}h`
+  return `${h}h ${m}m`
+}
+
+export interface RulerTick {
+  minute: number
+  label: string
+  x: number
+}
+
+// Tick x is the minute as a fraction of the runtime across the same drawable
+// width the beats use (same padding constants), so the ruler and the plot
+// share one coordinate space.
+// Exported for tests only, like buildUserDataPoints above.
+export function buildRulerTicks(
+  runtimeMin: number | null | undefined,
+  gw: number
+): RulerTick[] {
+  if (typeof runtimeMin !== 'number' || !Number.isFinite(runtimeMin) || runtimeMin <= 0) {
+    return []
+  }
+  const interval = rulerInterval(runtimeMin)
+  const drawW = gw - (GRAPH_PAD_LEFT + GRAPH_PAD_RIGHT)
+  const ticks: RulerTick[] = []
+  for (let minute = 0; minute < runtimeMin; minute += interval) {
+    ticks.push({
+      minute,
+      label: formatRulerLabel(minute),
+      x: GRAPH_PAD_LEFT + (minute / runtimeMin) * drawW,
+    })
+  }
+  return ticks
+}
+
+// Shared x-axis ruler row for both poster styles. Labels sit at a percentage
+// of the flex-1 box after the 48px y-label gutter: satori stretches the graph
+// svg into that same box (preserveAspectRatio "none"), so a label centred at
+// (x / gw)% lands on its vertical gridline at whatever width the row renders.
+function buildRulerRow(ticks: RulerTick[], gw: number, fontSize: number): React.ReactElement {
+  const labelEls = ticks.map((tick) =>
+    React.createElement('div', {
+      key: `x${tick.minute}`,
+      style: {
+        // flex centering, not textAlign: satori leaves textAlign'd text at
+        // the box's left edge, which pushed every label off its gridline
+        position: 'absolute', left: `${(tick.x / gw) * 100}%`, top: 0,
+        width: 80, marginLeft: -40, display: 'flex', justifyContent: 'center',
+        fontSize, color: 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans',
+      },
+    }, tick.label)
+  )
+  return React.createElement('div', {
+    style: { display: 'flex', flexDirection: 'row', marginLeft: 48, marginTop: 4, height: fontSize + 4 },
+  },
+    React.createElement('div', {
+      style: { position: 'relative', flex: 1, display: 'flex' },
+    }, ...labelEls)
+  )
+}
+
 // Dynamic y-axis: floor one whole number below the lowest data point, ceiling always 10
 function computeYFloor(points: { score: number }[]): number {
   if (points.length === 0) return 0
@@ -97,9 +181,10 @@ function computeYLabels(yFloor: number): number[] {
 }
 
 // Shared graph geometry for both poster styles. Every coordinate comes from
-// buildBeatOverlay, so rated beats sit at their true timeMidpoint fraction of
-// the runtime (falling back to index spacing when timing data is absent) and
-// the "0m"/runtime x-axis labels are honest. Lines and fills are built one
+// buildBeatOverlay, so rated beats sit at their stored timeMidpoint fraction
+// of the runtime (falling back to index spacing when timing data is absent)
+// and the x-axis ruler marks round minutes in the same coordinate space,
+// pairing no label with a beat. Lines and fills are built one
 // per consecutive run of rated beats: a single edge-to-edge fill would
 // re-assert, in a softer colour, the exact ratings a broken line stopped
 // asserting across unrated gaps. A run of one contributes no line and no
@@ -184,6 +269,17 @@ function buildGraphPanel(
     })
   )
 
+  // Faint vertical grid lines at each ruler tick, matching the treatment of
+  // the horizontal grid lines in buildBorderlessGraph
+  for (const tick of buildRulerTicks(runtimeMin, gw)) {
+    svgChildren.push(
+      React.createElement('line', {
+        key: `vgrid${tick.minute}`, x1: tick.x, y1: 0, x2: tick.x, y2: gh,
+        stroke: 'rgba(255,255,255,0.06)', strokeWidth: 1,
+      })
+    )
+  }
+
   // Fill under each run with very subtle gold tint
   fillPaths.forEach((d, i) => {
     svgChildren.push(
@@ -258,6 +354,17 @@ function buildBorderlessGraph(
     )
   }
 
+  // Faint vertical grid lines at each ruler tick, same treatment as above
+  const rulerTicks = buildRulerTicks(runtimeMin, gw)
+  for (const tick of rulerTicks) {
+    svgChildren.push(
+      React.createElement('line', {
+        key: `vgrid${tick.minute}`, x1: tick.x, y1: 0, x2: tick.x, y2: gh,
+        stroke: 'rgba(255,255,255,0.06)', strokeWidth: 1,
+      })
+    )
+  }
+
   // Gold area fill per run — very subtle so poster bleeds through
   fillPaths.forEach((d, i) => {
     svgChildren.push(
@@ -296,26 +403,8 @@ function buildBorderlessGraph(
     }, val.toString())
   })
 
-  // X-axis runtime labels
-  const runtimeLabel = runtimeMin
-    ? `${Math.floor(runtimeMin / 60)}h ${runtimeMin % 60}m`
-    : null
-
-  const xAxisEl = runtimeLabel
-    ? React.createElement('div', {
-        style: {
-          display: 'flex', flexDirection: 'row', justifyContent: 'space-between',
-          marginLeft: 48, marginRight: 0, marginTop: 4,
-        },
-      },
-        React.createElement('span', {
-          style: { fontSize: 16, color: 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans' },
-        }, '0m'),
-        React.createElement('span', {
-          style: { fontSize: 16, color: 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans' },
-        }, runtimeLabel)
-      )
-    : null
+  // X-axis ruler labels; no runtime, no ticks, no row
+  const xAxisEl = rulerTicks.length ? buildRulerRow(rulerTicks, gw, 16) : null
 
   return React.createElement('div', {
     style: { display: 'flex', flexDirection: 'column', width: '100%', height: '100%' },
@@ -355,10 +444,6 @@ function buildCinematicPoster(
   const CH = 608
   const graphSvgW = 432
   const graphH = 380
-
-  const runtimeLabel = runtimeMin
-    ? `${Math.floor(runtimeMin / 60)}h ${runtimeMin % 60}m`
-    : null
 
   const children: (React.ReactElement | null)[] = []
 
@@ -503,26 +588,13 @@ function buildCinematicPoster(
       }, 'SENTIMENT ARC')
     )
 
-    // Graph panel + x-axis runtime labels
+    // Graph panel + x-axis ruler; no runtime, no ticks, no row
     const graphChildren: (React.ReactElement | null)[] = [
       buildGraphPanel(dataPoints, beatRatings, graphSvgW, graphH, runtimeMin),
     ]
-    if (runtimeLabel) {
-      graphChildren.push(
-        React.createElement('div', {
-          key: 'xaxis',
-          style: {
-            display: 'flex', justifyContent: 'space-between', marginLeft: 48, marginTop: 4,
-          },
-        },
-          React.createElement('span', {
-            style: { fontSize: 12, color: 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans' },
-          }, '0m'),
-          React.createElement('span', {
-            style: { fontSize: 12, color: 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans' },
-          }, runtimeLabel)
-        )
-      )
+    const rulerTicks = buildRulerTicks(runtimeMin, graphSvgW)
+    if (rulerTicks.length) {
+      graphChildren.push(buildRulerRow(rulerTicks, graphSvgW, 12))
     }
     children.push(
       React.createElement('div', {
