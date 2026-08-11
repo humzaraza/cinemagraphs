@@ -206,7 +206,7 @@ export default function ShareModal({
               className="px-5 py-2 rounded-lg text-sm font-semibold transition-colors"
               style={{ border: '1px solid rgba(200,169,110,0.4)', color: '#c8a96e' }}
             >
-              Edit this review
+              Go to this film
             </Link>
           </div>
         )}
