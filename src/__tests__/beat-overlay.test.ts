@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildBeatOverlay, type BeatOverlayGeometry } from '@/lib/beat-overlay'
+import { buildBeatOverlay, hasDrawableArc, type BeatOverlayGeometry } from '@/lib/beat-overlay'
 
 // Fixture shape verified against both real callers: SentimentDataPoint in
 // src/lib/types.ts (label: string, score: number, plus timing fields) and
@@ -374,5 +374,80 @@ describe('buildBeatOverlay extended geometry', () => {
       [{ x: xAt(4, 6), y: yAt(8) }],
     ])
     expect(result.ratedRuns).toHaveLength(1)
+  })
+})
+
+describe('hasDrawableArc', () => {
+  it('two adjacent rated beats: true', () => {
+    const dataPoints = beats([5, 6, 7, 8])
+    expect(hasDrawableArc(dataPoints, { 'Beat 2': 6, 'Beat 3': 7 })).toBe(true)
+  })
+
+  it('two non-adjacent rated beats: false', () => {
+    const dataPoints = beats([5, 6, 7, 8])
+    expect(hasDrawableArc(dataPoints, { 'Beat 1': 2, 'Beat 4': 9 })).toBe(false)
+  })
+
+  it('one rated beat: false', () => {
+    const dataPoints = beats([5, 6, 7, 8])
+    expect(hasDrawableArc(dataPoints, { 'Beat 2': 9 })).toBe(false)
+  })
+
+  it('zero rated beats via null beatRatings: false', () => {
+    expect(hasDrawableArc(beats([5, 6, 7]), null)).toBe(false)
+  })
+
+  it('undefined beatRatings: false', () => {
+    expect(hasDrawableArc(beats([5, 6, 7]), undefined)).toBe(false)
+  })
+
+  it('empty beatRatings object: false', () => {
+    expect(hasDrawableArc(beats([5, 6, 7]), {})).toBe(false)
+  })
+
+  it('null dataPoints: false', () => {
+    expect(hasDrawableArc(null, { 'Beat 1': 5, 'Beat 2': 6 })).toBe(false)
+  })
+
+  it('undefined dataPoints: false', () => {
+    expect(hasDrawableArc(undefined, { 'Beat 1': 5, 'Beat 2': 6 })).toBe(false)
+  })
+
+  it('empty dataPoints: false', () => {
+    expect(hasDrawableArc([], { 'Beat 1': 5, 'Beat 2': 6 })).toBe(false)
+  })
+
+  it('rating labels matching no dataPoint: false', () => {
+    const dataPoints = beats([5, 6, 7])
+    expect(hasDrawableArc(dataPoints, { 'Not A Beat': 5, 'Also Not A Beat': 6 })).toBe(false)
+  })
+
+  it('a run of two plus an isolated beat: true', () => {
+    const dataPoints = beats([5, 6, 7, 8, 9, 4])
+    // Indices 0-1 form a run; index 4 is isolated (3 and 5 unrated).
+    expect(hasDrawableArc(dataPoints, { 'Beat 1': 3, 'Beat 2': 4, 'Beat 5': 8 })).toBe(true)
+  })
+
+  it('all beats rated: true', () => {
+    const dataPoints = beats([5, 6, 7, 8])
+    expect(
+      hasDrawableArc(dataPoints, { 'Beat 1': 4, 'Beat 2': 5, 'Beat 3': 6, 'Beat 4': 7 })
+    ).toBe(true)
+  })
+
+  it('agrees with buildBeatOverlay: true exactly when a drawn run exists', () => {
+    const cases: (Record<string, number> | null)[] = [
+      { 'Beat 1': 4, 'Beat 2': 5 },
+      { 'Beat 1': 2, 'Beat 4': 9 },
+      { 'Beat 3': 9 },
+      { 'Beat 1': 3, 'Beat 2': 4, 'Beat 4': 8 },
+      {},
+      null,
+    ]
+    const dataPoints = beats([5, 6, 7, 8])
+    for (const ratings of cases) {
+      const overlay = buildBeatOverlay(dataPoints, ratings, GEOMETRY)
+      expect(hasDrawableArc(dataPoints, ratings)).toBe(overlay.ratedRuns.length > 0)
+    }
   })
 })

@@ -10,6 +10,7 @@ import EditProfileModal from '@/components/EditProfileModal'
 import NewListModal from '@/components/NewListModal'
 import ProfileBanner from '@/components/ProfileBanner'
 import ReviewBeatOverlay from '@/components/ReviewBeatOverlay'
+import { hasDrawableArc } from '@/lib/beat-overlay'
 import LikeButton, { type LikeButtonMode } from '@/components/LikeButton'
 import { useReviewLikes, type ReviewLikesMap } from '@/hooks/useReviewLikes'
 import { useReplyCounts, type ReplyCountsMap } from '@/hooks/useReplyCounts'
@@ -247,6 +248,16 @@ export default function ProfilePage() {
 
   const displayReviews = tab === 'graphs' ? graphReviews : reviews
 
+  // Shareability for the review in the share modal, decided client side from
+  // data the card already holds. The rated count matches labels against the
+  // film's dataPoints, the same rule the overlay and the review page legend
+  // use, so a stray label never counts as a rated beat.
+  const shareDataPoints = shareReview?.film.sentimentGraph?.dataPoints ?? []
+  const shareRatings = shareReview?.beatRatings ?? null
+  const shareRatedCount = shareRatings
+    ? shareDataPoints.filter((dp) => typeof shareRatings[dp.label] === 'number').length
+    : 0
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
       <ProfileBanner
@@ -414,7 +425,11 @@ export default function ProfilePage() {
       {shareReview && (
         <ShareModal
           reviewId={shareReview.id}
+          filmId={shareReview.film.id}
           filmTitle={shareReview.film.title}
+          hasArc={hasDrawableArc(shareDataPoints, shareRatings)}
+          ratedBeatCount={shareRatedCount}
+          totalBeatCount={shareDataPoints.length}
           onClose={() => setShareReview(null)}
         />
       )}
