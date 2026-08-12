@@ -18,7 +18,7 @@ import type { SentimentDataPoint, PeakLowMoment } from '@/lib/types'
 
 type GraphView = 'critics' | 'audience' | 'both' | 'merged'
 
-interface AudienceData {
+export interface AudienceData {
   userReviewCount: number
   beatAverages: Record<string, number>
   liveSessionCount: number
@@ -109,6 +109,112 @@ function getMergedWeights(reviewCount: number, sessionCount: number) {
   return { external: ext, audience: aud, reaction: react }
 }
 
+// ── Chart data (pure, exported for tests) ───────────────
+
+export interface SentimentChartRow extends SentimentDataPoint {
+  fill: string
+  userScore: number | null
+  mergedScore: number | null
+  isStart: boolean
+}
+
+// The origin is only drawn when there are enough measured beats for the fade
+// to be a small slice of the width. Points are evenly spaced, so with n real
+// beats the fade spans 1/n of the chart: at 6 beats that is 17%, at 2 beats it
+// is half the chart, at which point it stops de-emphasising the origin and
+// starts dimming real data. Below the threshold the origin is dropped
+// entirely, which is the same rule the card sparklines follow for the same
+// reason: if the origin cannot be de-emphasised cleanly, do not draw it.
+const MIN_BEATS_FOR_ORIGIN = 6
+
+/**
+ * Builds the rows recharts renders. Pure so the null semantics of the
+ * audience and merged series stay testable without an SVG render.
+ *
+ * userScore is null for any beat no approved review rated; mergedScore is
+ * null wherever userScore is. The nulls are the point: with connectNulls off,
+ * recharts draws teal and ivory segments only across runs of two or more
+ * consecutive rated beats, and the dot renderers mark every rated beat, alone
+ * or not. Same run rule as buildBeatOverlay in lib/beat-overlay.ts, expressed
+ * as data instead of path strings.
+ */
+export function buildChartData(
+  dataPoints: SentimentDataPoint[],
+  audienceData: AudienceData | null,
+): { chartData: SentimentChartRow[]; hasAudienceData: boolean; showOrigin: boolean } {
+  const hasAudienceData =
+    audienceData != null &&
+    (Object.keys(audienceData.beatAverages).length > 0 || audienceData.liveSessionCount >= 20)
+
+  const mergedWeights = audienceData
+    ? getMergedWeights(audienceData.userReviewCount, audienceData.liveSessionCount)
+    : { external: 1, audience: 0, reaction: 0 }
+
+  // Reaction score lookup by data point index
+  const reactionLookup: Record<number, number> = {}
+  if (audienceData?.reactionScores) {
+    for (const rs of audienceData.reactionScores) {
+      reactionLookup[rs.index] = rs.score
+    }
+  }
+
+  const realData = dataPoints.map((dp, i) => {
+    const timeMidpoint = dp.timeMidpoint ?? Math.round((dp.timeStart + dp.timeEnd) / 2)
+    const userScore = audienceData?.beatAverages[dp.label] ?? null
+
+    // Merged exists only where both sources exist. A beat with no audience
+    // average stays null; it must not silently borrow the critics score at
+    // full audience weight, which made a mostly-critics line indistinguishable
+    // from a genuinely blended one.
+    let mergedScore: number | null = null
+    if (hasAudienceData && userScore != null) {
+      mergedScore = dp.score * mergedWeights.external + userScore * mergedWeights.audience
+      if (reactionLookup[i] !== undefined) {
+        mergedScore += reactionLookup[i] * mergedWeights.reaction
+      }
+      mergedScore = Math.max(1, Math.min(10, Math.round(mergedScore * 10) / 10))
+    }
+
+    return {
+      ...dp,
+      timeMidpoint,
+      fill: scoreColor(dp.score),
+      userScore,
+      mergedScore,
+    }
+  })
+
+  // Neutral starting baseline.
+  // Every film starts at 5 because the viewer has no opinion yet. This is a
+  // definition, not a measurement, so it must never be drawn like a real beat:
+  // no dot, no confidence badge, no score readout, and the critics stroke
+  // fades in from transparent so the line reads as starting at the first
+  // measured beat. The audience and merged series get null here, not 5: a
+  // neutral origin point would anchor those lines at a value nobody submitted
+  // and bridge them to the first rated beat.
+  const startRow: Omit<SentimentChartRow, 'isStart'> = {
+    timeMidpoint: 0,
+    timeStart: 0,
+    timeEnd: 0,
+    score: 5,
+    label: '',
+    confidence: 'low',
+    reviewEvidence: '',
+    fill: scoreColor(5),
+    userScore: null,
+    mergedScore: null,
+  }
+
+  const showOrigin = realData.length >= MIN_BEATS_FOR_ORIGIN
+
+  const chartData = (showOrigin ? [startRow, ...realData] : realData).map((row, i) => ({
+    ...row,
+    isStart: showOrigin && i === 0,
+  }))
+
+  return { chartData, hasAudienceData, showOrigin }
+}
+
 // ── Tooltip ─────────────────────────────────────────────
 
 function CustomTooltip({
@@ -188,6 +294,13 @@ function CustomTooltip({
           <span className="font-[family-name:var(--font-bebas)] text-lg" style={{ color: '#F5F0E8' }}>
             {data.mergedScore.toFixed(1)}
           </span>
+        </div>
+      )}
+
+      {/* Merged fallback: no audience average at this beat, so no blend */}
+      {view === 'merged' && data.mergedScore == null && (
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-xs text-cinema-muted/50 italic">No audience data for this beat</span>
         </div>
       )}
 
@@ -340,59 +453,21 @@ export default function SentimentGraph({
     )
   }
 
-  // ── Audience data computed values ──
-  const hasAudienceData = audienceData != null && (
-    Object.keys(audienceData.beatAverages).length > 0 || audienceData.liveSessionCount >= 20
-  )
-
-  const mergedWeights = audienceData
-    ? getMergedWeights(audienceData.userReviewCount, audienceData.liveSessionCount)
-    : { external: 1, audience: 0, reaction: 0 }
-
-  // Reaction score lookup by data point index
-  const reactionLookup: Record<number, number> = {}
-  if (audienceData?.reactionScores) {
-    for (const rs of audienceData.reactionScores) {
-      reactionLookup[rs.index] = rs.score
-    }
-  }
-
   // ── Chart data ──
-  const realData = dataPoints.map((dp, i) => {
-    const timeMidpoint = dp.timeMidpoint ?? Math.round((dp.timeStart + dp.timeEnd) / 2)
-    const userScore = audienceData?.beatAverages[dp.label] ?? null
+  const { chartData, hasAudienceData, showOrigin } = buildChartData(dataPoints, audienceData)
 
-    // Compute merged score
-    let mergedScore: number | null = null
-    if (hasAudienceData) {
-      const audScore = userScore ?? dp.score // fallback to critics if no audience data for this beat
-      mergedScore = dp.score * mergedWeights.external + audScore * mergedWeights.audience
-      if (reactionLookup[i] !== undefined) {
-        mergedScore += reactionLookup[i] * mergedWeights.reaction
-      }
-      mergedScore = Math.max(1, Math.min(10, Math.round(mergedScore * 10) / 10))
-    }
-
-    return {
-      ...dp,
-      timeMidpoint,
-      fill: scoreColor(dp.score),
-      userScore,
-      mergedScore,
-    }
-  })
-
-  // Computed overall scores for header display
+  // Computed overall scores for header display. The origin row never carries
+  // an audience or merged value, so filtering on non-null excludes it.
   const audienceOverall = hasAudienceData
     ? (() => {
-        const scores = realData.filter(dp => dp.userScore != null).map(dp => dp.userScore!)
+        const scores = chartData.filter(dp => dp.userScore != null).map(dp => dp.userScore!)
         return scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : null
       })()
     : null
 
   const mergedOverall = hasAudienceData
     ? (() => {
-        const scores = realData.filter(dp => dp.mergedScore != null).map(dp => dp.mergedScore!)
+        const scores = chartData.filter(dp => dp.mergedScore != null).map(dp => dp.mergedScore!)
         return scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : null
       })()
     : null
@@ -402,41 +477,6 @@ export default function SentimentGraph({
     : graphView === 'both' && hasAudienceData ? 'Critics + Audience Sentiment'
     : graphView === 'merged' && hasAudienceData ? 'Merged Sentiment'
     : 'Critics Sentiment'
-
-  // Neutral starting baseline.
-  // Every film starts at 5 because the viewer has no opinion yet. This is a
-  // definition, not a measurement, so it must never be drawn like a real beat:
-  // no dot, no confidence badge, no score readout, and the stroke fades in from
-  // transparent so the line reads as starting at the first measured beat.
-  const startRow = {
-    timeMidpoint: 0,
-    timeStart: 0,
-    timeEnd: 0,
-    score: 5,
-    label: '',
-    confidence: 'low' as const,
-    reviewEvidence: '',
-    fill: scoreColor(5),
-    userScore: hasAudienceData ? 5 : null,
-    mergedScore: hasAudienceData ? 5 : null,
-  } as (typeof realData)[0]
-
-  // The origin is only drawn when there are enough measured beats for the fade
-  // to be a small slice of the width. Points are evenly spaced, so with n real
-  // beats the fade spans 1/n of the chart: at 6 beats that is 17%, at 2 beats it
-  // is half the chart, at which point it stops de-emphasising the origin and
-  // starts dimming real data. Below the threshold the origin is dropped
-  // entirely, which is the same rule the card sparklines follow for the same
-  // reason: if the origin cannot be de-emphasised cleanly, do not draw it.
-  const MIN_BEATS_FOR_ORIGIN = 6
-  const showOrigin = realData.length >= MIN_BEATS_FOR_ORIGIN
-
-  const chartData = (showOrigin ? [{ ...startRow, isStart: true }, ...realData] : realData).map(
-    (row, i) => ({
-      ...row,
-      isStart: showOrigin && i === 0,
-    })
-  )
 
   // The stroke dissolves to nothing at the 0m baseline and reaches full opacity
   // at the first measured beat, so the line reads as beginning there rather than
@@ -786,7 +826,13 @@ export default function SentimentGraph({
               />
             )}
 
-            {/* ── Audience line (Teal, solid) ── */}
+            {/* ── Audience line (Teal, solid) ──
+                No connectNulls: userScore is null at every unrated beat, so
+                the line only spans runs of consecutive rated beats instead of
+                bridging gaps with an average nobody submitted. No origin-fade
+                mask either: the series no longer starts at the synthetic 0m
+                point, and the mask's objectBoundingBox fade would dim the
+                start of the first real run. */}
             {showAudience && (
               <Area
                 type="monotone"
@@ -794,9 +840,7 @@ export default function SentimentGraph({
                 stroke="var(--cinema-teal)"
                 strokeWidth={2}
                 fill="url(#userGradient)"
-                mask={showOrigin ? 'url(#graphOriginFade)' : undefined}
                 isAnimationActive={false}
-                connectNulls
                 dot={(props: any) => {
                   const { cx, cy, payload, index } = props
                   if (cx == null || cy == null || payload.userScore == null || payload.isStart)
@@ -831,7 +875,11 @@ export default function SentimentGraph({
               />
             )}
 
-            {/* ── Merged line (Ivory, solid) ── */}
+            {/* ── Merged line (Ivory, solid) ──
+                Same treatment as the audience line: mergedScore is null at
+                every unrated beat, so segments only span runs where both
+                sources exist, and the origin-fade mask is dropped for the
+                same bounding-box reason. */}
             {showMerged && (
               <Area
                 type="monotone"
@@ -839,9 +887,7 @@ export default function SentimentGraph({
                 stroke="rgba(245,240,232,0.9)"
                 strokeWidth={2.5}
                 fill="url(#mergedGradient)"
-                mask={showOrigin ? 'url(#graphOriginFade)' : undefined}
                 isAnimationActive={false}
-                connectNulls
                 dot={(props: any) => {
                   const { cx, cy, payload, index } = props
                   if (cx == null || cy == null || payload.mergedScore == null || payload.isStart)
