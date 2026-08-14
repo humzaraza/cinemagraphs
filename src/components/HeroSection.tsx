@@ -14,6 +14,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
+import { buildTimeAxis, originFadeOffset } from '@/lib/time-axis'
 
 interface HeroFilm {
   id: string
@@ -105,9 +106,9 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
     ...dp,
     timeMidpoint: dp.timeMidpoint ?? Math.round((dp.timeStart + dp.timeEnd) / 2),
   }))
-  // Same threshold as SentimentGraph. With n measured beats the fade spans 1/n
-  // of the chart, so below 6 beats it covers enough width to dim real data
-  // rather than de-emphasise the origin. In that case no origin is drawn.
+  // Same threshold as SentimentGraph. Below 6 measured beats the fade covers
+  // enough width to dim real data rather than de-emphasise the origin. In
+  // that case no origin is drawn.
   const showOrigin = realData.length >= 6
   const chartData = showOrigin
     ? [
@@ -115,7 +116,11 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
         ...realData,
       ]
     : realData
-  const firstBeatOffset = chartData.length > 1 ? 1 / (chartData.length - 1) : 0
+  // Numeric time axis when the film has a runtime; categorical fallback (one
+  // equal slot per beat) when it does not, since without a runtime there is
+  // no domain and no ruler. Matches SentimentGraph.
+  const timeAxis = buildTimeAxis(film.runtime)
+  const firstBeatOffset = showOrigin ? originFadeOffset(chartData, timeAxis != null) : 0
 
   return (
     <section
@@ -243,7 +248,19 @@ export default function HeroSection({ films }: { films: HeroFilm[] }) {
                     </mask>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--cinema-border)" />
-                  <XAxis dataKey="timeMidpoint" tickFormatter={formatTime} stroke="#666" fontSize={11} />
+                  {/* Numeric time scale with a round-interval ruler when the
+                      runtime is known: ticks are the ruler's minutes, never
+                      the exact runtime. Without a runtime the axis stays
+                      categorical. Matches SentimentGraph. */}
+                  <XAxis
+                    dataKey="timeMidpoint"
+                    tickFormatter={formatTime}
+                    stroke="#666"
+                    fontSize={11}
+                    {...(timeAxis
+                      ? { type: 'number' as const, domain: timeAxis.domain, ticks: timeAxis.ticks }
+                      : {})}
+                  />
                   <YAxis domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={11} width={28} />
                   <YAxis yAxisId="right" orientation="right" domain={[1, 10]} ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} stroke="#666" fontSize={11} width={28} />
                   <Area yAxisId="right" type="natural" dataKey="score" stroke="none" fill="none" dot={false} activeDot={false} isAnimationActive={false} />
