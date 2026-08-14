@@ -13,6 +13,7 @@ import {
   ReferenceDot,
 } from 'recharts'
 import type { SentimentDataPoint, PeakLowMoment } from '@/lib/types'
+import { buildTimeAxis, originFadeOffset } from '@/lib/time-axis'
 
 // ── Types ───────────────────────────────────────────────
 
@@ -119,12 +120,14 @@ export interface SentimentChartRow extends SentimentDataPoint {
 }
 
 // The origin is only drawn when there are enough measured beats for the fade
-// to be a small slice of the width. Points are evenly spaced, so with n real
-// beats the fade spans 1/n of the chart: at 6 beats that is 17%, at 2 beats it
-// is half the chart, at which point it stops de-emphasising the origin and
-// starts dimming real data. Below the threshold the origin is dropped
-// entirely, which is the same rule the card sparklines follow for the same
-// reason: if the origin cannot be de-emphasised cleanly, do not draw it.
+// to be a small slice of the width. On the categorical fallback axis n real
+// beats put the fade at 1/n of the chart: at 6 beats that is 17%, at 2 beats
+// it is half the chart, at which point it stops de-emphasising the origin and
+// starts dimming real data. On the numeric time axis equal buckets put it at
+// 1/(2n-1), smaller still, so the same threshold holds for both. Below it the
+// origin is dropped entirely, which is the same rule the card sparklines
+// follow for the same reason: if the origin cannot be de-emphasised cleanly,
+// do not draw it.
 const MIN_BEATS_FOR_ORIGIN = 6
 
 /**
@@ -478,11 +481,16 @@ export default function SentimentGraph({
     : graphView === 'merged' && hasAudienceData ? 'Merged Sentiment'
     : 'Critics Sentiment'
 
+  // Numeric time axis when the film has a runtime; categorical fallback (one
+  // equal slot per beat) when it does not, since without a runtime there is
+  // no domain and no ruler.
+  const timeAxis = buildTimeAxis(runtime)
+
   // The stroke dissolves to nothing at the 0m baseline and reaches full opacity
   // at the first measured beat, so the line reads as beginning there rather than
-  // as a beat anyone recorded. Points are evenly spaced, so the first beat sits
-  // at 1/(n-1) across the line's bounding box.
-  const firstBeatOffset = chartData.length > 1 ? 1 / (chartData.length - 1) : 0
+  // as a beat anyone recorded. Where the first beat sits inside the mask's
+  // bounding box depends on the axis; originFadeOffset covers both cases.
+  const firstBeatOffset = showOrigin ? originFadeOffset(chartData, timeAxis != null) : 0
 
   // ── Visibility flags ──
   const showCritics = graphView === 'critics' || graphView === 'both'
@@ -661,23 +669,19 @@ export default function SentimentGraph({
               </mask>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--cinema-border)" />
+            {/* Numeric time scale with a round-interval ruler when the
+                runtime is known: ticks are the ruler's minutes, never the
+                exact runtime, and beats sit at their true positions between
+                them. Without a runtime the axis stays categorical with its
+                old slot thinning. */}
             <XAxis
               dataKey="timeMidpoint"
               tickFormatter={formatTime}
               stroke="#666"
               fontSize={isMobile ? 10 : 11}
-              interval={isMobile ? 2 : 0}
-              label={
-                isMobile
-                  ? undefined
-                  : {
-                      value: runtime ? `Runtime: ${formatTime(runtime)}` : '',
-                      position: 'bottom',
-                      offset: 10,
-                      fill: '#666',
-                      fontSize: 11,
-                    }
-              }
+              {...(timeAxis
+                ? { type: 'number' as const, domain: timeAxis.domain, ticks: timeAxis.ticks }
+                : { interval: isMobile ? 2 : 0 })}
             />
             {/* Left Y-axis */}
             <YAxis
@@ -730,8 +734,11 @@ export default function SentimentGraph({
                 dot={(props: any) => {
                   const { cx, cy, payload, index } = props
                   if (cx == null || cy == null) return <circle r={0} />
-                  // Skip dot on the anchored 5.0 starting point
-                  if (index === 0) return <circle key={`dot-${index}`} r={0} />
+                  // Skip dot on the anchored 5.0 starting point. Keyed on the
+                  // row, not index 0: without the origin row the first index
+                  // is a real measured beat, and on the numeric axis it sits
+                  // visibly mid-chart rather than hidden at the axis edge.
+                  if (payload.isStart) return <circle key={`dot-${index}`} r={0} />
                   const isHighlighted = highlightedIndex === index
                   const baseR = confidenceRadius(payload.confidence)
                   const r = isHighlighted ? baseR + 4 : baseR
@@ -779,7 +786,7 @@ export default function SentimentGraph({
                 activeDot={(props: any) => {
                   const { cx, cy, payload, index } = props
                   if (cx == null || cy == null) return <circle r={0} />
-                  if (index === 0) return <circle r={0} />
+                  if (payload.isStart) return <circle r={0} />
                   const r = confidenceRadius(payload.confidence) + 3
                   const color = scoreColor(payload.score)
                   return (

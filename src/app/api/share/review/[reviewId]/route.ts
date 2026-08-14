@@ -6,6 +6,7 @@ import sharp from 'sharp'
 import React from 'react'
 import { fetchTmdbImageAsDataUri } from '@/lib/tmdb-image'
 import { buildBeatOverlay } from '@/lib/beat-overlay'
+import { hasRuntime, buildRulerMinutes, formatRulerLabel } from '@/lib/time-axis'
 
 export const dynamic = 'force-dynamic'
 
@@ -80,33 +81,12 @@ const GRAPH_PAD_BOTTOM = 6
 const GRAPH_PAD_LEFT = 12
 const GRAPH_PAD_RIGHT = 12
 
-// X-axis ruler: round-minute ticks spanning the runtime. timeMidpoint is an
-// estimate (the pipeline midpoints equal buckets of the runtime, it does not
-// observe timing), so the axis marks round intervals rather than pairing any
-// label with a beat, and no tick lands on the exact runtime; that would
-// re-assert precision at the right edge that the data does not have.
-const RULER_INTERVALS = [5, 10, 15, 30, 60, 120, 240]
-
-// 15-minute ticks under 90 minutes, 30-minute from there up; then step along
-// the ladder while the tick count is outside 3..7 (clamped at the ends, so a
-// short of under ~11 minutes can degenerate to fewer ticks).
-function rulerInterval(runtimeMin: number): number {
-  let idx = RULER_INTERVALS.indexOf(runtimeMin < 90 ? 15 : 30)
-  const tickCount = (interval: number) => Math.ceil(runtimeMin / interval)
-  while (tickCount(RULER_INTERVALS[idx]) > 7 && idx < RULER_INTERVALS.length - 1) idx++
-  while (tickCount(RULER_INTERVALS[idx]) < 3 && idx > 0) idx--
-  return RULER_INTERVALS[idx]
-}
-
-// Exported for tests only, like buildUserDataPoints above.
-export function formatRulerLabel(minutes: number): string {
-  if (minutes === 0) return '0m'
-  const h = Math.floor(minutes / 60)
-  const m = minutes % 60
-  if (h === 0) return `${m}m`
-  if (m === 0) return `${h}h`
-  return `${h}h ${m}m`
-}
+// X-axis ruler. Interval selection and tick minutes live in lib/time-axis,
+// shared with the on-page recharts graphs; this route maps the minutes onto
+// poster pixel coordinates and labels them with formatRulerLabel, while the
+// page graphs keep their own formatTime ("1h 00m" where the poster says "1h").
+// Re-exported for tests only, like buildUserDataPoints above.
+export { formatRulerLabel }
 
 export interface RulerTick {
   minute: number
@@ -122,20 +102,13 @@ export function buildRulerTicks(
   runtimeMin: number | null | undefined,
   gw: number
 ): RulerTick[] {
-  if (typeof runtimeMin !== 'number' || !Number.isFinite(runtimeMin) || runtimeMin <= 0) {
-    return []
-  }
-  const interval = rulerInterval(runtimeMin)
+  if (!hasRuntime(runtimeMin)) return []
   const drawW = gw - (GRAPH_PAD_LEFT + GRAPH_PAD_RIGHT)
-  const ticks: RulerTick[] = []
-  for (let minute = 0; minute < runtimeMin; minute += interval) {
-    ticks.push({
-      minute,
-      label: formatRulerLabel(minute),
-      x: GRAPH_PAD_LEFT + (minute / runtimeMin) * drawW,
-    })
-  }
-  return ticks
+  return buildRulerMinutes(runtimeMin).map((minute) => ({
+    minute,
+    label: formatRulerLabel(minute),
+    x: GRAPH_PAD_LEFT + (minute / runtimeMin) * drawW,
+  }))
 }
 
 // Shared x-axis ruler row for both poster styles. Labels sit at a percentage
