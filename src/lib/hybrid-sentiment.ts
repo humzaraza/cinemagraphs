@@ -6,6 +6,8 @@ import {
   SENTIMENT_MODEL,
   SENTIMENT_MAX_TOKENS,
   buildAnalysisPromptParts,
+  assertMeanWithinTolerance,
+  requireFilmRuntime,
 } from './claude'
 import { pipelineLogger } from './logger'
 import type { SentimentDataPoint, PeakLowMoment } from './types'
@@ -240,6 +242,8 @@ export function validateGraph(raw: unknown): ParsedGraph {
     assertLabelPair(obj.dataPoints[i], `dataPoints[${i}]`)
   }
   if (typeof obj.overallSentiment !== 'number') throw new Error('Missing overallSentiment')
+  // Reject, do not repair: same rule as parseGraphResponse in claude.ts.
+  assertMeanWithinTolerance(obj.dataPoints as Array<{ score: unknown }>, obj.overallSentiment)
   if (!obj.peakMoment || !obj.lowestMoment) throw new Error('Missing peak/lowest moment')
   assertLabelPair(obj.peakMoment, 'peakMoment')
   assertLabelPair(obj.lowestMoment, 'lowestMoment')
@@ -360,7 +364,7 @@ export async function generateHybridSentimentGraph(filmId: string): Promise<Hybr
   }
 
   const year = film.releaseDate ? new Date(film.releaseDate).getFullYear() : 'Unknown'
-  const runtime = film.runtime || 120
+  const runtime = requireFilmRuntime(film)
 
   const plotText =
     typeof year === 'number' ? await fetchWikipediaPlot(film.title, year) : null

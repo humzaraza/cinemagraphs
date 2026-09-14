@@ -178,10 +178,12 @@ describe('safeWriteSentimentGraph', () => {
       beat('Rising', 999, 5.5, { confidence: 'high', reviewEvidence: 'new ev R' }),
       beat('Climax', 999, 9, { confidence: 'high', reviewEvidence: 'new ev C' }),
     ]
+    // Merged scores 6, 5.5, 9 average 6.83; the headline must sit within 0.2
+    // of that or the write-path mean guard refuses the row.
     const result = await safeWriteSentimentGraph({
       filmId: 'film-1',
       incomingDataPoints: incoming,
-      otherFields: { overallScore: 7.2 },
+      otherFields: { overallScore: 6.8 },
       callerPath: 'review-blender',
     })
 

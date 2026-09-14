@@ -45,6 +45,9 @@ hybrid-test-output.txt
 # bulk hybrid regeneration checkpoint (scripts/bulk-regen-hybrid.ts)
 .hybrid-regen-checkpoint.json
 .hybrid-regen-checkpoint.json.tmp
+# graph mean-drift backfill checkpoint (scripts/backfill-graph-mean-drift.ts)
+.graph-mean-backfill-checkpoint.json
+.graph-mean-backfill-checkpoint.json.tmp
 .claude/
 /*.png
 

@@ -60,6 +60,21 @@ export function sumUsage(usages: Iterable<UsageTotals>): UsageTotals {
   return totals
 }
 
+// ── Data-integrity guards ───────────────────────────────────────────────────
+//
+// Defined in sentiment-guards.ts (dependency-free) and re-exported here so the
+// generator, hybrid-sentiment.ts, the beat-lock write path, and scripts all
+// enforce identical rules. Both guards THROW: a graph that fails one is
+// rejected before it can reach a write path; nothing rounds, clamps, or
+// downgrades to a warning.
+import { assertMeanWithinTolerance, requireFilmRuntime } from './sentiment-guards'
+export {
+  MEAN_SCORE_TOLERANCE,
+  assertMeanWithinTolerance,
+  meanBeatScore,
+  requireFilmRuntime,
+} from './sentiment-guards'
+
 export interface PlotContext {
   text: string
   source: 'wikipedia' | 'tmdb' | 'omdb' | 'reviews_only'
@@ -202,7 +217,7 @@ export function buildAnalysisPromptParts(
   plotContext?: PlotContext
 ): AnalysisPromptParts {
   const year = film.releaseDate ? new Date(film.releaseDate).getFullYear() : 'Unknown'
-  const runtime = film.runtime || 120
+  const runtime = requireFilmRuntime(film)
 
   // Anchor string + target score
   const anchors: string[] = []
@@ -319,6 +334,10 @@ function parseGraphResponse(rawResponse: string, ctx: ParseGraphContext): Sentim
   if (typeof data.overallSentiment !== 'number') {
     throw new Error('Missing overallSentiment')
   }
+
+  // Reject, do not repair: a graph whose beats average away from its own
+  // headline score is not written under any circumstances.
+  assertMeanWithinTolerance(data.dataPoints, data.overallSentiment)
 
   if (!data.peakMoment || !data.lowestMoment) {
     throw new Error('Missing peak/lowest moment')

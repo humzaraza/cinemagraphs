@@ -3,8 +3,152 @@ import { prisma } from './prisma'
 import { logger } from './logger'
 import type { SentimentDataPoint } from './types'
 import { classifyArcShape } from './arc-classifier'
+import { assertMeanWithinTolerance, meanBeatScore } from './sentiment-guards'
 
 export const beatLockLogger = logger.child({ module: 'beat-lock' })
+
+// ── Mean-vs-score guard on the row as written ───────────────────────────────
+//
+// The generator validates the model's output, but the merge below can keep
+// old scores on preserved beats while otherFields carries a new overallScore,
+// and other callers (score refresh, review blender) move the headline without
+// regenerating beats. So the row that is ABOUT TO BE WRITTEN is checked here,
+// on every path, against the overallScore it will carry. A failing write is
+// rejected by throwing inside the transaction, so nothing is persisted.
+
+export type MeanDriftWritePath = 'first_write' | 'merge' | 'lock_disabled' | 'force_overwrite'
+
+export class SentimentGraphMeanDriftError extends Error {
+  readonly filmId: string
+  readonly callerPath: string
+  readonly path: MeanDriftWritePath
+  readonly mean: number
+  readonly overallScore: number
+  readonly gap: number
+  readonly existingBeatCount: number
+  readonly incomingBeatCount: number
+  readonly droppedIncomingLabels: string[]
+  readonly preservedExistingLabels: string[]
+
+  constructor(params: {
+    filmId: string
+    callerPath: string
+    path: MeanDriftWritePath
+    mean: number
+    overallScore: number
+    gap: number
+    existingBeatCount: number
+    incomingBeatCount: number
+    droppedIncomingLabels: string[]
+    preservedExistingLabels: string[]
+    cause: string
+  }) {
+    super(`Sentiment graph write rejected (${params.path}) for ${params.filmId}: ${params.cause}`)
+    this.name = 'SentimentGraphMeanDriftError'
+    this.filmId = params.filmId
+    this.callerPath = params.callerPath
+    this.path = params.path
+    this.mean = params.mean
+    this.overallScore = params.overallScore
+    this.gap = params.gap
+    this.existingBeatCount = params.existingBeatCount
+    this.incomingBeatCount = params.incomingBeatCount
+    this.droppedIncomingLabels = params.droppedIncomingLabels
+    this.preservedExistingLabels = params.preservedExistingLabels
+  }
+}
+
+function assertRowWithinTolerance(params: {
+  filmId: string
+  callerPath: string
+  path: MeanDriftWritePath
+  dataPoints: SentimentDataPoint[]
+  incomingOverallScore: number | undefined
+  existingOverallScore: number | null | undefined
+  existingBeatCount: number
+  incomingBeatCount: number
+  droppedIncomingLabels?: string[]
+  preservedExistingLabels?: string[]
+}): void {
+  // The headline the row will carry after this write: the incoming value when
+  // the caller supplies one, otherwise the value already on the row.
+  const resulting =
+    typeof params.incomingOverallScore === 'number'
+      ? params.incomingOverallScore
+      : typeof params.existingOverallScore === 'number'
+        ? params.existingOverallScore
+        : null
+  // Nothing to compare against (a create without overallScore fails in Prisma
+  // anyway) or nothing to average: not a drift, let the write proceed.
+  if (resulting === null || params.dataPoints.length === 0) return
+
+  try {
+    assertMeanWithinTolerance(params.dataPoints, resulting)
+  } catch (err) {
+    let mean = Number.NaN
+    try {
+      mean = meanBeatScore(params.dataPoints)
+    } catch {
+      // leave NaN: the cause message already names the offending beat
+    }
+    throw new SentimentGraphMeanDriftError({
+      filmId: params.filmId,
+      callerPath: params.callerPath,
+      path: params.path,
+      mean,
+      overallScore: resulting,
+      gap: Math.abs(mean - resulting),
+      existingBeatCount: params.existingBeatCount,
+      incomingBeatCount: params.incomingBeatCount,
+      droppedIncomingLabels: params.droppedIncomingLabels ?? [],
+      preservedExistingLabels: params.preservedExistingLabels ?? [],
+      cause: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
+// Runs OUTSIDE the rolled-back transaction so the refusal itself is on record
+// in the same table the accepted-with-drops writes use. Best-effort: a logging
+// failure must not mask the rejection.
+async function recordRejectedWrite(err: SentimentGraphMeanDriftError, envLockEnabled: boolean): Promise<void> {
+  beatLockLogger.warn(
+    {
+      filmId: err.filmId,
+      callerPath: err.callerPath,
+      path: err.path,
+      mean: err.mean,
+      overallScore: err.overallScore,
+      gap: err.gap,
+      existingBeatCount: err.existingBeatCount,
+      incomingBeatCount: err.incomingBeatCount,
+      droppedCount: err.droppedIncomingLabels.length,
+      preservedCount: err.preservedExistingLabels.length,
+      event: 'rejected_mean_drift',
+    },
+    'safeWriteSentimentGraph: write rejected, beats drift from overallScore'
+  )
+  try {
+    await prisma.sentimentGraphDriftLog.create({
+      data: {
+        filmId: err.filmId,
+        callerPath: err.callerPath,
+        existingBeatCount: err.existingBeatCount,
+        incomingBeatCount: err.incomingBeatCount,
+        mismatchedLabels: [
+          ...err.droppedIncomingLabels.map((label) => ({ incoming: label, reason: 'not_in_existing' })),
+          ...err.preservedExistingLabels.map((label) => ({ incoming: label, reason: 'missing_from_incoming' })),
+        ] as unknown as Prisma.InputJsonValue,
+        action: 'rejected_mean_drift',
+        envLockEnabled,
+      },
+    })
+  } catch (logErr) {
+    beatLockLogger.error(
+      { filmId: err.filmId, error: logErr instanceof Error ? logErr.message : String(logErr) },
+      'safeWriteSentimentGraph: could not record rejected write in drift log'
+    )
+  }
+}
 
 // ── Env flag ────────────────────────────────────────────────────────────────
 //
@@ -33,6 +177,7 @@ export type BeatLockCallerPath =
   | 'user-submission'
   | 'script-batch-analyze'
   | 'script-bulk-regen-hybrid'
+  | 'script-backfill-graph-mean'
   | 'script-test-pipeline'
   | 'script-backfill-wikipedia-beats'
   | 'script-diagnose-film'
@@ -81,6 +226,25 @@ export async function safeWriteSentimentGraph(params: {
   const { filmId, incomingDataPoints, otherFields, callerPath } = params
   const envLockEnabled = isBeatLockEnabled()
 
+  try {
+    return await safeWriteInTransaction({ filmId, incomingDataPoints, otherFields, callerPath, envLockEnabled })
+  } catch (err) {
+    if (err instanceof SentimentGraphMeanDriftError) {
+      await recordRejectedWrite(err, envLockEnabled)
+    }
+    throw err
+  }
+}
+
+async function safeWriteInTransaction(params: {
+  filmId: string
+  incomingDataPoints: SentimentDataPoint[]
+  otherFields: SafeWriteOtherFields
+  callerPath: BeatLockCallerPath
+  envLockEnabled: boolean
+}): Promise<SafeWriteResult> {
+  const { filmId, incomingDataPoints, otherFields, callerPath, envLockEnabled } = params
+
   return await prisma.$transaction(async (tx) => {
     // Row-level lock — serializes concurrent writers against the same filmId.
     // Returns 0 rows on the first-ever write for this film; that's fine, the
@@ -92,6 +256,7 @@ export async function safeWriteSentimentGraph(params: {
       ? (existing.dataPoints as unknown as SentimentDataPoint[])
       : []
     const existingBeatCount = existingBeats.length
+    const existingOverallScore = existing?.overallScore
 
     // Env kill-switch — skip merge + drift log, write incoming as-is. Still
     // run under the same transaction + FOR UPDATE so races stay handled even
@@ -101,6 +266,16 @@ export async function safeWriteSentimentGraph(params: {
         { filmId, callerPath, envLockEnabled: false, event: 'beat_lock_disabled' },
         'safeWriteSentimentGraph: beat lock disabled via env, writing incoming dataPoints unmodified'
       )
+      assertRowWithinTolerance({
+        filmId,
+        callerPath,
+        path: 'lock_disabled',
+        dataPoints: incomingDataPoints,
+        incomingOverallScore: otherFields.overallScore,
+        existingOverallScore,
+        existingBeatCount,
+        incomingBeatCount: incomingDataPoints.length,
+      })
       await writeRow(tx, { filmId, existing, dataPoints: incomingDataPoints, otherFields })
       return {
         status: 'written',
@@ -113,6 +288,16 @@ export async function safeWriteSentimentGraph(params: {
     // First-ever write path (no row OR row with empty dataPoints). Nothing to
     // compare against, so no drift log; incoming labels + timestamps stand.
     if (existingBeatCount === 0) {
+      assertRowWithinTolerance({
+        filmId,
+        callerPath,
+        path: 'first_write',
+        dataPoints: incomingDataPoints,
+        incomingOverallScore: otherFields.overallScore,
+        existingOverallScore,
+        existingBeatCount,
+        incomingBeatCount: incomingDataPoints.length,
+      })
       await writeRow(tx, { filmId, existing, dataPoints: incomingDataPoints, otherFields })
       return {
         status: 'written',
@@ -172,6 +357,24 @@ export async function safeWriteSentimentGraph(params: {
     const action: 'write_accepted' | 'write_accepted_with_drops' = hasDrops
       ? 'write_accepted_with_drops'
       : 'write_accepted'
+
+    // The merged row is what gets persisted, so it is the merged row that
+    // must sit within tolerance of the headline it will carry. Preserved
+    // beats keep their old scores; if that leaves the row drifting from a new
+    // overallScore, the whole write is refused. Checked before the drift log
+    // so a rejected write leaves no "accepted" record behind.
+    assertRowWithinTolerance({
+      filmId,
+      callerPath,
+      path: 'merge',
+      dataPoints: mergedInOrder,
+      incomingOverallScore: otherFields.overallScore,
+      existingOverallScore,
+      existingBeatCount,
+      incomingBeatCount: incomingDataPoints.length,
+      droppedIncomingLabels,
+      preservedExistingLabels,
+    })
 
     if (needDriftLog) {
       const mismatchedLabels: MismatchedLabel[] = [
@@ -243,9 +446,45 @@ export async function forceOverwriteSentimentGraph(params: {
     typeof otherFields.overallScore === 'number' ? otherFields.overallScore : null
   const arcShape = classifyArcShape(dataPoints, overallScore)
 
+  try {
+    await forceOverwriteInTransaction({ filmId, dataPoints, otherFields, callerPath, overallScore, arcShape })
+  } catch (err) {
+    if (err instanceof SentimentGraphMeanDriftError) {
+      beatLockLogger.warn(
+        { filmId, callerPath, mean: err.mean, overallScore: err.overallScore, gap: err.gap, event: 'rejected_mean_drift' },
+        'forceOverwriteSentimentGraph: write rejected, beats drift from overallScore'
+      )
+    }
+    throw err
+  }
+}
+
+async function forceOverwriteInTransaction(params: {
+  filmId: string
+  dataPoints: SentimentDataPoint[]
+  otherFields: Record<string, unknown>
+  callerPath: string
+  overallScore: number | null
+  arcShape: ReturnType<typeof classifyArcShape>
+}): Promise<void> {
+  const { filmId, dataPoints, otherFields, callerPath, overallScore, arcShape } = params
+
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "SentimentGraph" WHERE "filmId" = ${filmId} FOR UPDATE`
     const existing = await tx.sentimentGraph.findUnique({ where: { filmId } })
+    // A force overwrite persists exactly these beats with exactly this
+    // headline, so the same guard applies; it is intentional relabelling,
+    // not a licence to write a drifting row.
+    assertRowWithinTolerance({
+      filmId,
+      callerPath,
+      path: 'force_overwrite',
+      dataPoints,
+      incomingOverallScore: overallScore ?? undefined,
+      existingOverallScore: existing?.overallScore,
+      existingBeatCount: Array.isArray(existing?.dataPoints) ? existing.dataPoints.length : 0,
+      incomingBeatCount: dataPoints.length,
+    })
     if (existing) {
       const updateData = {
         ...otherFields,
