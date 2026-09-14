@@ -124,6 +124,24 @@ describe('wiki-beat-fallback', () => {
     expect(mockFetchWikipediaPlot).not.toHaveBeenCalled()
   })
 
+  it('returns skipped_no_runtime when runtime is 0 instead of assuming 120 minutes', async () => {
+    mockFilmFindUnique.mockResolvedValueOnce({
+      id: 'film1',
+      title: 'Test',
+      releaseDate: new Date('2010-01-01'),
+      runtime: 0,
+      sentimentGraph: null,
+      filmBeats: null,
+    })
+
+    const { generateAndStoreWikiBeats } = await import('@/lib/wiki-beat-fallback')
+    const result = await generateAndStoreWikiBeats('film1')
+
+    expect(result).toEqual({ status: 'skipped_no_runtime' })
+    expect(mockFetchWikipediaPlot).not.toHaveBeenCalled()
+    expect(mockFilmBeatsUpsert).not.toHaveBeenCalled()
+  })
+
   it('returns skipped_no_plot when Wikipedia has no plot', async () => {
     mockFilmFindUnique.mockResolvedValueOnce({
       id: 'film1',

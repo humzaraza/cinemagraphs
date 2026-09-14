@@ -61,6 +61,8 @@ import { PrismaNeon } from '@prisma/adapter-neon'
 import { fetchWikipediaPlot } from '../src/lib/sources/wikipedia'
 import type { AnchorScores } from '../src/lib/omdb'
 import type { ParsedGraph } from '../src/lib/hybrid-sentiment'
+// Dependency-free (no env reads), so a static import is safe here.
+import { requireFilmRuntime } from '../src/lib/sentiment-guards'
 
 // Bindings populated inside main() via dynamic import, AFTER dotenv.config()
 // above has run. DO NOT convert to static imports — see NOTE in the header.
@@ -99,6 +101,7 @@ type CheckpointStatus =
   | 'skipped_prerelease'
   | 'skipped_no_reviews'
   | 'skipped_no_plot_no_reviews'
+  | 'skipped_no_runtime'
   | 'failed'
 
 interface CheckpointEntry {
@@ -245,6 +248,7 @@ function shouldSkipFromCheckpoint(entry: CheckpointEntry | undefined): boolean {
   if (entry.status === 'skipped_prerelease') return true
   if (entry.status === 'skipped_no_reviews') return true
   if (entry.status === 'skipped_no_plot_no_reviews') return true
+  if (entry.status === 'skipped_no_runtime') return true
   if (entry.status === 'failed' && (entry.retryCount ?? 0) >= MAX_RETRIES) return true
   return false
 }
@@ -255,6 +259,7 @@ function tallyByStatus(cp: Checkpoint): Record<CheckpointStatus, number> {
     skipped_prerelease: 0,
     skipped_no_reviews: 0,
     skipped_no_plot_no_reviews: 0,
+    skipped_no_runtime: 0,
     failed: 0,
   }
   for (const e of Object.values(cp.films)) t[e.status]++
@@ -264,6 +269,7 @@ function tallyByStatus(cp: Checkpoint): Record<CheckpointStatus, number> {
 function categorizeError(msg: string): CheckpointStatus {
   if (/Cannot generate sentiment for pre-release film/i.test(msg)) return 'skipped_prerelease'
   if (/Not enough quality reviews/i.test(msg)) return 'skipped_no_reviews'
+  if (/no usable runtime/i.test(msg)) return 'skipped_no_runtime'
   if (/wikipedia plot unavailable/i.test(msg) && /review count insufficient/i.test(msg)) {
     return 'skipped_no_plot_no_reviews'
   }
@@ -273,7 +279,11 @@ function categorizeError(msg: string): CheckpointStatus {
 // ── Per-film request build ───────────────────────────────────────────────────
 
 type BuildOutcome =
-  | { kind: 'skipped'; status: 'skipped_prerelease' | 'skipped_no_reviews' | 'skipped_no_plot_no_reviews'; reason: string }
+  | {
+      kind: 'skipped'
+      status: 'skipped_prerelease' | 'skipped_no_reviews' | 'skipped_no_plot_no_reviews' | 'skipped_no_runtime'
+      reason: string
+    }
   | {
       kind: 'built'
       generationMode: 'hybrid' | 'review_only_fallback'
@@ -303,7 +313,19 @@ async function buildRequestForFilm(film: Film): Promise<BuildOutcome> {
   }
 
   const year = film.releaseDate ? new Date(film.releaseDate).getFullYear() : 'Unknown'
-  const runtime = film.runtime || 120
+
+  // Same guard as the app: runtime 0 (how missing values are stored) or null
+  // is a skip, never a 120-minute prompt.
+  let runtime: number
+  try {
+    runtime = requireFilmRuntime(film)
+  } catch (err) {
+    return {
+      kind: 'skipped',
+      status: 'skipped_no_runtime',
+      reason: err instanceof Error ? err.message : String(err),
+    }
+  }
 
   const plotText =
     typeof year === 'number' ? await fetchWikipediaPlot(film.title, year) : null
@@ -729,6 +751,7 @@ async function processResults(
   console.log(`  skipped_prerelease:         ${tallies.skipped_prerelease}`)
   console.log(`  skipped_no_reviews:         ${tallies.skipped_no_reviews}`)
   console.log(`  skipped_no_plot_no_reviews: ${tallies.skipped_no_plot_no_reviews}`)
+  console.log(`  skipped_no_runtime:         ${tallies.skipped_no_runtime}`)
   console.log(`  failed:                     ${tallies.failed}`)
   console.log(
     `This run's Claude tokens: ${inputTokens} in, ${outputTokens} out → approx $${cost.toFixed(2)} (batch pricing: 50% of standard)`
