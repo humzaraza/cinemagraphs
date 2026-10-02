@@ -59,7 +59,6 @@ import Anthropic from '@anthropic-ai/sdk'
 import { PrismaClient, type Film } from '../src/generated/prisma/client.js'
 import { PrismaNeon } from '@prisma/adapter-neon'
 import { fetchWikipediaPlot } from '../src/lib/sources/wikipedia'
-import type { AnchorScores } from '../src/lib/omdb'
 import type { ParsedGraph } from '../src/lib/hybrid-sentiment'
 // Dependency-free (no env reads), so a static import is safe here.
 import { requireFilmRuntime } from '../src/lib/sentiment-guards'
@@ -73,7 +72,6 @@ let SENTIMENT_MODEL!: typeof import('../src/lib/claude')['SENTIMENT_MODEL']
 let SENTIMENT_MAX_TOKENS!: typeof import('../src/lib/claude')['SENTIMENT_MAX_TOKENS']
 let buildAnalysisPromptParts!: typeof import('../src/lib/claude')['buildAnalysisPromptParts']
 let MIN_QUALITY_REVIEWS!: typeof import('../src/lib/hybrid-sentiment')['MIN_QUALITY_REVIEWS']
-let buildAnchorString!: typeof import('../src/lib/hybrid-sentiment')['buildAnchorString']
 let buildHybridPrompt!: typeof import('../src/lib/hybrid-sentiment')['buildHybridPrompt']
 let computeHybridBeatCount!: typeof import('../src/lib/hybrid-sentiment')['computeHybridBeatCount']
 let validateGraph!: typeof import('../src/lib/hybrid-sentiment')['validateGraph']
@@ -330,22 +328,12 @@ async function buildRequestForFilm(film: Film): Promise<BuildOutcome> {
   const plotText =
     typeof year === 'number' ? await fetchWikipediaPlot(film.title, year) : null
 
-  const anchorScores: AnchorScores = {
-    imdbRating: film.imdbRating,
-    rtCriticsScore: film.rtCriticsScore,
-    rtAudienceScore: film.rtAudienceScore,
-    metacriticScore: film.metacriticScore,
-  }
-
   if (plotText) {
-    const { anchorString, target } = buildAnchorString(film)
     const beatCount = computeHybridBeatCount(runtime)
     const user = buildHybridPrompt({
       film,
       year,
       runtime,
-      anchorString,
-      target,
       plotText,
       reviews: qualityReviews,
       beatCount,
@@ -367,7 +355,7 @@ async function buildRequestForFilm(film: Film): Promise<BuildOutcome> {
 
   // Fallback: no Wikipedia plot available → review-only prompt. The existing
   // reviews-only pipeline caches the system prompt, so we keep that here.
-  const parts = buildAnalysisPromptParts(film, qualityReviews, anchorScores, undefined)
+  const parts = buildAnalysisPromptParts(film, qualityReviews, undefined)
   return {
     kind: 'built',
     generationMode: 'review_only_fallback',
@@ -511,7 +499,6 @@ async function main() {
   SENTIMENT_MAX_TOKENS = claudeMod.SENTIMENT_MAX_TOKENS
   buildAnalysisPromptParts = claudeMod.buildAnalysisPromptParts
   MIN_QUALITY_REVIEWS = hybridMod.MIN_QUALITY_REVIEWS
-  buildAnchorString = hybridMod.buildAnchorString
   buildHybridPrompt = hybridMod.buildHybridPrompt
   computeHybridBeatCount = hybridMod.computeHybridBeatCount
   validateGraph = hybridMod.validateGraph

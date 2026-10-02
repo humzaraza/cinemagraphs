@@ -369,7 +369,9 @@ export async function prepareSentimentGraphInput(
     'Plot context resolved'
   )
 
-  const promptParts = buildAnalysisPromptParts(filmForAnalysis, reviews, anchorScores, plotContext)
+  // anchorScores are kept on the input for the Film row refresh; they are
+  // not shown to the model (the headline is the mean of the beats).
+  const promptParts = buildAnalysisPromptParts(filmForAnalysis, reviews, plotContext)
 
   return {
     status: 'ready',
@@ -402,8 +404,12 @@ export async function storeSentimentGraphResult(
 
   const otherFields = {
     previousScore: existing ? existing.overallScore : undefined,
+    // Mean of the beats (computed in parseGraphResponse). The write path
+    // derives the same value from the beats it actually persists.
     overallScore: graphData.overallSentiment,
-    anchoredFrom: graphData.anchoredFrom,
+    // Display string of the external ratings on file; the model no longer
+    // sees or echoes it.
+    anchoredFrom: buildAnchorString(film).anchorString,
     peakMoment: graphData.peakMoment,
     lowestMoment: graphData.lowestMoment,
     biggestSwing: graphData.biggestSentimentSwing,

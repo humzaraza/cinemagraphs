@@ -1,4 +1,9 @@
 /**
+ * NOTE (2026-10): overallScore is now derived from the beats on every write
+ * path, and scripts/recompute-overall-from-beats.ts repairs existing rows at
+ * zero model cost. Regeneration is no longer needed to fix headline drift;
+ * this script remains as a general tiered regeneration tool.
+ *
  * Step 4 backfill: regenerate every SentimentGraph whose beat-score mean sits
  * more than MEAN_SCORE_TOLERANCE (0.2) from its stored overallScore.
  *
@@ -81,7 +86,6 @@ import {
 } from '../src/lib/sentiment-guards'
 import {
   MIN_QUALITY_REVIEWS,
-  buildAnchorString,
   buildHybridPrompt,
   computeHybridBeatCount,
   validateGraph,
@@ -96,7 +100,6 @@ import {
   SentimentGraphMeanDriftError,
 } from '../src/lib/sentiment-beat-lock'
 import { invalidateFilmCache } from '../src/lib/cache'
-import type { AnchorScores } from '../src/lib/omdb'
 
 const CALLER_PATH = 'script-backfill-graph-mean' as const
 const CHECKPOINT_PATH = path.resolve('.graph-mean-backfill-checkpoint.json')
@@ -463,7 +466,6 @@ async function buildRequestForFilm(
   const note = correctiveNote(prior)
 
   if (plotText) {
-    const { anchorString, target } = buildAnchorString(film)
     const beatCount = computeHybridBeatCount(runtime)
     const user =
       note +
@@ -471,8 +473,6 @@ async function buildRequestForFilm(
         film,
         year,
         runtime,
-        anchorString,
-        target,
         plotText,
         reviews: qualityReviews,
         beatCount,
@@ -493,13 +493,7 @@ async function buildRequestForFilm(
     }
   }
 
-  const anchorScores: AnchorScores = {
-    imdbRating: film.imdbRating,
-    rtCriticsScore: film.rtCriticsScore,
-    rtAudienceScore: film.rtAudienceScore,
-    metacriticScore: film.metacriticScore,
-  }
-  const parts = buildAnalysisPromptParts(film, qualityReviews, anchorScores, undefined)
+  const parts = buildAnalysisPromptParts(film, qualityReviews, undefined)
   const user = note + parts.user
   return {
     kind: 'built',

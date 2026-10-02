@@ -36,8 +36,18 @@ export function meanBeatScore(dataPoints: ReadonlyArray<{ score: unknown }>): nu
   return sum / dataPoints.length
 }
 
+/** The film's headline score: the mean of its beat scores, rounded to one
+ *  decimal. This is the ONLY source of overallScore. It is computed in code
+ *  from the beats actually being written, never emitted by the model and
+ *  never taken from an external rating. */
+export function overallScoreFromBeats(dataPoints: ReadonlyArray<{ score: unknown }>): number {
+  return Math.round(meanBeatScore(dataPoints) * 10) / 10
+}
+
 /** Reject a set of beats whose mean sits more than MEAN_SCORE_TOLERANCE from
- *  the headline score they are written alongside. */
+ *  the headline score they are written alongside. With overallScore derived
+ *  by overallScoreFromBeats the gap is at most 0.05 from rounding, so this is
+ *  a backstop against a caller that bypasses the derivation. */
 export function assertMeanWithinTolerance(
   dataPoints: ReadonlyArray<{ score: unknown }>,
   overallSentiment: number

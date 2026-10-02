@@ -1,5 +1,6 @@
 import { prisma } from './prisma'
 import { safeWriteSentimentGraph } from './sentiment-beat-lock'
+import { overallScoreFromBeats } from './sentiment-guards'
 import type { SentimentDataPoint } from './types'
 
 const MIN_USER_REVIEWS_FOR_BLEND = 5
@@ -34,7 +35,7 @@ export async function maybeBlendAndUpdate(filmId: string): Promise<void> {
 
   const userReviews = await prisma.userReview.findMany({
     where: { filmId, status: 'approved', sentiment: { not: null } },
-    select: { sentiment: true, beatRatings: true },
+    select: { beatRatings: true },
   })
 
   // Only include reactions from quality sessions (50%+ completion, not flagged)
@@ -95,12 +96,6 @@ export async function maybeBlendAndUpdate(filmId: string): Promise<void> {
       return dp
     })
 
-    // Blend overall score with user review sentiments
-    const avgSentiment =
-      userReviews.reduce((sum, r) => sum + (r.sentiment ?? 0), 0) / userReviews.length
-    const blendedOverall =
-      graph.overallScore * weights.external + avgSentiment * weights.userReviews
-
     // Blend live reactions into time buckets if applicable
     if (hasEnoughReactions) {
       const buckets = aggregateReactionsIntoBuckets(liveReactions, blendedPoints)
@@ -112,18 +107,16 @@ export async function maybeBlendAndUpdate(filmId: string): Promise<void> {
       })
     }
 
-    const finalOverall = hasEnoughReactions
-      ? blendedOverall +
-        (liveReactions.reduce((sum, r) => sum + r.score, 0) / liveReactions.length) *
-          weights.liveReactions
-      : blendedOverall / (weights.external + weights.userReviews)
-
+    // The film's headline is the mean of the beats being written. User
+    // overall ratings and review sentiment never feed it; only beat ratings
+    // (blended into the points above) do. The write path derives the same
+    // value from whatever beats survive the beat-lock merge.
     await safeWriteSentimentGraph({
       filmId,
       incomingDataPoints: blendedPoints,
       otherFields: {
         previousScore: graph.overallScore,
-        overallScore: Math.round(Math.max(1, Math.min(10, finalOverall)) * 10) / 10,
+        overallScore: overallScoreFromBeats(blendedPoints),
         varianceSource: 'blended',
       },
       callerPath: 'review-blender',

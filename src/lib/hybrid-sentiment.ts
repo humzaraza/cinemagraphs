@@ -7,12 +7,12 @@ import {
   SENTIMENT_MAX_TOKENS,
   buildAnalysisPromptParts,
   assertMeanWithinTolerance,
+  overallScoreFromBeats,
   requireFilmRuntime,
 } from './claude'
 import { pipelineLogger } from './logger'
 import type { SentimentDataPoint, PeakLowMoment } from './types'
 import type { Film, Review } from '@/generated/prisma/client'
-import type { AnchorScores } from './omdb'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || process.env.CINEMA_ANTHROPIC_KEY || '',
@@ -47,15 +47,19 @@ export function computeHybridBeatCount(runtime: number): number {
   return Math.min(Math.max(n, 10), 20)
 }
 
-export function buildAnchorString(film: Film): { anchorString: string; target: number } {
+/**
+ * Human-readable list of the external ratings on file, stored on the row as
+ * `anchoredFrom` for display. It is NOT shown to the model and there is no
+ * target: the headline score is the mean of the beats.
+ */
+export function buildAnchorString(
+  film: Pick<Film, 'imdbRating' | 'rtCriticsScore' | 'metacriticScore'>
+): { anchorString: string } {
   const parts: string[] = []
   if (film.imdbRating) parts.push(`IMDb ${film.imdbRating}`)
   if (film.rtCriticsScore) parts.push(`RT ${film.rtCriticsScore}%`)
   if (film.metacriticScore) parts.push(`MC ${film.metacriticScore}`)
-  return {
-    anchorString: parts.join(' | ') || 'No anchor scores available',
-    target: film.imdbRating || 7.0,
-  }
+  return { anchorString: parts.join(' | ') || 'No anchor scores available' }
 }
 
 function buildReviewBlock(reviews: Review[]): string {
@@ -72,13 +76,11 @@ export function buildHybridPrompt(params: {
   film: Film
   year: number | 'Unknown'
   runtime: number
-  anchorString: string
-  target: number
   plotText: string
   reviews: Review[]
   beatCount: number
 }): string {
-  const { film, year, runtime, anchorString, target, plotText, reviews, beatCount } = params
+  const { film, year, runtime, plotText, reviews, beatCount } = params
   const reviewBlock = buildReviewBlock(reviews)
   const sourcesArray = [...new Set(reviews.map((r) => r.sourcePlatform.toLowerCase()))]
   const beatDuration = Math.round(runtime / beatCount)
@@ -93,10 +95,6 @@ The PLOT (from Wikipedia) is your ground truth for what happens in the film, whi
 - Year: ${year}
 - Runtime: ${runtime} minutes
 - Genres: ${film.genres?.join(', ') || 'Unknown'}
-
-## Aggregate Scores (ANCHOR)
-${anchorString}
-Target overall sentiment: ${target} (your overall must land within ±0.2 of this)
 
 ## Plot Summary (ground truth for events, chronology, characters)
 
@@ -169,7 +167,7 @@ Hard requirements:
 
 ## Scoring
 
-Use the full 1.0–10.0 scale. Not every film is a flat 7–8. If reviewers praise a moment as transcendent, score it 9 or 10. If they call a stretch dull or weak, score it below 6. The mean of all beat scores must land within ±0.2 of the target (${target}).
+Use the full 1.0–10.0 scale. Not every film is a flat 7–8. If reviewers praise a moment as transcendent, score it 9 or 10. If they call a stretch dull or weak, score it below 6. Score each beat on its own evidence from the reviews. The film's overall score is computed afterwards as the plain average of your beat scores; do not output one and do not steer the beats toward any external rating.
 
 ## Confidence levels
 
@@ -187,7 +185,6 @@ Return EXACTLY ONE JSON object. No prose, no preamble, no markdown fences. Schem
 
 {
   "film": "${film.title}",
-  "anchoredFrom": "${anchorString}",
   "dataPoints": [
     {
       "timeStart": <number, minutes>,
@@ -200,7 +197,6 @@ Return EXACTLY ONE JSON object. No prose, no preamble, no markdown fences. Schem
       "reviewEvidence": "<1–2 sentence paraphrased synthesis>"
     }
   ],
-  "overallSentiment": <number, within ±0.2 of ${target}>,
   "peakMoment": { "label": "<short anchor>", "labelFull": "<descriptive>", "score": <number>, "time": <minutes> },
   "lowestMoment": { "label": "<short anchor>", "labelFull": "<descriptive>", "score": <number>, "time": <minutes> },
   "biggestSentimentSwing": "<one sentence describing the biggest shift>",
@@ -241,9 +237,10 @@ export function validateGraph(raw: unknown): ParsedGraph {
   for (let i = 0; i < obj.dataPoints.length; i++) {
     assertLabelPair(obj.dataPoints[i], `dataPoints[${i}]`)
   }
-  if (typeof obj.overallSentiment !== 'number') throw new Error('Missing overallSentiment')
-  // Reject, do not repair: same rule as parseGraphResponse in claude.ts.
-  assertMeanWithinTolerance(obj.dataPoints as Array<{ score: unknown }>, obj.overallSentiment)
+  // The headline is computed from the beats, never read from the model.
+  const overallSentiment = overallScoreFromBeats(obj.dataPoints as Array<{ score: unknown }>)
+  // Backstop, same as parseGraphResponse in claude.ts.
+  assertMeanWithinTolerance(obj.dataPoints as Array<{ score: unknown }>, overallSentiment)
   if (!obj.peakMoment || !obj.lowestMoment) throw new Error('Missing peak/lowest moment')
   assertLabelPair(obj.peakMoment, 'peakMoment')
   assertLabelPair(obj.lowestMoment, 'lowestMoment')
@@ -251,7 +248,7 @@ export function validateGraph(raw: unknown): ParsedGraph {
   if (typeof obj.summary !== 'string') throw new Error('Missing summary')
   return {
     dataPoints: obj.dataPoints as SentimentDataPoint[],
-    overallSentiment: obj.overallSentiment,
+    overallSentiment,
     peakMoment: obj.peakMoment as PeakLowMoment,
     lowestMoment: obj.lowestMoment as PeakLowMoment,
     biggestSentimentSwing: obj.biggestSentimentSwing,
@@ -371,34 +368,24 @@ export async function generateHybridSentimentGraph(filmId: string): Promise<Hybr
   const plotAvailable = Boolean(plotText)
   const plotLength = plotText?.length || 0
 
-  const anchorScores: AnchorScores = {
-    imdbRating: film.imdbRating,
-    rtCriticsScore: film.rtCriticsScore,
-    rtAudienceScore: film.rtAudienceScore,
-    metacriticScore: film.metacriticScore,
-  }
-
   let system: string | null = null
   let user: string
   let generationMode: HybridResult['generationMode']
 
   if (plotText) {
     generationMode = 'hybrid'
-    const { anchorString, target } = buildAnchorString(film)
     const beatCount = computeHybridBeatCount(runtime)
     user = buildHybridPrompt({
       film,
       year,
       runtime,
-      anchorString,
-      target,
       plotText,
       reviews: qualityReviews,
       beatCount,
     })
   } else {
     generationMode = 'review_only_fallback'
-    const parts = buildAnalysisPromptParts(film, qualityReviews, anchorScores, undefined)
+    const parts = buildAnalysisPromptParts(film, qualityReviews, undefined)
     system = parts.system
     user = parts.user
   }
