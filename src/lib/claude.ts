@@ -67,11 +67,12 @@ export function sumUsage(usages: Iterable<UsageTotals>): UsageTotals {
 // enforce identical rules. Both guards THROW: a graph that fails one is
 // rejected before it can reach a write path; nothing rounds, clamps, or
 // downgrades to a warning.
-import { assertMeanWithinTolerance, requireFilmRuntime } from './sentiment-guards'
+import { assertMeanWithinTolerance, overallScoreFromBeats, requireFilmRuntime } from './sentiment-guards'
 export {
   MEAN_SCORE_TOLERANCE,
   assertMeanWithinTolerance,
   meanBeatScore,
+  overallScoreFromBeats,
   requireFilmRuntime,
 } from './sentiment-guards'
 
@@ -101,7 +102,6 @@ You ALWAYS return EXACTLY ONE JSON object. No prose, no preamble, no markdown co
 
 {
   "film": "<film title>",
-  "anchoredFrom": "<formatted anchor scores>",
   "dataPoints": [
     {
       "timeStart": <number, minutes>,
@@ -114,7 +114,6 @@ You ALWAYS return EXACTLY ONE JSON object. No prose, no preamble, no markdown co
       "reviewEvidence": "<1–2 sentence synthesis of what reviewers said>"
     }
   ],
-  "overallSentiment": <number, 1.0–10.0>,
   "peakMoment": { "label": "<short anchor>", "labelFull": "<descriptive>", "score": <number>, "time": <number> },
   "lowestMoment": { "label": "<short anchor>", "labelFull": "<descriptive>", "score": <number>, "time": <number> },
   "biggestSentimentSwing": "<description of biggest shift>",
@@ -136,9 +135,9 @@ You ALWAYS return EXACTLY ONE JSON object. No prose, no preamble, no markdown co
 
 USE THE FULL SCALE. Not every film is a flat 7–9. If reviews mention weak parts, go below 6. If there are transcendent moments, use 9 or 10. Films with broadly negative consensus should land below 5 on average. Films with broadly mediocre consensus should land near 5 or 6. The shape of the curve matters: a film that opens slowly and builds to a great climax should look very different from a film that starts strong and falls apart.
 
-## Anchoring to the target
+## The headline score is not yours to set
 
-The OVERALL average of all data points must be within ±0.2 of the target score the user gives you. The target is derived from aggregate review scores (IMDb, Rotten Tomatoes, Metacritic) and grounds the analysis to consensus reception. Treat the target as a hard constraint — your individual segment scores can vary widely, but their mean must land in the ±0.2 window.
+The film's overall score is computed afterwards as the plain average of your segment scores. Do not output an overall number and do not steer your segment scores toward any external rating. Score each segment on its own evidence; the average will be whatever the segments add up to.
 
 ## Confidence levels
 
@@ -203,30 +202,24 @@ A 1–2 sentence synthesis of what reviewers actually said about this portion of
 1. Read every review carefully and identify what viewers praised and criticized at different points in the film.
 2. Generate the requested number of data points spanning the full runtime, in chronological order.
 3. Each data point covers a roughly equal slice of the runtime. timeStart, timeEnd, and timeMidpoint must be consistent (midpoint = (start+end)/2).
-4. Score each segment using the full 1–10 scale.
-5. Verify the average of your scores lands within ±0.2 of the target the user supplied.
-6. Pick the highest-scoring segment as peakMoment and the lowest as lowestMoment. Each gets both label and labelFull (matching the corresponding beat), plus score and time (in minutes).
-7. Identify the biggest sentiment swing — the largest shift between adjacent or near-adjacent segments — and describe it in one sentence.
-8. Write a 2–3 sentence summary of the overall sentiment arc.
-9. Return ONLY the JSON object. No markdown fences, no explanations, no preamble, no trailing text. Your entire response must parse as JSON on the first try.`
+4. Score each segment using the full 1–10 scale, on what reviewers said about that stretch of the film.
+5. Pick the highest-scoring segment as peakMoment and the lowest as lowestMoment. Each gets both label and labelFull (matching the corresponding beat), plus score and time (in minutes).
+6. Identify the biggest sentiment swing, the largest shift between adjacent or near-adjacent segments, and describe it in one sentence.
+7. Write a 2–3 sentence summary of the overall sentiment arc.
+8. Return ONLY the JSON object. No markdown fences, no explanations, no preamble, no trailing text. Your entire response must parse as JSON on the first try.`
 
+/**
+ * Build the review-only prompt. External ratings (IMDb, RT, Metacritic) are
+ * deliberately NOT shown to the model: the headline score is the mean of the
+ * beats, so there is no target to anchor to.
+ */
 export function buildAnalysisPromptParts(
   film: Film,
   reviews: Review[],
-  anchorScores: AnchorScores,
   plotContext?: PlotContext
 ): AnalysisPromptParts {
   const year = film.releaseDate ? new Date(film.releaseDate).getFullYear() : 'Unknown'
   const runtime = requireFilmRuntime(film)
-
-  // Anchor string + target score
-  const anchors: string[] = []
-  const primaryAnchor = anchorScores.imdbRating || (film.imdbRating as number | null)
-  if (primaryAnchor) anchors.push(`IMDb ${primaryAnchor}`)
-  if (anchorScores.rtCriticsScore) anchors.push(`RT ${anchorScores.rtCriticsScore}%`)
-  if (anchorScores.metacriticScore) anchors.push(`MC ${anchorScores.metacriticScore}`)
-  const anchorString = anchors.join(' | ') || 'No anchor scores available'
-  const targetScore = primaryAnchor || 7.0
 
   // Review block
   const reviewBlock = reviews
@@ -257,10 +250,6 @@ export function buildAnalysisPromptParts(
 - Year: ${year}
 - Runtime: ${runtime} minutes
 - Genres: ${film.genres?.join(', ') || 'Unknown'}
-
-## Aggregate Scores (ANCHOR — your overall must be within ±0.2 of the IMDb score)
-${anchorString}
-Target overall sentiment: ${targetScore} (±0.2 variance allowed)
 ${plotSection}
 ## Required Output
 
@@ -268,7 +257,6 @@ Generate exactly ${segmentCount} data points spanning 0 to ${runtime} minutes (e
 
 Use these exact literal values in your output:
 - "film": "${film.title}"
-- "anchoredFrom": "${anchorString}"
 - "sources": ${JSON.stringify(sourcesArray)}
 - "varianceSource": "external_only"
 - "reviewCount": ${reviews.length}
@@ -331,13 +319,14 @@ function parseGraphResponse(rawResponse: string, ctx: ParseGraphContext): Sentim
     assertLabelPair(data.dataPoints[i], `dataPoints[${i}]`)
   }
 
-  if (typeof data.overallSentiment !== 'number') {
-    throw new Error('Missing overallSentiment')
-  }
-
-  // Reject, do not repair: a graph whose beats average away from its own
-  // headline score is not written under any circumstances.
+  // The headline is computed here from the beats, never read from the model.
+  // Anything the model put in overallSentiment is discarded.
+  data.overallSentiment = overallScoreFromBeats(data.dataPoints)
+  // Backstop: cannot fail after the derivation above unless a score is not a
+  // finite number, which meanBeatScore already rejects.
   assertMeanWithinTolerance(data.dataPoints, data.overallSentiment)
+  // The model is no longer told the anchor string; the store path sets it.
+  if (typeof data.anchoredFrom !== 'string') data.anchoredFrom = ''
 
   if (!data.peakMoment || !data.lowestMoment) {
     throw new Error('Missing peak/lowest moment')
@@ -361,7 +350,10 @@ export async function analyzeSentiment(
   anchorScores: AnchorScores,
   plotContext?: PlotContext
 ): Promise<SentimentGraphData> {
-  const { system, user } = buildAnalysisPromptParts(film, reviews, anchorScores, plotContext)
+  // anchorScores stays in the signature for callers; it no longer reaches the
+  // prompt because the headline score is derived from the beats.
+  void anchorScores
+  const { system, user } = buildAnalysisPromptParts(film, reviews, plotContext)
 
   let lastError: Error | null = null
   let lastRawResponse: string | undefined

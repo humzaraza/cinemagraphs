@@ -1,7 +1,5 @@
 import { prisma } from '@/lib/prisma'
 import { cronLogger } from '@/lib/logger'
-import { safeWriteSentimentGraph } from '@/lib/sentiment-beat-lock'
-import type { SentimentDataPoint } from '@/lib/types'
 
 export const maxDuration = 300
 
@@ -45,14 +43,13 @@ export async function GET(request: Request) {
       return Response.json({ error: 'Unauthorized', code: 'UNAUTHORIZED' }, { status: 401 })
     }
 
-    // Only refresh scores for now playing films with sentiment graphs
+    // Only refresh external ratings for now playing films with sentiment
+    // graphs. This job updates Film.imdbRating and nothing else: the film's
+    // overallScore is the mean of its beats and external ratings never
+    // touch it.
     const films = await prisma.film.findMany({
       where: { nowPlaying: true, sentimentGraph: { isNot: null } },
-      include: {
-        sentimentGraph: {
-          select: { id: true, overallScore: true, varianceSource: true, dataPoints: true },
-        },
-      },
+      select: { id: true, title: true, tmdbId: true, imdbId: true, imdbRating: true },
     })
 
     cronLogger.info({ filmCount: films.length }, 'Starting daily score refresh for now playing films')
@@ -82,36 +79,6 @@ export async function GET(request: Request) {
           where: { id: film.id },
           data: { imdbRating: newRating },
         })
-
-        // Re-anchor the Cinemagraphs score to a real external-rating move:
-        // shift overallScore by the same amount the external rating moved and
-        // capture the old value into previousScore, so the ticker shows a
-        // genuine delta. The sentiment-graph beats are left completely untouched
-        // (no LLM, no regen). External-only films only; blended films are
-        // skipped here and pick up their score change on their next real
-        // blend/regen, because their score mixes user/reaction signal that an
-        // external-rating shift must not overcount. Sub-0.1 moves are ignored as
-        // noise, and we intentionally do NOT stamp previousScore for them so an
-        // earlier real delta survives.
-        const graph = film.sentimentGraph
-        const ratingDelta = currentRating != null ? newRating - currentRating : 0
-        if (
-          graph &&
-          Math.abs(ratingDelta) >= 0.1 &&
-          graph.varianceSource === 'external_only'
-        ) {
-          const shifted = Math.round((graph.overallScore + ratingDelta) * 10) / 10
-          const nextOverall = Math.max(1, Math.min(10, shifted))
-          await safeWriteSentimentGraph({
-            filmId: film.id,
-            incomingDataPoints: graph.dataPoints as unknown as SentimentDataPoint[],
-            otherFields: {
-              previousScore: graph.overallScore,
-              overallScore: nextOverall,
-            },
-            callerPath: 'cron-refresh-scores',
-          })
-        }
 
         updated++
         cronLogger.info({ filmId: film.id, title: film.title, oldRating: currentRating, newRating }, 'Score refreshed')

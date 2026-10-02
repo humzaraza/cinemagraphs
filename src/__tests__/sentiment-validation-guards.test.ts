@@ -170,18 +170,41 @@ describe('assertMeanWithinTolerance', () => {
   })
 })
 
+describe('overallScoreFromBeats', () => {
+  it('is the mean of the beat scores rounded to one decimal', async () => {
+    const { overallScoreFromBeats } = await import('@/lib/claude')
+    expect(overallScoreFromBeats(beats(twelveSevens))).toBe(7)
+    // 6, 5.5, 9 average 6.8333 -> 6.8
+    expect(overallScoreFromBeats(beats([6, 5.5, 9]))).toBe(6.8)
+    // 7, 7.5 average 7.25 -> 7.3 (half rounds up)
+    expect(overallScoreFromBeats(beats([7, 7.5]))).toBe(7.3)
+  })
+
+  it('refuses a non-numeric score rather than averaging around it', async () => {
+    const { overallScoreFromBeats } = await import('@/lib/claude')
+    const bad = beats([7, 7]) as Array<{ score: unknown }>
+    bad[1].score = '7'
+    expect(() => overallScoreFromBeats(bad)).toThrow(/dataPoints\[1\]\.score/)
+  })
+})
+
 describe('validateGraph (hybrid-sentiment.ts)', () => {
-  it('accepts a graph whose beat mean matches overallSentiment', async () => {
+  it('derives overallSentiment from the beats', async () => {
     const { validateGraph } = await import('@/lib/hybrid-sentiment')
     const g = graphObject([6, 7, 8, 6, 7, 8, 6, 7, 8, 6, 7, 8], 7)
     expect(validateGraph(g).overallSentiment).toBe(7)
   })
 
-  it('rejects a graph whose beat mean drifts more than 0.2 from overallSentiment', async () => {
+  it('ignores whatever overallSentiment the model emitted', async () => {
     const { validateGraph } = await import('@/lib/hybrid-sentiment')
-    // Mean 7.0, headline 7.5: the exact shape found in production.
+    // Beats average 7.0 while the model claimed 7.5: the model's number is
+    // discarded, not validated against.
     const g = graphObject(twelveSevens, 7.5)
-    expect(() => validateGraph(g)).toThrow(/Beat mean 7\.000 is 0\.500 from overallSentiment 7\.5/)
+    expect(validateGraph(g).overallSentiment).toBe(7)
+    // A missing value is fine too; nothing is required from the model here.
+    const noHeadline = graphObject(twelveSevens, 7.5) as Record<string, unknown>
+    delete noHeadline.overallSentiment
+    expect(validateGraph(noHeadline).overallSentiment).toBe(7)
   })
 })
 
@@ -190,26 +213,57 @@ describe('parseGraphResponse via fetchBatchResults (claude.ts)', () => {
     vi.clearAllMocks()
   })
 
-  it('marks a batch entry errored when the beat mean is outside tolerance', async () => {
+  it('succeeds and replaces the model headline with the beat mean', async () => {
     mocks.batchesResults.mockResolvedValueOnce(
       asyncIter([batchEntry(JSON.stringify(graphObject(twelveSevens, 7.5)))])
     )
     const { fetchBatchResults } = await import('@/lib/claude')
     const results = await fetchBatchResults('batch_abc', new Map())
     expect(results).toHaveLength(1)
-    expect(results[0].outcome).toBe('errored')
-    expect(results[0].data).toBeUndefined()
-    expect(results[0].error).toMatch(/Beat mean/)
+    expect(results[0].outcome).toBe('succeeded')
+    expect(results[0].data?.overallSentiment).toBe(7)
   })
 
-  it('still succeeds for a graph inside tolerance', async () => {
+  it('rounds the derived headline to one decimal', async () => {
+    const scores = [6, 5.5, 9, 6, 5.5, 9, 6, 5.5, 9, 6, 5.5, 9] // mean 6.8333
     mocks.batchesResults.mockResolvedValueOnce(
-      asyncIter([batchEntry(JSON.stringify(graphObject(twelveSevens, 7.1)))])
+      asyncIter([batchEntry(JSON.stringify(graphObject(scores, 9.9)))])
     )
     const { fetchBatchResults } = await import('@/lib/claude')
     const results = await fetchBatchResults('batch_abc', new Map())
     expect(results[0].outcome).toBe('succeeded')
-    expect(results[0].data?.overallSentiment).toBe(7.1)
+    expect(results[0].data?.overallSentiment).toBe(6.8)
+  })
+})
+
+describe('prompts carry no external rating target', () => {
+  it('review-only prompt omits IMDb, target, and tolerance language', async () => {
+    const { buildAnalysisPromptParts, SENTIMENT_SYSTEM_PROMPT } = await import('@/lib/claude')
+    const parts = buildAnalysisPromptParts(film({ runtime: 95, imdbRating: 7.4 }), [])
+    for (const text of [parts.user, SENTIMENT_SYSTEM_PROMPT]) {
+      expect(text).not.toMatch(/IMDb/)
+      expect(text).not.toMatch(/Target overall/)
+      expect(text).not.toMatch(/±0\.2/)
+      expect(text).not.toMatch(/anchoredFrom/)
+      expect(text).not.toMatch(/"overallSentiment"/)
+    }
+  })
+
+  it('hybrid prompt omits IMDb, target, and tolerance language', async () => {
+    const { buildHybridPrompt } = await import('@/lib/hybrid-sentiment')
+    const user = buildHybridPrompt({
+      film: film({ runtime: 95, imdbRating: 7.4 }),
+      year: 2010,
+      runtime: 95,
+      plotText: 'A plot.',
+      reviews: [],
+      beatCount: 10,
+    })
+    expect(user).not.toMatch(/IMDb/)
+    expect(user).not.toMatch(/Target overall/)
+    expect(user).not.toMatch(/±0\.2/)
+    expect(user).not.toMatch(/anchoredFrom/)
+    expect(user).not.toMatch(/"overallSentiment"/)
   })
 })
 
@@ -232,7 +286,7 @@ describe('requireFilmRuntime', () => {
 describe('buildAnalysisPromptParts runtime guard', () => {
   it('uses the real runtime when present', async () => {
     const { buildAnalysisPromptParts } = await import('@/lib/claude')
-    const parts = buildAnalysisPromptParts(film({ runtime: 95 }), [], { imdbRating: 7.4 } as never)
+    const parts = buildAnalysisPromptParts(film({ runtime: 95 }), [])
     expect(parts.user).toContain('95-minute runtime')
     expect(parts.user).not.toContain('120-minute')
   })
@@ -240,7 +294,7 @@ describe('buildAnalysisPromptParts runtime guard', () => {
   it('throws for runtime 0 instead of building a 120-minute prompt', async () => {
     const { buildAnalysisPromptParts } = await import('@/lib/claude')
     expect(() =>
-      buildAnalysisPromptParts(film({ runtime: 0 }), [], { imdbRating: 7.4 } as never)
+      buildAnalysisPromptParts(film({ runtime: 0 }), [])
     ).toThrow(/no usable runtime \(stored 0\)/)
   })
 })

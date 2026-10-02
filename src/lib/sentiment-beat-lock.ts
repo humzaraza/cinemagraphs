@@ -3,9 +3,26 @@ import { prisma } from './prisma'
 import { logger } from './logger'
 import type { SentimentDataPoint } from './types'
 import { classifyArcShape } from './arc-classifier'
-import { assertMeanWithinTolerance, meanBeatScore } from './sentiment-guards'
+import { assertMeanWithinTolerance, meanBeatScore, overallScoreFromBeats } from './sentiment-guards'
 
 export const beatLockLogger = logger.child({ module: 'beat-lock' })
+
+// ── overallScore is derived from the beats being written ────────────────────
+//
+// On every path the headline persisted with a row is the mean of the beats
+// that row will hold, rounded to one decimal. A caller-supplied overallScore
+// is replaced (callers compute the same thing or, historically, something
+// else: an IMDb-anchored model number, a rating-shifted headline, a blended
+// sentiment). previousScore stays the caller's responsibility. An empty beat
+// list has no mean, so the caller's fields pass through untouched there.
+
+function withDerivedOverallScore<T extends { overallScore?: number }>(
+  dataPoints: ReadonlyArray<SentimentDataPoint>,
+  otherFields: T
+): T {
+  if (dataPoints.length === 0) return otherFields
+  return { ...otherFields, overallScore: overallScoreFromBeats(dataPoints) }
+}
 
 // ── Mean-vs-score guard on the row as written ───────────────────────────────
 //
@@ -16,7 +33,27 @@ export const beatLockLogger = logger.child({ module: 'beat-lock' })
 // on every path, against the overallScore it will carry. A failing write is
 // rejected by throwing inside the transaction, so nothing is persisted.
 
-export type MeanDriftWritePath = 'first_write' | 'merge' | 'lock_disabled' | 'force_overwrite'
+export type MeanDriftWritePath =
+  | 'first_write'
+  | 'merge'
+  | 'replace_unrated'
+  | 'lock_disabled'
+  | 'force_overwrite'
+
+// The merge only protects something when the film has user beat ratings,
+// which are keyed by beat label. Count reviews carrying a non-empty
+// beatRatings object; an empty object is not a rating.
+async function countBeatRatedReviews(tx: Prisma.TransactionClient, filmId: string): Promise<number> {
+  const rows = await tx.$queryRaw<Array<{ rated: number | bigint }>>`
+    SELECT count(*)::int AS rated
+    FROM "UserReview"
+    WHERE "filmId" = ${filmId}
+      AND "beatRatings" IS NOT NULL
+      AND jsonb_typeof("beatRatings") = 'object'
+      AND "beatRatings" <> '{}'::jsonb
+  `
+  return Number(rows[0]?.rated ?? 0)
+}
 
 export class SentimentGraphMeanDriftError extends Error {
   readonly filmId: string
@@ -206,6 +243,9 @@ export interface SafeWriteResult {
   acceptedBeatCount: number
   droppedIncomingLabels: string[]
   preservedExistingLabels: string[]
+  /** Set when the film had no user beat ratings and the incoming beats
+   *  replaced the stored ones outright: the old labels that disappeared. */
+  replacedExistingLabels?: string[]
 }
 
 type MismatchReason = 'not_in_existing' | 'missing_from_incoming'
@@ -266,17 +306,18 @@ async function safeWriteInTransaction(params: {
         { filmId, callerPath, envLockEnabled: false, event: 'beat_lock_disabled' },
         'safeWriteSentimentGraph: beat lock disabled via env, writing incoming dataPoints unmodified'
       )
+      const fields = withDerivedOverallScore(incomingDataPoints, otherFields)
       assertRowWithinTolerance({
         filmId,
         callerPath,
         path: 'lock_disabled',
         dataPoints: incomingDataPoints,
-        incomingOverallScore: otherFields.overallScore,
+        incomingOverallScore: fields.overallScore,
         existingOverallScore,
         existingBeatCount,
         incomingBeatCount: incomingDataPoints.length,
       })
-      await writeRow(tx, { filmId, existing, dataPoints: incomingDataPoints, otherFields })
+      await writeRow(tx, { filmId, existing, dataPoints: incomingDataPoints, otherFields: fields })
       return {
         status: 'written',
         acceptedBeatCount: incomingDataPoints.length,
@@ -288,17 +329,18 @@ async function safeWriteInTransaction(params: {
     // First-ever write path (no row OR row with empty dataPoints). Nothing to
     // compare against, so no drift log; incoming labels + timestamps stand.
     if (existingBeatCount === 0) {
+      const fields = withDerivedOverallScore(incomingDataPoints, otherFields)
       assertRowWithinTolerance({
         filmId,
         callerPath,
         path: 'first_write',
         dataPoints: incomingDataPoints,
-        incomingOverallScore: otherFields.overallScore,
+        incomingOverallScore: fields.overallScore,
         existingOverallScore,
         existingBeatCount,
         incomingBeatCount: incomingDataPoints.length,
       })
-      await writeRow(tx, { filmId, existing, dataPoints: incomingDataPoints, otherFields })
+      await writeRow(tx, { filmId, existing, dataPoints: incomingDataPoints, otherFields: fields })
       return {
         status: 'written',
         acceptedBeatCount: incomingDataPoints.length,
@@ -307,7 +349,59 @@ async function safeWriteInTransaction(params: {
       }
     }
 
-    // Merge path — existing labels + timestamps are sticky. Scores,
+    // No user beat ratings on this film: there is nothing the lock could
+    // protect, so the incoming beats replace the stored ones outright
+    // (labels, timestamps, scores) and the headline is their mean. This is
+    // what makes an admin Regenerate actually regenerate. The label churn is
+    // still recorded in the drift log for audit.
+    const ratedReviews = await countBeatRatedReviews(tx, filmId)
+    if (ratedReviews === 0) {
+      const fields = withDerivedOverallScore(incomingDataPoints, otherFields)
+      assertRowWithinTolerance({
+        filmId,
+        callerPath,
+        path: 'replace_unrated',
+        dataPoints: incomingDataPoints,
+        incomingOverallScore: fields.overallScore,
+        existingOverallScore,
+        existingBeatCount,
+        incomingBeatCount: incomingDataPoints.length,
+      })
+      const incomingLabelSet = new Set(incomingDataPoints.map((b) => b.label))
+      const existingLabelSet = new Set(existingBeats.map((b) => b.label))
+      const newLabels = incomingDataPoints.map((b) => b.label).filter((l) => !existingLabelSet.has(l))
+      const replacedExistingLabels = existingBeats.map((b) => b.label).filter((l) => !incomingLabelSet.has(l))
+      if (newLabels.length > 0 || replacedExistingLabels.length > 0 || incomingDataPoints.length !== existingBeatCount) {
+        await tx.sentimentGraphDriftLog.create({
+          data: {
+            filmId,
+            callerPath,
+            existingBeatCount,
+            incomingBeatCount: incomingDataPoints.length,
+            mismatchedLabels: [
+              ...newLabels.map((label) => ({ incoming: label, reason: 'not_in_existing' as const })),
+              ...replacedExistingLabels.map((label) => ({ incoming: label, reason: 'missing_from_incoming' as const })),
+            ] as unknown as Prisma.InputJsonValue,
+            action: 'write_replaced_unrated',
+            envLockEnabled: true,
+          },
+        })
+        beatLockLogger.info(
+          { filmId, callerPath, existingBeatCount, incomingBeatCount: incomingDataPoints.length, replacedCount: replacedExistingLabels.length },
+          'safeWriteSentimentGraph: film has no user beat ratings, incoming beats replace stored beats'
+        )
+      }
+      await writeRow(tx, { filmId, existing, dataPoints: incomingDataPoints, otherFields: fields })
+      return {
+        status: 'written',
+        acceptedBeatCount: incomingDataPoints.length,
+        droppedIncomingLabels: [],
+        preservedExistingLabels: [],
+        replacedExistingLabels,
+      }
+    }
+
+    // Merge path (the film has user beat ratings): existing labels + timestamps are sticky. Scores,
     // confidence, and reviewEvidence update from incoming when labels match.
     const existingByLabel = new Map<string, SentimentDataPoint>()
     for (const beat of existingBeats) existingByLabel.set(beat.label, beat)
@@ -358,17 +452,16 @@ async function safeWriteInTransaction(params: {
       ? 'write_accepted_with_drops'
       : 'write_accepted'
 
-    // The merged row is what gets persisted, so it is the merged row that
-    // must sit within tolerance of the headline it will carry. Preserved
-    // beats keep their old scores; if that leaves the row drifting from a new
-    // overallScore, the whole write is refused. Checked before the drift log
-    // so a rejected write leaves no "accepted" record behind.
+    // The merged row is what gets persisted, so its headline is derived from
+    // the merged beats: preserved beats keep their old scores and the mean
+    // reflects that. The tolerance check below is a backstop only.
+    const fields = withDerivedOverallScore(mergedInOrder, otherFields)
     assertRowWithinTolerance({
       filmId,
       callerPath,
       path: 'merge',
       dataPoints: mergedInOrder,
-      incomingOverallScore: otherFields.overallScore,
+      incomingOverallScore: fields.overallScore,
       existingOverallScore,
       existingBeatCount,
       incomingBeatCount: incomingDataPoints.length,
@@ -414,7 +507,7 @@ async function safeWriteInTransaction(params: {
       )
     }
 
-    await writeRow(tx, { filmId, existing, dataPoints: mergedInOrder, otherFields })
+    await writeRow(tx, { filmId, existing, dataPoints: mergedInOrder, otherFields: fields })
 
     return {
       status: hasDrops ? 'written_with_drops' : 'written',
@@ -440,14 +533,14 @@ export async function forceOverwriteSentimentGraph(params: {
     'forceOverwriteSentimentGraph: rewriting labels + timestamps without merge'
   )
 
-  // Same classification chokepoint as writeRow. otherFields is loosely typed
-  // here, so read overallScore defensively.
-  const overallScore =
-    typeof otherFields.overallScore === 'number' ? otherFields.overallScore : null
+  // Headline derived from the beats being written, same as the safe path.
+  // otherFields is loosely typed here, so read it back defensively.
+  const fields = withDerivedOverallScore(dataPoints, otherFields as Record<string, unknown> & { overallScore?: number })
+  const overallScore = typeof fields.overallScore === 'number' ? fields.overallScore : null
   const arcShape = classifyArcShape(dataPoints, overallScore)
 
   try {
-    await forceOverwriteInTransaction({ filmId, dataPoints, otherFields, callerPath, overallScore, arcShape })
+    await forceOverwriteInTransaction({ filmId, dataPoints, otherFields: fields, callerPath, overallScore, arcShape })
   } catch (err) {
     if (err instanceof SentimentGraphMeanDriftError) {
       beatLockLogger.warn(
