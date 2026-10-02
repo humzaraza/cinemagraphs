@@ -215,6 +215,7 @@ export type BeatLockCallerPath =
   | 'script-batch-analyze'
   | 'script-bulk-regen-hybrid'
   | 'script-backfill-graph-mean'
+  | 'script-restore-critic-beats'
   | 'script-test-pipeline'
   | 'script-backfill-wikipedia-beats'
   | 'script-diagnose-film'

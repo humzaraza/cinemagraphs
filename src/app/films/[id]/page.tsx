@@ -233,11 +233,14 @@ export default async function FilmPage({
       ratingCount: userReviews.length,
       reviewCount: userReviews.filter((r) => r.combinedText).length,
     }
+    // Google requires a valid reviewer name on each Review. Reviews whose
+    // author has no name are left out of the per-review markup entirely
+    // rather than labelled "Anonymous"; they still count in the aggregate.
     jsonLd.review = userReviews
-      .filter((r) => r.combinedText)
+      .filter((r) => r.combinedText && r.user.name && r.user.name.trim().length > 0)
       .map((r) => ({
         '@type': 'Review',
-        author: { '@type': 'Person', name: r.user.name || 'Anonymous' },
+        author: { '@type': 'Person', name: r.user.name },
         datePublished: new Date(r.createdAt).toISOString().split('T')[0],
         reviewRating: {
           '@type': 'Rating',
