@@ -149,7 +149,8 @@ describe('GET /api/user/profile', () => {
       director: 'Director B',
       posterUrl: 'https://img/b.jpg',
       backdropUrl: 'https://img/b-bd.jpg',
-      score: 8.5,
+      // Review score: half the rated beat (Setup 8), half the overall 8.5 -> 8.25 -> 8.3
+      score: 8.3,
       sparklinePoints: [8, 7],
     })
 

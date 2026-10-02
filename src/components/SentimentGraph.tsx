@@ -21,6 +21,8 @@ type GraphView = 'critics' | 'audience' | 'both' | 'merged'
 
 export interface AudienceData {
   userReviewCount: number
+  /** Reviews that rated at least one beat; the people behind the audience line. */
+  beatRaterCount?: number
   beatAverages: Record<string, number>
   liveSessionCount: number
   reactionScores: { index: number; score: number }[]
@@ -243,7 +245,7 @@ function CustomTooltip({
       <div className="bg-cinema-card border border-cinema-border rounded-lg p-3 max-w-xs shadow-xl">
         <span className="text-cinema-cream font-semibold text-sm block mb-1">Start of film</span>
         <p className="text-xs text-cinema-muted leading-relaxed">
-          Every film starts at a neutral 5. No viewer opinion yet.
+          Every film starts at a neutral 5. Nothing has been reviewed yet.
         </p>
       </div>
     )
@@ -430,7 +432,7 @@ export default function SentimentGraph({
         <div className="bg-cinema-darker rounded-lg border border-cinema-border p-4 md:p-6">
           <div className="flex items-center justify-between mb-1">
             <h3 className="font-[family-name:var(--font-playfair)] text-lg text-cinema-cream">
-              Audience Sentiment
+              Sentiment Timeline
             </h3>
           </div>
           <div className="relative" style={{ height: 320 }}>
@@ -474,6 +476,12 @@ export default function SentimentGraph({
         return scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : null
       })()
     : null
+
+  // The audience line appears as soon as anyone rates a beat; say how many
+  // people are behind it so a line built from one rating reads as such.
+  const beatRaterCount = audienceData?.beatRaterCount ?? 0
+  const audienceLabel =
+    beatRaterCount > 0 ? `Audience (${beatRaterCount} rated)` : 'Audience'
 
   const sectionTitle =
     graphView === 'audience' && hasAudienceData ? 'Audience Sentiment'
@@ -534,7 +542,7 @@ export default function SentimentGraph({
               </div>
               {audienceOverall != null && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-cinema-muted">Audience</span>
+                  <span className="text-xs text-cinema-muted">{audienceLabel}</span>
                   <span
                     className="font-[family-name:var(--font-bebas)] text-3xl"
                     style={{ color: 'var(--cinema-teal)' }}
@@ -547,7 +555,7 @@ export default function SentimentGraph({
           ) : (
             <div className="flex items-center gap-2">
               <span className="text-sm text-cinema-muted">
-                {graphView === 'audience' && hasAudienceData ? 'Audience'
+                {graphView === 'audience' && hasAudienceData ? audienceLabel
                   : graphView === 'merged' && hasAudienceData ? 'Merged'
                   : 'Critics'}
               </span>
@@ -933,9 +941,9 @@ export default function SentimentGraph({
 
         {/* Scale labels */}
         <div className="flex justify-between text-[10px] text-cinema-muted/60 mt-1 px-4 md:px-8">
-          <span>1 — Hated it</span>
-          <span>5 — Neutral</span>
-          <span>10 — Masterpiece</span>
+          <span>1 Panned</span>
+          <span>5 Mixed</span>
+          <span>10 Acclaimed</span>
         </div>
 
         {/* Story beat pills with spoiler protection */}

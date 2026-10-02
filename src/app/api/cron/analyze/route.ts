@@ -335,6 +335,7 @@ export async function GET(request: Request) {
     const skipTally = {
       skipped_prerelease: 0,
       skipped_mature_stable: 0,
+      skipped_now_playing_recent_rebuild: 0,
       skipped_already_regenerated_today: 0,
     }
     const eligibleTally = {
@@ -350,6 +351,7 @@ export async function GET(request: Request) {
         releaseDate: film.releaseDate,
         qualityReviewCount: film.lastReviewCount,
         lastRegenAt: film.sentimentGraph?.generatedAt ?? null,
+        nowPlaying: film.nowPlaying,
         now,
       })
 

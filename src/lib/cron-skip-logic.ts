@@ -16,11 +16,17 @@ export const MATURE_DAYS = 180
 export const QUALITY_REVIEW_THRESHOLD = 17
 export const REGEN_INTERVAL_DAYS = 30
 
+// Now-playing films: a graph is rebuilt only when enough new reviews have
+// arrived (see filmNeedsReanalysis) and never more often than once every
+// NOW_PLAYING_MIN_REBUILD_DAYS, which caps a film at two rebuilds a week.
+export const NOW_PLAYING_MIN_REBUILD_DAYS = 3
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
 export type CronSkipReason =
   | 'skipped_prerelease'
   | 'skipped_mature_stable'
+  | 'skipped_now_playing_recent_rebuild'
 
 export type CronEligibleReason =
   | 'eligible_no_graph'
@@ -58,6 +64,8 @@ export interface CronRegenInput {
   qualityReviewCount: number
   /** SentimentGraph.generatedAt, or null when the film has no graph yet. */
   lastRegenAt: Date | null
+  /** Film.nowPlaying: in theatres per the ticker. Rebuilds are rate-limited. */
+  nowPlaying?: boolean
   now: Date
 }
 
@@ -68,6 +76,16 @@ export function decideCronRegen(input: CronRegenInput): CronRegenDecision {
 
   if (!input.lastRegenAt) {
     return { skip: false, reason: 'eligible_no_graph' }
+  }
+
+  // Weekly cap for films in theatres: at most one rebuild per
+  // NOW_PLAYING_MIN_REBUILD_DAYS, so two per week. Whether a rebuild is
+  // warranted at all (enough new reviews) is decided by filmNeedsReanalysis.
+  if (input.nowPlaying) {
+    const rebuildBoundary = new Date(input.now.getTime() - NOW_PLAYING_MIN_REBUILD_DAYS * MS_PER_DAY)
+    if (input.lastRegenAt > rebuildBoundary) {
+      return { skip: true, reason: 'skipped_now_playing_recent_rebuild' }
+    }
   }
 
   if (input.releaseDate) {

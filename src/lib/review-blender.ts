@@ -26,15 +26,37 @@ function getBlendWeights(hasUserReviews: boolean, hasLiveReactions: boolean): Bl
 }
 
 /**
- * Check if blending should happen and trigger it for a film.
- * Called after review submission or reaction submission.
+ * Blend audience signal into a film's sentiment graph. Called after a review
+ * or reaction is submitted.
+ *
+ * Inputs:
+ *  - critic beats: `criticDataPoints`, the graph exactly as generated. Legacy
+ *    rows blended before that column existed fall back to `dataPoints`. The
+ *    blend is always computed from this base, never from its own previous
+ *    output, so repeated blends do not compound toward the user averages.
+ *  - user beat ratings from every approved review that carries any. Reviews
+ *    with no text count too; a user's overall slider and the AI text
+ *    sentiment never enter the graph.
+ *  - live reactions from quality sessions, already on the 1 to 10 scale.
+ *
+ * Each beat is a weighted mean over the sources that actually have a value
+ * for it, with the weights renormalised per beat, so a beat nobody rated is
+ * not inflated by an unweighted critic score plus a reaction term.
+ *
+ * The write goes through the beat-lock merge: the film has beat ratings by
+ * definition when reviews are blended, so labels and timestamps stay fixed
+ * and only scores move. overallScore is derived from the blended beats by
+ * the write path.
  */
 export async function maybeBlendAndUpdate(filmId: string): Promise<void> {
-  const graph = await prisma.sentimentGraph.findUnique({ where: { filmId } })
+  const graph = await prisma.sentimentGraph.findUnique({
+    where: { filmId },
+    select: { overallScore: true, dataPoints: true, criticDataPoints: true },
+  })
   if (!graph) return // no graph to blend into
 
   const userReviews = await prisma.userReview.findMany({
-    where: { filmId, status: 'approved', sentiment: { not: null } },
+    where: { filmId, status: 'approved' },
     select: { beatRatings: true },
   })
 
@@ -57,74 +79,82 @@ export async function maybeBlendAndUpdate(filmId: string): Promise<void> {
     select: { reaction: true, score: true, sessionTimestamp: true },
   })
 
-  const hasEnoughReviews = userReviews.length >= MIN_USER_REVIEWS_FOR_BLEND
-  const hasEnoughReactions = liveReactions.length >= MIN_LIVE_REACTIONS_FOR_BLEND
+  // Beat averages across every review that rated beats, keyed by label.
+  const beatAverages = averageBeatRatings(userReviews.map((r) => r.beatRatings))
+  const ratedReviewCount = userReviews.filter((r) => hasBeatRatings(r.beatRatings)).length
 
+  const hasEnoughReviews = ratedReviewCount >= MIN_USER_REVIEWS_FOR_BLEND
+  const hasEnoughReactions = liveReactions.length >= MIN_LIVE_REACTIONS_FOR_BLEND
   if (!hasEnoughReviews && !hasEnoughReactions) return
 
   const weights = getBlendWeights(hasEnoughReviews, hasEnoughReactions)
-  const dataPoints = graph.dataPoints as unknown as SentimentDataPoint[]
+  const base = (
+    Array.isArray(graph.criticDataPoints) && graph.criticDataPoints.length > 0
+      ? graph.criticDataPoints
+      : graph.dataPoints
+  ) as unknown as SentimentDataPoint[]
 
-  // Blend user review beat ratings into data points
-  let blendedPoints = dataPoints.map((dp) => ({ ...dp }))
+  const buckets = hasEnoughReactions ? aggregateReactionsIntoBuckets(liveReactions, base) : {}
 
-  if (hasEnoughReviews) {
-    // Average beat ratings across all user reviews
-    const beatAverages: Record<string, { total: number; count: number }> = {}
-    for (const review of userReviews) {
-      if (!review.beatRatings) continue
-      const ratings = review.beatRatings as Record<string, number>
-      for (const [label, score] of Object.entries(ratings)) {
-        if (!beatAverages[label]) beatAverages[label] = { total: 0, count: 0 }
-        beatAverages[label].total += score
-        beatAverages[label].count++
-      }
+  const blendedPoints = base.map((dp, i) => {
+    const userAvg = hasEnoughReviews ? beatAverages[dp.label] : undefined
+    const reaction = hasEnoughReactions ? buckets[i] : undefined
+    let numerator = dp.score * weights.external
+    let denominator = weights.external
+    if (userAvg !== undefined) {
+      numerator += userAvg * weights.userReviews
+      denominator += weights.userReviews
     }
-
-    // Blend averaged beat ratings into matching data points
-    blendedPoints = blendedPoints.map((dp) => {
-      const avg = beatAverages[dp.label]
-      if (avg && avg.count > 0) {
-        const userAvg = avg.total / avg.count
-        dp.score = dp.score * weights.external + userAvg * weights.userReviews
-        if (hasEnoughReactions) {
-          // Leave room for reaction blend below
-        } else {
-          dp.score = dp.score / (weights.external + weights.userReviews)
-        }
-      }
-      return dp
-    })
-
-    // Blend live reactions into time buckets if applicable
-    if (hasEnoughReactions) {
-      const buckets = aggregateReactionsIntoBuckets(liveReactions, blendedPoints)
-      blendedPoints = blendedPoints.map((dp, i) => {
-        if (buckets[i] !== undefined) {
-          dp.score = dp.score + buckets[i] * weights.liveReactions
-        }
-        return dp
-      })
+    if (reaction !== undefined) {
+      numerator += reaction * weights.liveReactions
+      denominator += weights.liveReactions
     }
+    return { ...dp, score: Math.round((numerator / denominator) * 10) / 10 }
+  })
 
-    // The film's headline is the mean of the beats being written. User
-    // overall ratings and review sentiment never feed it; only beat ratings
-    // (blended into the points above) do. The write path derives the same
-    // value from whatever beats survive the beat-lock merge.
-    await safeWriteSentimentGraph({
-      filmId,
-      incomingDataPoints: blendedPoints,
-      otherFields: {
-        previousScore: graph.overallScore,
-        overallScore: overallScoreFromBeats(blendedPoints),
-        varianceSource: 'blended',
-      },
-      callerPath: 'review-blender',
-    })
-  }
+  await safeWriteSentimentGraph({
+    filmId,
+    incomingDataPoints: blendedPoints,
+    otherFields: {
+      previousScore: graph.overallScore,
+      overallScore: overallScoreFromBeats(blendedPoints),
+      varianceSource: 'blended',
+    },
+    callerPath: 'review-blender',
+  })
 }
 
-function aggregateReactionsIntoBuckets(
+function hasBeatRatings(value: unknown): value is Record<string, number> {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    Object.values(value as Record<string, unknown>).some((v) => typeof v === 'number')
+  )
+}
+
+export function averageBeatRatings(ratingSets: ReadonlyArray<unknown>): Record<string, number> {
+  const totals: Record<string, { total: number; count: number }> = {}
+  for (const ratings of ratingSets) {
+    if (!hasBeatRatings(ratings)) continue
+    for (const [label, score] of Object.entries(ratings)) {
+      if (typeof score !== 'number' || !Number.isFinite(score)) continue
+      if (!totals[label]) totals[label] = { total: 0, count: 0 }
+      totals[label].total += score
+      totals[label].count++
+    }
+  }
+  const averages: Record<string, number> = {}
+  for (const [label, { total, count }] of Object.entries(totals)) {
+    averages[label] = total / count
+  }
+  return averages
+}
+
+/**
+ * Average reaction score per beat. LiveReaction.score is stored on the 1 to
+ * 10 scale (reactions/route.ts), so the bucket average needs no rescaling.
+ */
+export function aggregateReactionsIntoBuckets(
   reactions: { score: number; sessionTimestamp: number }[],
   dataPoints: SentimentDataPoint[]
 ): Record<number, number> {
@@ -145,7 +175,7 @@ function aggregateReactionsIntoBuckets(
 
   const result: Record<number, number> = {}
   for (const [i, bucket] of Object.entries(buckets)) {
-    result[Number(i)] = bucket.total / bucket.count
+    result[Number(i)] = Math.max(1, Math.min(10, bucket.total / bucket.count))
   }
   return result
 }

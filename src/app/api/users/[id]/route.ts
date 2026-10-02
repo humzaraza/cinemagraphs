@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
 import { parseBackdropBannerValue } from '@/lib/banner-validation'
 import { publicReviewSelect } from '@/lib/film-detail'
+import { averageUserReviewScore } from '@/lib/user-review-score'
 
 export async function GET(
   _request: NextRequest,
@@ -70,11 +71,12 @@ export async function GET(
     // Compute stats
     const totalReviews = user.userReviews.length
     const avgRating =
-      totalReviews > 0
-        ? Math.round(
-            (user.userReviews.reduce((sum, r) => sum + r.overallRating, 0) / totalReviews) * 10
-          ) / 10
-        : 0
+      averageUserReviewScore(
+        user.userReviews.map((r) => ({
+          overallRating: r.overallRating,
+          beatRatings: r.beatRatings as Record<string, unknown> | null,
+        }))
+      ) ?? 0
     const graphsContributed = user.userReviews.filter((r) => r.beatRatings !== null).length
 
     // Dedupe live reactions by film

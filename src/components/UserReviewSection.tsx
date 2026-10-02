@@ -5,6 +5,7 @@ import { useSession, signIn } from 'next-auth/react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { formatReviewProse } from '@/lib/review-prose'
+import { userReviewScore } from '@/lib/user-review-score'
 import LikeButton from './LikeButton'
 import { useReviewLikes, type ReviewLikesMap } from '@/hooks/useReviewLikes'
 import { useReplyCounts, type ReplyCountsMap } from '@/hooks/useReplyCounts'
@@ -18,6 +19,7 @@ interface BeatInfo {
 interface ReviewData {
   id: string
   overallRating: number
+  beatRatings?: Record<string, number> | null
   beginning: string | null
   middle: string | null
   ending: string | null
@@ -350,20 +352,22 @@ export default function UserReviewSection({
                   >
                     {myReview.status === 'approved' ? 'Live' : myReview.status === 'flagged' ? 'Under review' : 'Rejected'}
                   </span>
-                  <span
-                    className="text-sm font-bold px-2 py-0.5 rounded"
-                    style={{
-                      backgroundColor:
-                        myReview.overallRating >= 8
-                          ? 'var(--cinema-teal)'
-                          : myReview.overallRating >= 6
-                            ? 'var(--cinema-gold)'
-                            : '#ef4444',
-                      color: 'var(--cinema-card)',
-                    }}
-                  >
-                    {myReview.overallRating.toFixed(1)}
-                  </span>
+                  {(() => {
+                    const score = userReviewScore(myReview.overallRating, myReview.beatRatings)
+                    return (
+                      <span
+                        className="text-sm font-bold px-2 py-0.5 rounded"
+                        title="Half your beat ratings, half your overall rating"
+                        style={{
+                          backgroundColor:
+                            score >= 8 ? 'var(--cinema-teal)' : score >= 6 ? 'var(--cinema-gold)' : '#ef4444',
+                          color: 'var(--cinema-card)',
+                        }}
+                      >
+                        {score.toFixed(1)}
+                      </span>
+                    )
+                  })()}
                 </div>
               </div>
               {(() => {
@@ -418,28 +422,7 @@ export default function UserReviewSection({
               </div>
             )}
 
-            {/* Overall Rating */}
-            <div>
-              <label className="block text-sm text-cinema-muted mb-2">
-                Overall Rating: <span className="text-cinema-gold font-bold text-lg">{overallRating}</span>
-              </label>
-              <input
-                type="range"
-                min={1}
-                max={10}
-                step={0.5}
-                value={overallRating}
-                onChange={(e) => setOverallRating(parseFloat(e.target.value))}
-                className="w-full accent-cinema-gold"
-              />
-              <div className="flex justify-between text-xs text-cinema-muted/60 mt-1">
-                <span>1</span>
-                <span>5.5</span>
-                <span>10</span>
-              </div>
-            </div>
-
-            {/* Beat Sliders — shown for any film with beats (NLP graph or Wikipedia source) */}
+            {/* Beat Sliders first: shown for any film with beats (NLP graph or Wikipedia source) */}
             {hasBeats && selectedBeats.length > 0 && (
               <div>
                 <style>{UNRATED_SLIDER_CSS}</style>
@@ -555,6 +538,34 @@ export default function UserReviewSection({
                 </p>
               </div>
             )}
+
+            {/* Overall Rating, after the beats. Your review score is half the
+                average of your beat ratings and half this slider; the film's
+                audience graph uses beat ratings only. */}
+            <div>
+              <label className="block text-sm text-cinema-muted mb-2">
+                Overall Rating: <span className="text-cinema-gold font-bold text-lg">{overallRating}</span>
+              </label>
+              <input
+                type="range"
+                min={1}
+                max={10}
+                step={0.5}
+                value={overallRating}
+                onChange={(e) => setOverallRating(parseFloat(e.target.value))}
+                className="w-full accent-cinema-gold"
+              />
+              <div className="flex justify-between text-xs text-cinema-muted/60 mt-1">
+                <span>1</span>
+                <span>5.5</span>
+                <span>10</span>
+              </div>
+              {hasBeats && selectedBeats.length > 0 && (
+                <p className="text-xs text-cinema-muted/70 mt-2">
+                  Your review score is half your beat ratings, half this rating.
+                </p>
+              )}
+            </div>
 
             {/* Prose */}
             <div>
@@ -747,20 +758,21 @@ function ReviewCard({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <span
-            className="text-sm font-bold px-2 py-0.5 rounded"
-            style={{
-              backgroundColor:
-                review.overallRating >= 8
-                  ? 'var(--cinema-teal)'
-                  : review.overallRating >= 6
-                    ? 'var(--cinema-gold)'
-                    : '#ef4444',
-              color: 'var(--cinema-card)',
-            }}
-          >
-            {review.overallRating.toFixed(1)}
-          </span>
+          {(() => {
+            const score = userReviewScore(review.overallRating, review.beatRatings)
+            return (
+              <span
+                className="text-sm font-bold px-2 py-0.5 rounded"
+                style={{
+                  backgroundColor:
+                    score >= 8 ? 'var(--cinema-teal)' : score >= 6 ? 'var(--cinema-gold)' : '#ef4444',
+                  color: 'var(--cinema-card)',
+                }}
+              >
+                {score.toFixed(1)}
+              </span>
+            )
+          })()}
           {currentUserId === review.user.id && (
             <button
               onClick={() => onDelete(review.id)}

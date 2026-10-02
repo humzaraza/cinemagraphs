@@ -18,7 +18,7 @@ const ROLE_PILL_FALLBACK: Record<OriginalRole, string> = {
 
 const ROLE_HEADLINE: Record<OriginalRole, string> = {
   opening: 'Where the story starts.',
-  setup: 'The audience settles in.',
+  setup: 'The film settles in.',
   drop: 'Then the floor drops out.',
   recovery: 'Then it finds its footing.',
   peak: "The film's highest moment.",

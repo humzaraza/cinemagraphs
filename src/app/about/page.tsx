@@ -45,15 +45,15 @@ function TealDashedGraph() {
 const faqs = [
   {
     q: 'Where does the external data come from?',
-    a: 'We aggregate reviews from TMDB, IMDb, The Guardian, and critic blogs. Scores are anchored against IMDb, Rotten Tomatoes, and Metacritic ratings to stay grounded.',
+    a: "We gather reviews from TMDB, IMDb, The Guardian, and critic blogs. The score is not tied to any other site's rating. It is the average of how the film plays across its runtime, built from what reviewers said about each stretch.",
   },
   {
     q: 'When does the teal community line appear?',
-    a: 'The teal line shows up once enough Cinemagraphs users have submitted manual reviews for a film. It takes at least 5 user reviews before the community data is blended in.',
+    a: 'As soon as one Cinemagraphs user rates a story beat. The label next to the line shows how many people have rated, so a line built from one or two ratings reads as exactly that. The more people rate, the more the line settles.',
   },
   {
     q: 'Why is a scene I loved rated low?',
-    a: "Scores reflect how audiences felt during a scene, not whether the scene is well-made. A heartbreaking scene in a great drama often scores low because what you're feeling is grief or dread, even though the scene itself is masterful. This is why great films often have the biggest peaks right after the biggest dips. The emotional contrast is the point. A low score on a powerful scene usually means the scene did its job of making you feel something difficult.",
+    a: 'Each stretch of the film is scored on what reviewers said about it, not on whether the scene is happy or sad. A devastating scene that critics call masterful scores high. A stretch reviewers found slow, shallow, or confused scores low, however the characters feel in it. If a scene you loved sits low, that is where the reviews disagree with you.',
   },
   {
     q: 'Can I contribute my own review?',
@@ -80,7 +80,7 @@ export default function AboutPage() {
           What is Cinemagraphs?
         </h1>
         <p className="text-base md:text-lg text-cinema-muted leading-relaxed max-w-2xl mx-auto mb-8">
-          A traditional single score tells you very little about a film. Cinemagraphs shows you how audience sentiment moves through a film from start to finish, so you understand not just what people thought, but when and why.
+          A traditional single score tells you very little about a film. Cinemagraphs shows you how a film plays from start to finish, built from what reviewers said about each stretch, so you understand not just what they thought, but when and why.
         </p>
         <div className="w-16 h-px bg-cinema-gold/40 mx-auto mb-4" />
         <p className="text-sm text-cinema-gold italic">Every film has an emotional arc. We visualize it.</p>
@@ -169,7 +169,7 @@ export default function AboutPage() {
               Manual reviews from Cinemagraphs users
             </h3>
             <p className="text-sm text-cinema-muted leading-relaxed">
-              The teal dashed line represents ratings submitted by Cinemagraphs users. When you leave a review, you rate specific story beats across the film. These are aggregated and blended with external data to create a more complete picture of audience sentiment.
+              The teal dashed line represents ratings submitted by Cinemagraphs users. When you leave a review, you rate specific story beats across the film. These are averaged beat by beat into the audience line, so you can see where Cinemagraphs users agree with the reviews and where they do not.
             </p>
           </div>
           <div className="bg-cinema-darker rounded-xl border border-cinema-border p-5 md:order-1">
@@ -207,10 +207,10 @@ export default function AboutPage() {
 
         <div className="max-w-3xl mx-auto space-y-4 text-sm md:text-base text-cinema-muted leading-relaxed mb-12">
           <p>
-            At the top of the homepage you will find the Movie Market, a live ticker showing films currently playing in theaters. Each film displays its Cinemagraphs Score, a mini sentiment sparkline, and a daily score change indicator so you can see which films are gaining momentum and which are losing it.
+            At the top of the homepage you will find the Movie Market, a live ticker showing films currently playing in theaters. Each film displays its Cinemagraphs Score, a mini sentiment sparkline, and a score change indicator so you can see which films are gaining momentum and which are losing it.
           </p>
           <p>
-            Think of it as a stock market ticker, but for audience sentiment. Check back daily to see how scores shift as more people watch and react.
+            Scores move as new reviews come in. While a film is in theaters, its graph is rebuilt whenever enough new reviews have arrived, up to twice a week, so check back to see how its arc settles.
           </p>
         </div>
 
@@ -295,14 +295,13 @@ export default function AboutPage() {
           How the Cinemagraphs Score works
         </h2>
         <p className="text-sm md:text-base text-cinema-muted text-center max-w-xl mx-auto mb-10">
-          The score you see on every film is a weighted blend of all available data, not a simple average of star ratings. It reflects how audiences felt across the full runtime.
+          The Cinemagraphs Score is the average of how the film plays across its runtime. We score each stretch of the film from what reviewers said about it, then average those beat scores. It is not a star rating and it is not tied to any other site&apos;s score.
         </p>
         <div className="space-y-3">
           {[
-            { range: '9 - 10', color: 'var(--cinema-teal)', label: 'Exceptional', desc: 'Near-universal acclaim across the full runtime.' },
-            { range: '7 - 8.9', color: 'var(--cinema-gold)', label: 'Great', desc: 'Strong positive sentiment with minor dips.' },
-            { range: '5 - 6.9', color: 'rgba(255,255,255,0.5)', label: 'Mixed', desc: 'Significant highs and lows, or consistently average.' },
-            { range: 'Below 5', color: '#ef4444', label: 'Poor', desc: 'Predominantly negative sentiment throughout.' },
+            { range: '8 - 10', color: 'var(--cinema-teal)', label: 'Great', desc: 'Reviewers praised most of the runtime, with few weak stretches.' },
+            { range: '6 - 7.9', color: 'var(--cinema-gold)', label: 'Good', desc: 'More praise than criticism, with real dips along the way.' },
+            { range: 'Below 6', color: '#ef4444', label: 'Poor', desc: 'Criticism outweighs praise across the film.' },
           ].map((tier) => (
             <div
               key={tier.range}
@@ -376,7 +375,7 @@ export default function AboutPage() {
               This website uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.
             </p>
             <p className="text-cinema-muted text-sm mt-3 leading-relaxed">
-              Film metadata, posters, and backdrops are provided by The Movie Database. Anchor scores (IMDb, Rotten Tomatoes, Metacritic) are provided by{' '}
+              Film metadata, posters, and backdrops are provided by The Movie Database. Reference ratings from IMDb, Rotten Tomatoes, and Metacritic are shown for context, do not feed the Cinemagraphs Score, and are provided by{' '}
               <a
                 href="https://www.omdbapi.com/"
                 target="_blank"

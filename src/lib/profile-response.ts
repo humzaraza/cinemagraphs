@@ -1,5 +1,6 @@
 import { prisma } from './prisma'
 import type { SentimentDataPoint } from './types'
+import { userReviewScore } from './user-review-score'
 
 const RECENT_REVIEWS_LIMIT = 5
 const LISTS_LIMIT = 3
@@ -157,7 +158,7 @@ export async function buildProfileResponse(userId: string) {
       director: r.film.director,
       posterUrl: r.film.posterUrl,
       backdropUrl: r.film.backdropUrl,
-      score: r.overallRating,
+      score: userReviewScore(r.overallRating, r.beatRatings as Record<string, unknown> | null),
       sparklinePoints: userSparklinePoints(dataPoints, r.beatRatings),
     }
   })

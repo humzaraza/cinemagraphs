@@ -30,7 +30,7 @@ const bebas = Bebas_Neue({
 export const metadata: Metadata = {
   title: "Cinemagraphs: Visualize Movie Sentiment",
   description:
-    "See how audience opinion moves through a film, not just the final verdict.",
+    "See how a film plays from start to finish, built from what reviewers said about each stretch, not just the final verdict.",
   openGraph: {
     title: "Cinemagraphs: Visualize Movie Sentiment",
     description:

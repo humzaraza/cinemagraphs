@@ -215,6 +215,7 @@ export type BeatLockCallerPath =
   | 'script-batch-analyze'
   | 'script-bulk-regen-hybrid'
   | 'script-backfill-graph-mean'
+  | 'script-restore-critic-beats'
   | 'script-test-pipeline'
   | 'script-backfill-wikipedia-beats'
   | 'script-diagnose-film'
@@ -317,7 +318,7 @@ async function safeWriteInTransaction(params: {
         existingBeatCount,
         incomingBeatCount: incomingDataPoints.length,
       })
-      await writeRow(tx, { filmId, existing, dataPoints: incomingDataPoints, otherFields: fields })
+      await writeRow(tx, { filmId, existing, dataPoints: incomingDataPoints, otherFields: fields, callerPath })
       return {
         status: 'written',
         acceptedBeatCount: incomingDataPoints.length,
@@ -340,7 +341,7 @@ async function safeWriteInTransaction(params: {
         existingBeatCount,
         incomingBeatCount: incomingDataPoints.length,
       })
-      await writeRow(tx, { filmId, existing, dataPoints: incomingDataPoints, otherFields: fields })
+      await writeRow(tx, { filmId, existing, dataPoints: incomingDataPoints, otherFields: fields, callerPath })
       return {
         status: 'written',
         acceptedBeatCount: incomingDataPoints.length,
@@ -391,7 +392,7 @@ async function safeWriteInTransaction(params: {
           'safeWriteSentimentGraph: film has no user beat ratings, incoming beats replace stored beats'
         )
       }
-      await writeRow(tx, { filmId, existing, dataPoints: incomingDataPoints, otherFields: fields })
+      await writeRow(tx, { filmId, existing, dataPoints: incomingDataPoints, otherFields: fields, callerPath })
       return {
         status: 'written',
         acceptedBeatCount: incomingDataPoints.length,
@@ -507,7 +508,7 @@ async function safeWriteInTransaction(params: {
       )
     }
 
-    await writeRow(tx, { filmId, existing, dataPoints: mergedInOrder, otherFields: fields })
+    await writeRow(tx, { filmId, existing, dataPoints: mergedInOrder, otherFields: fields, callerPath })
 
     return {
       status: hasDrops ? 'written_with_drops' : 'written',
@@ -578,10 +579,14 @@ async function forceOverwriteInTransaction(params: {
       existingBeatCount: Array.isArray(existing?.dataPoints) ? existing.dataPoints.length : 0,
       incomingBeatCount: dataPoints.length,
     })
+    // A force overwrite is always a generation write, so the beats are the
+    // new blend base as well.
+    const criticDataPoints = dataPoints as unknown as Prisma.InputJsonValue
     if (existing) {
       const updateData = {
         ...otherFields,
         dataPoints: dataPoints as unknown as Prisma.InputJsonValue,
+        criticDataPoints,
         arcShape,
       }
       await tx.sentimentGraph.update({
@@ -593,6 +598,7 @@ async function forceOverwriteInTransaction(params: {
         ...otherFields,
         filmId,
         dataPoints: dataPoints as unknown as Prisma.InputJsonValue,
+        criticDataPoints,
         arcShape,
       }
       await tx.sentimentGraph.create({
@@ -611,18 +617,25 @@ async function writeRow(
     existing: { id: string } | null
     dataPoints: SentimentDataPoint[]
     otherFields: SafeWriteOtherFields
+    callerPath: BeatLockCallerPath
   }
 ) {
-  const { filmId, existing, dataPoints, otherFields } = args
+  const { filmId, existing, dataPoints, otherFields, callerPath } = args
   // Classify from the EXACT dataPoints being written (post-merge in the merge
   // path) and the incoming headline score, so arcShape never desyncs from the
   // beats it describes. This is the single chokepoint every writer funnels
   // through, so every caller gets arcShape populated.
   const arcShape = classifyArcShape(dataPoints, otherFields.overallScore)
+  // Every writer except the blender is writing critic beats, so they are
+  // also the new blend base. The blender writes the blended view into
+  // dataPoints and must leave criticDataPoints alone.
+  const criticDataPoints =
+    callerPath === 'review-blender' ? {} : { criticDataPoints: dataPoints as unknown as Prisma.InputJsonValue }
   if (existing) {
     const updateData = {
       ...otherFields,
       dataPoints: dataPoints as unknown as Prisma.InputJsonValue,
+      ...criticDataPoints,
       arcShape,
     }
     await tx.sentimentGraph.update({
@@ -634,6 +647,7 @@ async function writeRow(
       ...otherFields,
       filmId,
       dataPoints: dataPoints as unknown as Prisma.InputJsonValue,
+      ...criticDataPoints,
       arcShape,
     }
     await tx.sentimentGraph.create({

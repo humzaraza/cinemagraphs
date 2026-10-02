@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import { prisma } from '@/lib/prisma'
 import { apiLogger } from '@/lib/logger'
+import { userReviewScore } from '@/lib/user-review-score'
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,6 +20,7 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: 'desc' },
         select: {
           overallRating: true,
+          beatRatings: true,
           createdAt: true,
           film: {
             select: {
@@ -42,7 +44,7 @@ export async function GET(request: NextRequest) {
           posterUrl: r.film.posterUrl,
           year: r.film.releaseDate ? new Date(r.film.releaseDate).getFullYear() : null,
           genres: r.film.genres,
-          reviewScore: r.overallRating,
+          reviewScore: userReviewScore(r.overallRating, r.beatRatings as Record<string, unknown> | null),
           reviewDate: r.createdAt,
           sparkline: r.film.sentimentGraph?.dataPoints ?? null,
         })),

@@ -11,6 +11,7 @@ function makeGraph(reviewCount: number): SentimentGraph {
     previousScore: null,
     anchoredFrom: 'imdb',
     dataPoints: [],
+    criticDataPoints: null,
     peakMoment: null,
     lowestMoment: null,
     biggestSwing: null,

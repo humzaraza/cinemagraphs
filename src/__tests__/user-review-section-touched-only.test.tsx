@@ -116,10 +116,11 @@ function renderAndStartEditing(stored: Record<string, number> | null) {
 
 function beatSliders(): HTMLInputElement[] {
   const sliders = screen.getAllByRole('slider') as HTMLInputElement[]
-  // The first slider is the overall rating; the rest map 1:1 onto BEATS in
-  // order (4 beats stay under selectBeats' 8-beat cap, so none are dropped).
-  expect(sliders).toHaveLength(1 + BEATS.length)
-  return sliders.slice(1)
+  // Beat sliders come first and map 1:1 onto BEATS in order (4 beats stay
+  // under selectBeats' 8-beat cap, so none are dropped); the overall rating
+  // slider is last.
+  expect(sliders).toHaveLength(BEATS.length + 1)
+  return sliders.slice(0, BEATS.length)
 }
 
 function rateBeat(index: number, value: number) {
