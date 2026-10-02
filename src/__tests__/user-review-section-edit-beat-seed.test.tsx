@@ -98,9 +98,10 @@ function renderAndStartEditing(beatRatings: Record<string, number> | null) {
 
 function beatSliders(): HTMLInputElement[] {
   const sliders = screen.getAllByRole('slider') as HTMLInputElement[]
-  // First slider is the overall rating; the rest map 1:1 onto BEATS in order.
-  expect(sliders).toHaveLength(1 + BEATS.length)
-  return sliders.slice(1)
+  // Beat sliders come first and map 1:1 onto BEATS in order; the overall
+  // rating slider is last.
+  expect(sliders).toHaveLength(BEATS.length + 1)
+  return sliders.slice(0, BEATS.length)
 }
 
 describe('UserReviewSection: edit path beat-rating seeding', () => {

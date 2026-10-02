@@ -11,6 +11,7 @@ import NewListModal from '@/components/NewListModal'
 import ProfileBanner from '@/components/ProfileBanner'
 import ReviewBeatOverlay from '@/components/ReviewBeatOverlay'
 import { hasDrawableArc } from '@/lib/beat-overlay'
+import { userReviewScore } from '@/lib/user-review-score'
 import LikeButton, { type LikeButtonMode } from '@/components/LikeButton'
 import { useReviewLikes, type ReviewLikesMap } from '@/hooks/useReviewLikes'
 import { useReplyCounts, type ReplyCountsMap } from '@/hooks/useReplyCounts'
@@ -777,7 +778,10 @@ function ReviewCard({
   onShare: () => void
 }) {
   const { film } = review
-  const ratingColor = review.overallRating >= 7 ? 'var(--cinema-gold)' : '#ef4444'
+  const reviewScore = userReviewScore(review.overallRating, review.beatRatings)
+  // Same 8 / 6 tiers as everywhere else on the site.
+  const ratingColor =
+    reviewScore >= 8 ? 'var(--cinema-teal)' : reviewScore >= 6 ? 'var(--cinema-gold)' : '#ef4444'
   const hasBeatRatings = review.beatRatings !== null
   const like = likesMap[review.id] ?? { count: 0, liked: false }
   const replyCount = replyCounts[review.id] ?? 0
@@ -821,7 +825,7 @@ function ReviewCard({
               className="font-[family-name:var(--font-bebas)] text-xl shrink-0"
               style={{ color: ratingColor }}
             >
-              {review.overallRating.toFixed(1)}
+              {reviewScore.toFixed(1)}
             </span>
           </div>
 

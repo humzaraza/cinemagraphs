@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import type { SentimentDataPoint } from '@/lib/types'
+import { averageUserReviewScore, userReviewScore } from '@/lib/user-review-score'
 
 /**
  * Shared data-access for the film detail page and its sibling API routes.
@@ -97,19 +98,21 @@ export async function getFilmReviewsPage(
   // review, never the per-user exclusion filter.
   const allReviews = await prisma.userReview.findMany({
     where: approvedFilter,
-    select: { overallRating: true, sentiment: true, beginning: true, middle: true, ending: true },
+    select: { overallRating: true, beatRatings: true, beginning: true, middle: true, ending: true },
   })
 
-  const avgRating =
-    allReviews.length > 0
-      ? Math.round(
-          (allReviews.reduce((sum, r) => sum + r.overallRating, 0) / allReviews.length) * 10,
-        ) / 10
-      : null
+  // Community numbers use each review's displayed score: the 50/50 blend of
+  // the reviewer's beat ratings and overall slider (userReviewScore).
+  const reviewScores = allReviews.map((r) =>
+    userReviewScore(r.overallRating, r.beatRatings as Record<string, unknown> | null)
+  )
+  const avgRating = averageUserReviewScore(
+    allReviews.map((r) => ({ overallRating: r.overallRating, beatRatings: r.beatRatings as Record<string, unknown> | null }))
+  )
 
   const distribution = Array.from({ length: 10 }, (_, i) => ({
     score: i + 1,
-    count: allReviews.filter((r) => Math.round(r.overallRating) === i + 1).length,
+    count: reviewScores.filter((s) => Math.round(s) === i + 1).length,
   }))
 
   const withBeginning = allReviews.filter((r) => r.beginning)
@@ -150,7 +153,11 @@ export async function getUserReviewForFilm(filmId: string, userId: string) {
 // ---------------------------------------------------------------------------
 
 export interface FilmAudienceData {
+  /** Approved reviews on the film, with or without beat ratings. */
   userReviewCount: number
+  /** Approved reviews that rated at least one beat: the people behind the
+   *  audience line. Shown next to the line's label. */
+  beatRaterCount: number
   beatAverages: Record<string, number>
   liveSessionCount: number
   reactionScores: { index: number; score: number }[]
@@ -171,14 +178,19 @@ export async function getFilmAudienceData(filmId: string): Promise<FilmAudienceD
 
   // Average beat ratings per label
   const beatTotals: Record<string, { total: number; count: number }> = {}
+  let beatRaterCount = 0
   for (const review of reviews) {
     if (!review.beatRatings) continue
     const ratings = review.beatRatings as Record<string, number>
+    let ratedAny = false
     for (const [label, score] of Object.entries(ratings)) {
+      if (typeof score !== 'number' || !Number.isFinite(score)) continue
+      ratedAny = true
       if (!beatTotals[label]) beatTotals[label] = { total: 0, count: 0 }
       beatTotals[label].total += score
       beatTotals[label].count++
     }
+    if (ratedAny) beatRaterCount++
   }
   const beatAverages: Record<string, number> = {}
   for (const [label, { total, count }] of Object.entries(beatTotals)) {
@@ -228,16 +240,20 @@ export async function getFilmAudienceData(filmId: string): Promise<FilmAudienceD
         }
       }
 
-      // Normalize reaction averages to 1-10 scale (centered at 5)
+      // LiveReaction.score is stored on the 1 to 10 scale already
+      // (reactions/route.ts), so the bucket average is the score. The old
+      // `5 + avg * 5` mapping assumed a -1..1 scale and clamped every normal
+      // bucket to 10.
       reactionScores = Object.entries(buckets).map(([i, b]) => ({
         index: Number(i),
-        score: Math.max(1, Math.min(10, 5 + (b.total / b.count) * 5)),
+        score: Math.max(1, Math.min(10, b.total / b.count)),
       }))
     }
   }
 
   return {
     userReviewCount: reviews.length,
+    beatRaterCount,
     beatAverages,
     liveSessionCount,
     reactionScores,

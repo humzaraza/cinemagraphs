@@ -7,6 +7,7 @@ import { getMobileOrServerSession } from '@/lib/mobile-auth'
 import ReviewComments from '@/components/ReviewComments'
 import ReviewBeatOverlay from '@/components/ReviewBeatOverlay'
 import { formatReviewProse } from '@/lib/review-prose'
+import { userReviewScore } from '@/lib/user-review-score'
 import { buildBeatOverlay } from '@/lib/beat-overlay'
 import { tmdbImageUrl, formatDate, truncate } from '@/lib/utils'
 import type { SentimentDataPoint } from '@/lib/types'
@@ -84,6 +85,7 @@ export default async function ReviewPage({ params }: Props) {
   const dataPoints =
     (film.sentimentGraph?.dataPoints as unknown as SentimentDataPoint[] | null) ?? []
   const beatRatings = review.beatRatings as Record<string, number> | null
+  const reviewScore = userReviewScore(review.overallRating, beatRatings)
   // Same run/dot rule the svg draws with; a legacy row holding null, {}, or
   // only unmatched labels renders no graph block and no legend.
   const overlay = buildBeatOverlay(dataPoints, beatRatings, GRAPH_GEOMETRY)
@@ -163,15 +165,15 @@ export default async function ReviewPage({ params }: Props) {
             className="text-sm font-bold px-2 py-0.5 rounded"
             style={{
               backgroundColor:
-                review.overallRating >= 8
+                reviewScore >= 8
                   ? 'var(--cinema-teal)'
-                  : review.overallRating >= 6
+                  : reviewScore >= 6
                     ? 'var(--cinema-gold)'
                     : '#ef4444',
               color: 'var(--cinema-card)',
             }}
           >
-            {review.overallRating.toFixed(1)}
+            {reviewScore.toFixed(1)}
           </span>
         </div>
 

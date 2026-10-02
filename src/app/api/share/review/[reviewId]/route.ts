@@ -6,6 +6,7 @@ import sharp from 'sharp'
 import React from 'react'
 import { fetchTmdbImageAsDataUri } from '@/lib/tmdb-image'
 import { buildBeatOverlay } from '@/lib/beat-overlay'
+import { userReviewScore } from '@/lib/user-review-score'
 import { hasRuntime, buildRulerMinutes, formatRulerLabel } from '@/lib/time-axis'
 
 export const dynamic = 'force-dynamic'
@@ -653,10 +654,11 @@ export async function GET(
       ? new Date(review.film.releaseDate).getFullYear().toString()
       : ''
     const director = review.film.director || ''
-    const score = review.overallRating
+    const beatRatings = review.beatRatings as Record<string, number> | null
+    // The poster shows the review's score: half beat ratings, half overall.
+    const score = userReviewScore(review.overallRating, beatRatings)
     const quoteText = review.combinedText ? truncateAtWord(review.combinedText, 140) : ''
     const username = review.user.name || review.user.email.split('@')[0]
-    const beatRatings = review.beatRatings as Record<string, number> | null
     const graphLabels = (review.film.sentimentGraph?.dataPoints as unknown as GraphBeat[]) || []
     // Pre-fetch poster + backdrop as data URIs. Satori cannot decode WebP/AVIF
     // (its image handler throws "u is not iterable"), and TMDB serves WebP based

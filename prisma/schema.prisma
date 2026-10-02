@@ -240,6 +240,11 @@ model SentimentGraph {
   previousScore   Float?
   anchoredFrom    String
   dataPoints      Json
+  // The critic beats exactly as generated, untouched by the audience blend.
+  // dataPoints may carry the blended view; the blender always re-blends from
+  // this column so blends never compound. NULL only on legacy rows that were
+  // blended before the column existed.
+  criticDataPoints Json?
   peakMoment      Json?
   lowestMoment    Json?
   biggestSwing    String?

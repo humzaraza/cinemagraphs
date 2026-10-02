@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   decideCronRegen,
   MATURE_DAYS,
+  NOW_PLAYING_MIN_REBUILD_DAYS,
   QUALITY_REVIEW_THRESHOLD,
   REGEN_INTERVAL_DAYS,
 } from '@/lib/cron-skip-logic'
@@ -136,5 +137,51 @@ describe('decideCronRegen', () => {
       now: NOW,
     })
     expect(result).toEqual({ skip: false, reason: 'eligible_no_graph' })
+  })
+
+  describe('now-playing weekly cap', () => {
+    it('skips a now-playing film rebuilt less than NOW_PLAYING_MIN_REBUILD_DAYS ago', () => {
+      const result = decideCronRegen({
+        releaseDate: daysAgo(10),
+        qualityReviewCount: 5,
+        lastRegenAt: daysAgo(NOW_PLAYING_MIN_REBUILD_DAYS - 1),
+        nowPlaying: true,
+        now: NOW,
+      })
+      expect(result).toEqual({ skip: true, reason: 'skipped_now_playing_recent_rebuild' })
+    })
+
+    it('lets a now-playing film through once NOW_PLAYING_MIN_REBUILD_DAYS have passed', () => {
+      const result = decideCronRegen({
+        releaseDate: daysAgo(10),
+        qualityReviewCount: 5,
+        lastRegenAt: daysAgo(NOW_PLAYING_MIN_REBUILD_DAYS),
+        nowPlaying: true,
+        now: NOW,
+      })
+      expect(result).toEqual({ skip: false, reason: 'eligible_recent_release' })
+    })
+
+    it('does not apply the cap to films that are not now playing', () => {
+      const result = decideCronRegen({
+        releaseDate: daysAgo(10),
+        qualityReviewCount: 5,
+        lastRegenAt: daysAgo(1),
+        nowPlaying: false,
+        now: NOW,
+      })
+      expect(result).toEqual({ skip: false, reason: 'eligible_recent_release' })
+    })
+
+    it('still generates a first graph for a now-playing film with none', () => {
+      const result = decideCronRegen({
+        releaseDate: daysAgo(2),
+        qualityReviewCount: 0,
+        lastRegenAt: null,
+        nowPlaying: true,
+        now: NOW,
+      })
+      expect(result).toEqual({ skip: false, reason: 'eligible_no_graph' })
+    })
   })
 })

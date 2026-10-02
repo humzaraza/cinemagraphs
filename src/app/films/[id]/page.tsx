@@ -26,6 +26,7 @@ import {
   getWatchlistStatus,
 } from '@/lib/film-detail'
 import { cachedQuery, KEYS, TTL } from '@/lib/cache'
+import { userReviewScore } from '@/lib/user-review-score'
 import type { UserReviewSectionInitialData } from '@/components/UserReviewSection'
 import type { CastMember, PeakLowMoment, SentimentDataPoint } from '@/lib/types'
 
@@ -74,6 +75,7 @@ export default async function FilmPage({
         where: { filmId: id, status: 'approved' },
         select: {
           overallRating: true,
+          beatRatings: true,
           combinedText: true,
           createdAt: true,
           user: { select: { name: true } },
@@ -215,17 +217,22 @@ export default async function FilmPage({
     ...(film.genres.length > 0 && { genre: film.genres }),
   }
 
-  if (film.sentimentGraph) {
+  // Google's review-snippet rules forbid ratings aggregated from reviews on
+  // other sites, and the Cinemagraphs Score is built from exactly those. So
+  // the aggregate rating, when present, is built only from reviews people
+  // left here, and each of those is also marked up individually.
+  if (userReviews.length > 0) {
+    const userScores = userReviews.map((r) =>
+      userReviewScore(r.overallRating, r.beatRatings as Record<string, unknown> | null)
+    )
     jsonLd.aggregateRating = {
       '@type': 'AggregateRating',
-      ratingValue: film.sentimentGraph.overallScore,
+      ratingValue: Math.round((userScores.reduce((a, b) => a + b, 0) / userScores.length) * 10) / 10,
       bestRating: 10,
       worstRating: 1,
-      ratingCount: film.sentimentGraph.reviewCount,
+      ratingCount: userReviews.length,
+      reviewCount: userReviews.filter((r) => r.combinedText).length,
     }
-  }
-
-  if (userReviews.length > 0) {
     jsonLd.review = userReviews
       .filter((r) => r.combinedText)
       .map((r) => ({
@@ -234,7 +241,7 @@ export default async function FilmPage({
         datePublished: new Date(r.createdAt).toISOString().split('T')[0],
         reviewRating: {
           '@type': 'Rating',
-          ratingValue: r.overallRating,
+          ratingValue: userReviewScore(r.overallRating, r.beatRatings as Record<string, unknown> | null),
           bestRating: 10,
           worstRating: 1,
         },

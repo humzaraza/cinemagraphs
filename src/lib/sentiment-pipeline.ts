@@ -40,6 +40,11 @@ export { isQualityReview }
 // display agree on the same floor.
 export const MIN_QUALITY_REVIEWS_FOR_GENERATION = 3
 
+// Rebuild trigger for now-playing films (see filmNeedsReanalysis). The
+// weekly cap lives in cron-skip-logic.ts (NOW_PLAYING_MIN_REBUILD_DAYS).
+export const NOW_PLAYING_MIN_NEW_REVIEWS = 3
+export const NOW_PLAYING_NEW_REVIEW_SHARE = 0.2
+
 /**
  * Check if a film needs re-analysis based on review growth threshold.
  * Returns true if:
@@ -79,7 +84,13 @@ export async function filmNeedsReanalysis(filmId: string): Promise<{ needsAnalys
     }
   }
 
-  const threshold = Math.max(1, Math.ceil(lastCount * 0.10))
+  // Now-playing films gather reviews fast; one new review out of five is
+  // not a reason to rebuild. They need at least NOW_PLAYING_MIN_NEW_REVIEWS
+  // new quality reviews or a 20% increase, whichever is larger. Everything
+  // else keeps the original 10% (minimum 1) rule.
+  const threshold = film.nowPlaying
+    ? Math.max(NOW_PLAYING_MIN_NEW_REVIEWS, Math.ceil(lastCount * NOW_PLAYING_NEW_REVIEW_SHARE))
+    : Math.max(1, Math.ceil(lastCount * 0.10))
   const newReviews = filteredCount - lastCount
 
   if (newReviews >= threshold) {
