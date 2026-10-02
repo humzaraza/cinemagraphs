@@ -33,7 +33,27 @@ function withDerivedOverallScore<T extends { overallScore?: number }>(
 // on every path, against the overallScore it will carry. A failing write is
 // rejected by throwing inside the transaction, so nothing is persisted.
 
-export type MeanDriftWritePath = 'first_write' | 'merge' | 'lock_disabled' | 'force_overwrite'
+export type MeanDriftWritePath =
+  | 'first_write'
+  | 'merge'
+  | 'replace_unrated'
+  | 'lock_disabled'
+  | 'force_overwrite'
+
+// The merge only protects something when the film has user beat ratings,
+// which are keyed by beat label. Count reviews carrying a non-empty
+// beatRatings object; an empty object is not a rating.
+async function countBeatRatedReviews(tx: Prisma.TransactionClient, filmId: string): Promise<number> {
+  const rows = await tx.$queryRaw<Array<{ rated: number | bigint }>>`
+    SELECT count(*)::int AS rated
+    FROM "UserReview"
+    WHERE "filmId" = ${filmId}
+      AND "beatRatings" IS NOT NULL
+      AND jsonb_typeof("beatRatings") = 'object'
+      AND "beatRatings" <> '{}'::jsonb
+  `
+  return Number(rows[0]?.rated ?? 0)
+}
 
 export class SentimentGraphMeanDriftError extends Error {
   readonly filmId: string
@@ -223,6 +243,9 @@ export interface SafeWriteResult {
   acceptedBeatCount: number
   droppedIncomingLabels: string[]
   preservedExistingLabels: string[]
+  /** Set when the film had no user beat ratings and the incoming beats
+   *  replaced the stored ones outright: the old labels that disappeared. */
+  replacedExistingLabels?: string[]
 }
 
 type MismatchReason = 'not_in_existing' | 'missing_from_incoming'
@@ -326,7 +349,59 @@ async function safeWriteInTransaction(params: {
       }
     }
 
-    // Merge path — existing labels + timestamps are sticky. Scores,
+    // No user beat ratings on this film: there is nothing the lock could
+    // protect, so the incoming beats replace the stored ones outright
+    // (labels, timestamps, scores) and the headline is their mean. This is
+    // what makes an admin Regenerate actually regenerate. The label churn is
+    // still recorded in the drift log for audit.
+    const ratedReviews = await countBeatRatedReviews(tx, filmId)
+    if (ratedReviews === 0) {
+      const fields = withDerivedOverallScore(incomingDataPoints, otherFields)
+      assertRowWithinTolerance({
+        filmId,
+        callerPath,
+        path: 'replace_unrated',
+        dataPoints: incomingDataPoints,
+        incomingOverallScore: fields.overallScore,
+        existingOverallScore,
+        existingBeatCount,
+        incomingBeatCount: incomingDataPoints.length,
+      })
+      const incomingLabelSet = new Set(incomingDataPoints.map((b) => b.label))
+      const existingLabelSet = new Set(existingBeats.map((b) => b.label))
+      const newLabels = incomingDataPoints.map((b) => b.label).filter((l) => !existingLabelSet.has(l))
+      const replacedExistingLabels = existingBeats.map((b) => b.label).filter((l) => !incomingLabelSet.has(l))
+      if (newLabels.length > 0 || replacedExistingLabels.length > 0 || incomingDataPoints.length !== existingBeatCount) {
+        await tx.sentimentGraphDriftLog.create({
+          data: {
+            filmId,
+            callerPath,
+            existingBeatCount,
+            incomingBeatCount: incomingDataPoints.length,
+            mismatchedLabels: [
+              ...newLabels.map((label) => ({ incoming: label, reason: 'not_in_existing' as const })),
+              ...replacedExistingLabels.map((label) => ({ incoming: label, reason: 'missing_from_incoming' as const })),
+            ] as unknown as Prisma.InputJsonValue,
+            action: 'write_replaced_unrated',
+            envLockEnabled: true,
+          },
+        })
+        beatLockLogger.info(
+          { filmId, callerPath, existingBeatCount, incomingBeatCount: incomingDataPoints.length, replacedCount: replacedExistingLabels.length },
+          'safeWriteSentimentGraph: film has no user beat ratings, incoming beats replace stored beats'
+        )
+      }
+      await writeRow(tx, { filmId, existing, dataPoints: incomingDataPoints, otherFields: fields })
+      return {
+        status: 'written',
+        acceptedBeatCount: incomingDataPoints.length,
+        droppedIncomingLabels: [],
+        preservedExistingLabels: [],
+        replacedExistingLabels,
+      }
+    }
+
+    // Merge path (the film has user beat ratings): existing labels + timestamps are sticky. Scores,
     // confidence, and reviewEvidence update from incoming when labels match.
     const existingByLabel = new Map<string, SentimentDataPoint>()
     for (const beat of existingBeats) existingByLabel.set(beat.label, beat)

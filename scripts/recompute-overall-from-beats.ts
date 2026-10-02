@@ -4,12 +4,13 @@
  * applies (overallScoreFromBeats in src/lib/sentiment-guards.ts).
  *
  * For each row whose stored overallScore differs from that mean:
- *   previousScore <- current overallScore
  *   overallScore  <- round1(mean(dataPoints[].score))
+ *   previousScore <- that same new value, so the Movie Market shows no
+ *                    movement from this correction (rollback is covered by a
+ *                    Neon branch, not by previousScore)
  *   arcShape      <- classifyArcShape(dataPoints, new overallScore)
  * then the film's cache keys are invalidated. Rows already equal to the mean
- * are left completely untouched, so an earlier genuine previousScore delta on
- * a consistent row is not wiped. The homepage cache is invalidated once at
+ * are left completely untouched. The homepage cache is invalidated once at
  * the end because its sections order by overallScore.
  *
  * Writes are optimistic: UPDATE ... WHERE id = ? AND overallScore = <value
@@ -176,7 +177,7 @@ async function main() {
       // Optimistic: only if the row still carries the value we read.
       const result = await prisma.sentimentGraph.updateMany({
         where: { id: c.graphId, overallScore: c.before },
-        data: { previousScore: c.before, overallScore: c.after, arcShape: c.arcShape },
+        data: { previousScore: c.after, overallScore: c.after, arcShape: c.arcShape },
       })
       if (result.count === 0) {
         skippedChangedUnderneath++

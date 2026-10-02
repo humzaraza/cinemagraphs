@@ -60,14 +60,36 @@ describe('safeWriteSentimentGraph derives overallScore from the written beats', 
   beforeEach(() => {
     vi.clearAllMocks()
     delete process.env.SENTIMENT_BEAT_LOCK_ENABLED
-    mocks.tx.$queryRaw.mockResolvedValue([])
+    // Default: the film HAS user beat ratings, so the merge path runs.
+    mocks.tx.$queryRaw.mockResolvedValue([{ rated: 1 }])
     mocks.tx.sentimentGraph.update.mockResolvedValue({})
     mocks.tx.sentimentGraph.create.mockResolvedValue({})
     mocks.tx.sentimentGraphDriftLog.create.mockResolvedValue({})
     mocks.outerDriftLogCreate.mockResolvedValue({})
   })
 
-  it('Scary Movie shape: no label matches, old beats kept, so the old mean is the headline', async () => {
+  it('Scary Movie shape on a film with NO beat ratings: new beats replace old ones, headline is their mean', async () => {
+    mocks.tx.$queryRaw.mockResolvedValue([{ rated: 0 }])
+    mocks.tx.sentimentGraph.findUnique.mockResolvedValueOnce(existingRow(existingBeats, 6))
+    const { safeWriteSentimentGraph } = await import('@/lib/sentiment-beat-lock')
+
+    const incoming = [beat('Cold open', 0, 8), beat('Twist', 30, 9), beat('Finale', 60, 8.5)]
+    const result = await safeWriteSentimentGraph({
+      filmId: 'film-1',
+      incomingDataPoints: incoming,
+      otherFields: { overallScore: 9.9, previousScore: 6 },
+      callerPath: 'admin-analyze',
+    })
+
+    expect(result.status).toBe('written')
+    expect(result.replacedExistingLabels).toEqual(['Opening', 'Midpoint', 'Climax'])
+    const data = writtenData()
+    expect((data.dataPoints as SentimentDataPoint[]).map((b) => b.label)).toEqual(['Cold open', 'Twist', 'Finale'])
+    expect(data.overallScore).toBe(8.5)
+    expect(data.previousScore).toBe(6)
+  })
+
+  it('Scary Movie shape on a film WITH beat ratings: no label matches, old beats kept, old mean is the headline', async () => {
     mocks.tx.sentimentGraph.findUnique.mockResolvedValueOnce(existingRow(existingBeats, 6))
     const { safeWriteSentimentGraph } = await import('@/lib/sentiment-beat-lock')
 

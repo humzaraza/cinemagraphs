@@ -70,8 +70,11 @@ function resetMocks() {
   mocks.tx.sentimentGraphDriftLog.create.mockReset()
 
   // Default: the FOR UPDATE lock query and the write mutations resolve
-  // cleanly. Individual tests override findUnique per-case.
-  mocks.tx.$queryRaw.mockResolvedValue([])
+  // cleanly. The same $queryRaw mock also answers the beat-ratings count,
+  // so the default simulates a film WITH user beat ratings (rated: 1), which
+  // is the condition under which the merge path runs. Individual tests
+  // override findUnique per-case, and the replacement test overrides this.
+  mocks.tx.$queryRaw.mockResolvedValue([{ rated: 1 }])
   mocks.tx.sentimentGraph.update.mockResolvedValue({})
   mocks.tx.sentimentGraph.create.mockResolvedValue({})
   mocks.tx.sentimentGraphDriftLog.create.mockResolvedValue({})
@@ -369,6 +372,72 @@ describe('safeWriteSentimentGraph', () => {
       callerPath: 'admin-analyze',
       envLockEnabled: false,
     })
+  })
+
+  it('M. film with NO user beat ratings: incoming beats replace stored beats outright, drift log records the churn', async () => {
+    mocks.tx.$queryRaw.mockResolvedValue([{ rated: 0 }])
+    const existingBeats = [beat('Opening', 0, 5), beat('Climax', 60, 8)]
+    mocks.tx.sentimentGraph.findUnique.mockResolvedValueOnce({
+      id: 'g1',
+      filmId: 'film-1',
+      dataPoints: existingBeats,
+    })
+
+    const { safeWriteSentimentGraph } = await import('@/lib/sentiment-beat-lock')
+    // Entirely new labels and timestamps. With the merge this would all be
+    // dropped; with nothing to protect it is written as-is.
+    const incoming = [beat('Cold open', 0, 7), beat('Twist', 45, 9), beat('Finale', 90, 8)]
+    const result = await safeWriteSentimentGraph({
+      filmId: 'film-1',
+      incomingDataPoints: incoming,
+      otherFields: {},
+      callerPath: 'admin-analyze',
+    })
+
+    expect(result.status).toBe('written')
+    expect(result.acceptedBeatCount).toBe(3)
+    expect(result.droppedIncomingLabels).toEqual([])
+    expect(result.preservedExistingLabels).toEqual([])
+    expect(result.replacedExistingLabels).toEqual(['Opening', 'Climax'])
+
+    expect(capturedDataPoints()).toEqual(incoming)
+
+    expect(mocks.tx.sentimentGraphDriftLog.create).toHaveBeenCalledTimes(1)
+    const driftArg = mocks.tx.sentimentGraphDriftLog.create.mock.calls[0][0].data
+    expect(driftArg.action).toBe('write_replaced_unrated')
+    expect(driftArg.existingBeatCount).toBe(2)
+    expect(driftArg.incomingBeatCount).toBe(3)
+    expect(driftArg.mismatchedLabels).toEqual(
+      expect.arrayContaining([
+        { incoming: 'Cold open', reason: 'not_in_existing' },
+        { incoming: 'Opening', reason: 'missing_from_incoming' },
+      ])
+    )
+  })
+
+  it('M2. film with NO user beat ratings and identical labels: replaced silently, no drift log', async () => {
+    mocks.tx.$queryRaw.mockResolvedValue([{ rated: 0 }])
+    const existingBeats = [beat('Opening', 0, 5), beat('Climax', 60, 8)]
+    mocks.tx.sentimentGraph.findUnique.mockResolvedValueOnce({
+      id: 'g1',
+      filmId: 'film-1',
+      dataPoints: existingBeats,
+    })
+
+    const { safeWriteSentimentGraph } = await import('@/lib/sentiment-beat-lock')
+    const incoming = [beat('Opening', 5, 6), beat('Climax', 65, 9)]
+    const result = await safeWriteSentimentGraph({
+      filmId: 'film-1',
+      incomingDataPoints: incoming,
+      otherFields: {},
+      callerPath: 'cron-analyze',
+    })
+
+    expect(result.status).toBe('written')
+    expect(result.replacedExistingLabels).toEqual([])
+    // Timestamps come from incoming here: nothing is sticky without ratings.
+    expect(capturedDataPoints()).toEqual(incoming)
+    expect(mocks.tx.sentimentGraphDriftLog.create).not.toHaveBeenCalled()
   })
 
   it('I. case-sensitive label match — different casing is treated as different label', async () => {
