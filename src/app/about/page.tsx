@@ -45,7 +45,7 @@ function TealDashedGraph() {
 const faqs = [
   {
     q: 'Where does the external data come from?',
-    a: "We gather reviews from TMDB, IMDb, The Guardian, and critic blogs. The score is not tied to any other site's rating. It is the average of how the film plays across its runtime, built from what reviewers said about each stretch.",
+    a: "We gather reviews from TMDB, IMDb, and The Guardian. The score is not tied to any other site's rating. It is the average of how the film plays across its runtime, built from what reviewers said about each stretch.",
   },
   {
     q: 'When does the teal community line appear?',

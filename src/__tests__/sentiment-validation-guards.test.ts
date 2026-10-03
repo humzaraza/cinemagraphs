@@ -283,6 +283,49 @@ describe('requireFilmRuntime', () => {
   })
 })
 
+describe('requireReleasedFilm', () => {
+  it('returns the release date for a released film', async () => {
+    const { requireReleasedFilm } = await import('@/lib/claude')
+    expect(requireReleasedFilm(film({ releaseDate: new Date('2010-01-01') })).toISOString()).toBe(
+      new Date('2010-01-01').toISOString()
+    )
+  })
+
+  it('throws for a missing release date', async () => {
+    const { requireReleasedFilm } = await import('@/lib/claude')
+    expect(() => requireReleasedFilm(film({ releaseDate: null }))).toThrow(/has no release date/)
+  })
+
+  it('throws for a future release date', async () => {
+    const { requireReleasedFilm } = await import('@/lib/claude')
+    const now = new Date('2026-10-03T00:00:00Z')
+    expect(() => requireReleasedFilm(film({ releaseDate: new Date('2027-01-01') }), now)).toThrow(
+      /is not released until 2027-01-01/
+    )
+  })
+
+  it('is enforced by both prompt builders', async () => {
+    const { buildAnalysisPromptParts } = await import('@/lib/claude')
+    const { buildHybridPrompt } = await import('@/lib/hybrid-sentiment')
+    expect(() => buildAnalysisPromptParts(film({ releaseDate: null }), [])).toThrow(/has no release date/)
+    expect(() =>
+      buildHybridPrompt({ film: film({ releaseDate: null }), year: 2010, runtime: 95, plotText: 'x', reviews: [], beatCount: 10 })
+    ).toThrow(/has no release date/)
+  })
+})
+
+describe('generateHybridSentimentGraph release guard', () => {
+  it('throws before fetching anything for a film with no release date', async () => {
+    vi.clearAllMocks()
+    mocks.prisma.film.findUnique.mockResolvedValue(film({ releaseDate: null }))
+    const { generateHybridSentimentGraph } = await import('@/lib/hybrid-sentiment')
+    await expect(generateHybridSentimentGraph('film-1')).rejects.toThrow(/has no release date/)
+    expect(mocks.prisma.review.findMany).not.toHaveBeenCalled()
+    expect(mocks.fetchWikipediaPlot).not.toHaveBeenCalled()
+    expect(mocks.messagesCreate).not.toHaveBeenCalled()
+  })
+})
+
 describe('buildAnalysisPromptParts runtime guard', () => {
   it('uses the real runtime when present', async () => {
     const { buildAnalysisPromptParts } = await import('@/lib/claude')

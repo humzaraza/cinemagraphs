@@ -263,7 +263,7 @@ function CustomTooltip({
       {(view === 'critics' || view === 'both') && (
         <div className="flex items-center gap-2 mb-1">
           <span className="w-3 h-[2px] rounded bg-cinema-gold inline-block" />
-          <span className="text-xs text-cinema-muted">Critics:</span>
+          <span className="text-xs text-cinema-muted">Reviews:</span>
           <span
             className="font-[family-name:var(--font-bebas)] text-lg"
             style={{ color: scoreColor(data.score) }}
@@ -485,9 +485,9 @@ export default function SentimentGraph({
 
   const sectionTitle =
     graphView === 'audience' && hasAudienceData ? 'Audience Sentiment'
-    : graphView === 'both' && hasAudienceData ? 'Critics + Audience Sentiment'
+    : graphView === 'both' && hasAudienceData ? 'Reviews + Audience Sentiment'
     : graphView === 'merged' && hasAudienceData ? 'Merged Sentiment'
-    : 'Critics Sentiment'
+    : 'Review Sentiment'
 
   // Numeric time axis when the film has a runtime; categorical fallback (one
   // equal slot per beat) when it does not, since without a runtime there is
@@ -507,7 +507,7 @@ export default function SentimentGraph({
 
   // ── Toggle options ──
   const toggleOptions: { value: GraphView; label: string; disabled: boolean; color: string }[] = [
-    { value: 'critics', label: 'Critics', disabled: false, color: 'var(--cinema-gold)' },
+    { value: 'critics', label: 'Reviews', disabled: false, color: 'var(--cinema-gold)' },
     { value: 'audience', label: 'Audience', disabled: !hasAudienceData, color: 'var(--cinema-teal)' },
     { value: 'both', label: 'Both', disabled: !hasAudienceData, color: 'var(--cinema-gold)' },
     { value: 'merged', label: 'Merged', disabled: !hasAudienceData, color: '#F5F0E8' },
@@ -532,7 +532,7 @@ export default function SentimentGraph({
           {graphView === 'both' && hasAudienceData ? (
             <div className="flex flex-col items-end gap-0.5">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs text-cinema-muted">Critics</span>
+                <span className="text-xs text-cinema-muted">Reviews</span>
                 <span
                   className="font-[family-name:var(--font-bebas)] text-3xl"
                   style={{ color: 'var(--cinema-gold)' }}
@@ -557,7 +557,7 @@ export default function SentimentGraph({
               <span className="text-sm text-cinema-muted">
                 {graphView === 'audience' && hasAudienceData ? audienceLabel
                   : graphView === 'merged' && hasAudienceData ? 'Merged'
-                  : 'Critics'}
+                  : 'Reviews'}
               </span>
               <span
                 className="font-[family-name:var(--font-bebas)] text-3xl"
@@ -1044,7 +1044,7 @@ export default function SentimentGraph({
             {showCritics && (
               <div className="flex items-center gap-1.5">
                 <span className="w-5 h-[2px] rounded bg-cinema-gold inline-block" />
-                <span>Critics</span>
+                <span>Reviews</span>
               </div>
             )}
             {showAudience && (

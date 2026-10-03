@@ -9,6 +9,7 @@ export type GenerateWikiBeatsResult =
   | { status: 'skipped_has_beats' }
   | { status: 'skipped_no_plot' }
   | { status: 'skipped_no_year' }
+  | { status: 'skipped_pre_release' }
   | { status: 'skipped_no_runtime' }
   | { status: 'skipped_generation_failed' }
   | { status: 'generated'; beatCount: number }
@@ -62,6 +63,16 @@ export async function generateAndStoreWikiBeats(
       'Cannot generate wiki beats — no release date'
     )
     return { status: 'skipped_no_year' }
+  }
+
+  // Same rule as the sentiment graph: nothing is generated for a film that
+  // has not been released yet.
+  if (new Date(film.releaseDate) > new Date()) {
+    pipelineLogger.info(
+      { filmId, title: film.title, releaseDate: film.releaseDate },
+      'Cannot generate wiki beats: film has not been released yet'
+    )
+    return { status: 'skipped_pre_release' }
   }
 
   const year = new Date(film.releaseDate).getFullYear()

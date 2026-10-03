@@ -9,6 +9,7 @@ import {
   assertMeanWithinTolerance,
   overallScoreFromBeats,
   requireFilmRuntime,
+  requireReleasedFilm,
 } from './claude'
 import { pipelineLogger } from './logger'
 import type { SentimentDataPoint, PeakLowMoment } from './types'
@@ -81,6 +82,8 @@ export function buildHybridPrompt(params: {
   beatCount: number
 }): string {
   const { film, year, runtime, plotText, reviews, beatCount } = params
+  // Chokepoint guard: no prompt for an unreleased film, whichever path led here.
+  requireReleasedFilm(film)
   const reviewBlock = buildReviewBlock(reviews)
   const sourcesArray = [...new Set(reviews.map((r) => r.sourcePlatform.toLowerCase()))]
   const beatDuration = Math.round(runtime / beatCount)
@@ -342,11 +345,9 @@ export async function generateHybridSentimentGraph(filmId: string): Promise<Hybr
   const film = await prisma.film.findUnique({ where: { id: filmId } })
   if (!film) throw new Error(`Film not found: ${filmId}`)
 
-  if (film.releaseDate && film.releaseDate > new Date()) {
-    throw new Error(
-      `Cannot generate sentiment for pre-release film ${film.title}, releases ${film.releaseDate.toISOString()}`
-    )
-  }
+  // No release date or a future one: refuse before fetching anything. The
+  // prompt builders guard again, so no path can slip past this.
+  requireReleasedFilm(film)
 
   const storedReviews = await prisma.review.findMany({
     where: { filmId },
@@ -360,11 +361,10 @@ export async function generateHybridSentimentGraph(filmId: string): Promise<Hybr
     )
   }
 
-  const year = film.releaseDate ? new Date(film.releaseDate).getFullYear() : 'Unknown'
+  const year = requireReleasedFilm(film).getFullYear()
   const runtime = requireFilmRuntime(film)
 
-  const plotText =
-    typeof year === 'number' ? await fetchWikipediaPlot(film.title, year) : null
+  const plotText = await fetchWikipediaPlot(film.title, year)
   const plotAvailable = Boolean(plotText)
   const plotLength = plotText?.length || 0
 

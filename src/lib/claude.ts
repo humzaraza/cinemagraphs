@@ -67,13 +67,19 @@ export function sumUsage(usages: Iterable<UsageTotals>): UsageTotals {
 // enforce identical rules. Both guards THROW: a graph that fails one is
 // rejected before it can reach a write path; nothing rounds, clamps, or
 // downgrades to a warning.
-import { assertMeanWithinTolerance, overallScoreFromBeats, requireFilmRuntime } from './sentiment-guards'
+import {
+  assertMeanWithinTolerance,
+  overallScoreFromBeats,
+  requireFilmRuntime,
+  requireReleasedFilm,
+} from './sentiment-guards'
 export {
   MEAN_SCORE_TOLERANCE,
   assertMeanWithinTolerance,
   meanBeatScore,
   overallScoreFromBeats,
   requireFilmRuntime,
+  requireReleasedFilm,
 } from './sentiment-guards'
 
 export interface PlotContext {
@@ -218,7 +224,9 @@ export function buildAnalysisPromptParts(
   reviews: Review[],
   plotContext?: PlotContext
 ): AnalysisPromptParts {
-  const year = film.releaseDate ? new Date(film.releaseDate).getFullYear() : 'Unknown'
+  // Chokepoint guards: no prompt for an unreleased film or one without a
+  // usable runtime, whichever path led here.
+  const year = requireReleasedFilm(film).getFullYear()
   const runtime = requireFilmRuntime(film)
 
   // Review block

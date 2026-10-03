@@ -83,6 +83,7 @@ import {
   assertMeanWithinTolerance,
   meanBeatScore,
   requireFilmRuntime,
+  requireReleasedFilm,
 } from '../src/lib/sentiment-guards'
 import {
   MIN_QUALITY_REVIEWS,
@@ -427,11 +428,14 @@ async function buildRequestForFilm(
   prior: CheckpointEntry | undefined,
   opts: { skipPlotFetch: boolean }
 ): Promise<BuildOutcome> {
-  if (film.releaseDate && film.releaseDate > new Date()) {
+  // No release date or a future one: no graph. Same guard as the app.
+  try {
+    requireReleasedFilm(film)
+  } catch (err) {
     return {
       kind: 'skipped',
       status: 'skipped_prerelease',
-      reason: `Cannot generate sentiment for pre-release film ${film.title}, releases ${film.releaseDate.toISOString()}`,
+      reason: err instanceof Error ? err.message : String(err),
     }
   }
 

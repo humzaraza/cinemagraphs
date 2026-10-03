@@ -242,6 +242,7 @@ export type PrepareSentimentInputResult =
   | { status: 'skipped_insufficient_reviews'; qualityCount: number; minRequired: number }
   | { status: 'skipped_film_not_found' }
   | { status: 'skipped_pre_release'; releaseDate: Date }
+  | { status: 'skipped_no_release_date' }
 
 /**
  * Prepare everything needed to send a single film to Claude — fetches reviews,
@@ -277,7 +278,17 @@ export async function prepareSentimentGraphInput(
     return { status: 'skipped_film_not_found' }
   }
 
-  if (filmRecord.releaseDate && filmRecord.releaseDate > new Date()) {
+  // A film with no release date has no reviews of its own to analyse; any
+  // search hit belongs to another film with a similar title. Refuse it the
+  // same way as a pre-release film, before fetching anything.
+  if (!filmRecord.releaseDate) {
+    pipelineLogger.warn(
+      { filmId, filmTitle: filmRecord.title, reason: 'skipped_no_release_date' },
+      'Skipping: film has no release date, so no graph can be built'
+    )
+    return { status: 'skipped_no_release_date' }
+  }
+  if (filmRecord.releaseDate > new Date()) {
     pipelineLogger.info(
       { filmId, releaseDate: filmRecord.releaseDate, reason: 'skipped_pre_release' },
       'Skipping — film has not been released yet'
@@ -495,6 +506,13 @@ export async function generateSentimentGraph(
     )
     return
   }
+  if (prep.status === 'skipped_no_release_date') {
+    pipelineLogger.warn(
+      { filmId, reason: 'skipped_no_release_date' },
+      'generateSentimentGraph: skipped (no release date)'
+    )
+    return
+  }
   if (prep.status === 'skipped_insufficient_reviews') {
     throw new Error(
       `Insufficient quality reviews: only ${prep.qualityCount} found (minimum ${prep.minRequired} required)`
@@ -562,6 +580,7 @@ export async function generateBatchSentimentGraphs(
 export type GenerateHybridAndStoreResult =
   | { status: 'generated'; beatCount: number; generationMode: HybridResult['generationMode'] }
   | { status: 'skipped_pre_release'; releaseDate: Date }
+  | { status: 'skipped_no_release_date' }
   | { status: 'skipped_unchanged'; reviewHash: string; filteredCount: number }
 
 /**
@@ -586,7 +605,14 @@ export async function generateHybridAndStore(
     throw new Error(`Film not found: ${filmId}`)
   }
 
-  if (filmRecord.releaseDate && filmRecord.releaseDate > new Date()) {
+  if (!filmRecord.releaseDate) {
+    pipelineLogger.warn(
+      { filmId, filmTitle: filmRecord.title, reason: 'skipped_no_release_date' },
+      'generateHybridAndStore: skipped (no release date, so no graph can be built)'
+    )
+    return { status: 'skipped_no_release_date' }
+  }
+  if (filmRecord.releaseDate > new Date()) {
     pipelineLogger.info(
       { filmId, releaseDate: filmRecord.releaseDate, reason: 'skipped_pre_release' },
       'generateHybridAndStore: skipped (pre-release)'

@@ -3,14 +3,11 @@ import { createHash } from 'crypto'
 import type { Film } from '@/generated/prisma/client'
 import type { FetchedReview } from '@/lib/types'
 import { reviewLogger } from './logger'
-import {
-  fetchTMDBReviews,
-  fetchIMDbReviews,
-  fetchGuardianReviews,
-  fetchCriticReviews,
-  fetchLetterboxdReviews,
-  fetchRedditReviews,
-} from './sources'
+// Review sources. Every source here is reached through an API its owner
+// offers for this purpose. Page scrapes are not used: Roger Ebert and
+// Letterboxd pages block automated requests, and Reddit declined API access,
+// so those three were removed rather than worked around.
+import { fetchTMDBReviews, fetchIMDbReviews, fetchGuardianReviews } from './sources'
 
 function contentHash(text: string): string {
   return createHash('sha256').update(text.trim().toLowerCase()).digest('hex')
@@ -46,7 +43,7 @@ export interface ReviewSourceResult {
 export interface FetchAllReviewsOptions {
   /**
    * Called once with the per-source fetch outcomes (keyed by display name:
-   * TMDB, IMDb, Roger Ebert, Letterboxd, Reddit, Guardian) before reviews
+   * TMDB, IMDb, Guardian) before reviews
    * are stored. Lets bulk callers observe source health (e.g. IMDb quota
    * exhaustion) without changing the return type for existing callers.
    */
@@ -62,15 +59,12 @@ export async function fetchAllReviews(
   const results = await Promise.allSettled([
     fetchTMDBReviews(film),
     fetchIMDbReviews(film),
-    fetchCriticReviews(film),
-    fetchLetterboxdReviews(film),
-    fetchRedditReviews(film),
     fetchGuardianReviews(film),
   ])
 
   // Display names for the end-of-run summary line. The order here must
   // match the fetcher order above.
-  const sourceNames = ['TMDB', 'IMDb', 'Roger Ebert', 'Letterboxd', 'Reddit', 'Guardian']
+  const sourceNames = ['TMDB', 'IMDb', 'Guardian']
   const perSource: Record<string, ReviewSourceResult> = {}
   const allReviews: FetchedReview[] = []
 
@@ -88,8 +82,7 @@ export async function fetchAllReviews(
 
   // Build the human-readable summary line, e.g.
   //   "Sources checked: TMDB ✓ (2 reviews), IMDb ✗ (429 quota exceeded),
-  //    Roger Ebert ✗ (403 blocked), Letterboxd ✗ (Cloudflare blocked),
-  //    Reddit ✗ (no credentials), Guardian ✗ (no API key)"
+  //    Guardian ✗ (no API key)"
   const summaryParts = sourceNames.map((name) => {
     const s = perSource[name]
     if (s.ok) {

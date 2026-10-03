@@ -296,12 +296,12 @@ export async function GET(request: Request) {
     // Postgres' default NULLS LAST would strand graphless films behind
     // every graphed film, so they'd never get analyzed.
     const CANDIDATE_POOL = 200
+    // Released films only. A film with no release date has no reviews of
+    // its own (any search hit is another film), so it is not a candidate;
+    // the prep stage refuses it as well.
     const baseWhere = {
       status: 'ACTIVE' as const,
-      OR: [
-        { releaseDate: null },
-        { releaseDate: { lte: new Date() } },
-      ],
+      releaseDate: { lte: new Date() },
     }
 
     const noGraphCandidates = await prisma.film.findMany({
@@ -430,6 +430,14 @@ export async function GET(request: Request) {
             title: candidate.title,
             status: 'skipped_insufficient_reviews',
             reason: `${prep.qualityCount} quality reviews, need ${prep.minRequired}`,
+          })
+        } else if (prep.status === 'skipped_no_release_date') {
+          skipResults.push({ title: candidate.title, status: 'skipped_no_release_date', reason: 'no release date' })
+        } else if (prep.status === 'skipped_pre_release') {
+          skipResults.push({
+            title: candidate.title,
+            status: 'skipped_pre_release',
+            reason: `releases ${prep.releaseDate.toISOString().slice(0, 10)}`,
           })
         } else {
           skipResults.push({ title: candidate.title, status: 'skipped_film_not_found', reason: '' })
