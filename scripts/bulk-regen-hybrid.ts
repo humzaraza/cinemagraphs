@@ -71,6 +71,7 @@ let isQualityReview!: typeof import('../src/lib/sentiment-pipeline')['isQualityR
 let SENTIMENT_MODEL!: typeof import('../src/lib/claude')['SENTIMENT_MODEL']
 let SENTIMENT_MAX_TOKENS!: typeof import('../src/lib/claude')['SENTIMENT_MAX_TOKENS']
 let buildAnalysisPromptParts!: typeof import('../src/lib/claude')['buildAnalysisPromptParts']
+let ensureNoVerbatimReviewText!: typeof import('../src/lib/claude')['ensureNoVerbatimReviewText']
 let MIN_QUALITY_REVIEWS!: typeof import('../src/lib/hybrid-sentiment')['MIN_QUALITY_REVIEWS']
 let buildHybridPrompt!: typeof import('../src/lib/hybrid-sentiment')['buildHybridPrompt']
 let computeHybridBeatCount!: typeof import('../src/lib/hybrid-sentiment')['computeHybridBeatCount']
@@ -397,18 +398,18 @@ function buildAnchoredFromString(film: {
 
 async function applySuccessfulResult(
   filmId: string,
-  graph: ParsedGraph,
+  generated: ParsedGraph,
   mode: 'safe' | 'force'
 ): Promise<{ beatCount: number }> {
-  if (graph.dataPoints.length < 8 || graph.dataPoints.length > 22) {
+  if (generated.dataPoints.length < 8 || generated.dataPoints.length > 22) {
     throw new Error(
-      `Beat count out of expected bounds: got ${graph.dataPoints.length}, expected 8–22`
+      `Beat count out of expected bounds: got ${generated.dataPoints.length}, expected 8–22`
     )
   }
 
   const film = await prisma.film.findUnique({
     where: { id: filmId },
-    select: { id: true, imdbRating: true, rtCriticsScore: true, metacriticScore: true },
+    select: { id: true, title: true, imdbRating: true, rtCriticsScore: true, metacriticScore: true },
   })
   if (!film) throw new Error(`Film vanished between submit and apply: ${filmId}`)
 
@@ -421,6 +422,13 @@ async function applySuccessfulResult(
     where: { filmId },
     select: { sourcePlatform: true, reviewText: true },
   })
+  // Same guard as the app: no run of a reviewer's words in displayed text.
+  // One rewording request if it does; rejected if that does not clear it.
+  const graph = await ensureNoVerbatimReviewText(
+    generated,
+    reviews.map((r) => r.reviewText),
+    { filmTitle: film.title, filmId }
+  )
   const qualityReviews = reviews.filter((r) => isQualityReview(r.reviewText))
   const sourcesUsed = [...new Set(qualityReviews.map((r) => r.sourcePlatform.toLowerCase()))]
 
@@ -501,6 +509,7 @@ async function main() {
   SENTIMENT_MODEL = claudeMod.SENTIMENT_MODEL
   SENTIMENT_MAX_TOKENS = claudeMod.SENTIMENT_MAX_TOKENS
   buildAnalysisPromptParts = claudeMod.buildAnalysisPromptParts
+  ensureNoVerbatimReviewText = claudeMod.ensureNoVerbatimReviewText
   MIN_QUALITY_REVIEWS = hybridMod.MIN_QUALITY_REVIEWS
   buildHybridPrompt = hybridMod.buildHybridPrompt
   computeHybridBeatCount = hybridMod.computeHybridBeatCount

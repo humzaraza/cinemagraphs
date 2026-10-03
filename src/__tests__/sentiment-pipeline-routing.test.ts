@@ -24,6 +24,11 @@ vi.mock('@/lib/prisma', () => ({
     film: {
       update: (...args: unknown[]) => mockFilmUpdate(...args),
     },
+    // storeSentimentGraphResult reads the film's source reviews for the
+    // verbatim-text guard. No reviews here, so the guard has nothing to match.
+    review: {
+      findMany: async () => [],
+    },
   },
 }))
 

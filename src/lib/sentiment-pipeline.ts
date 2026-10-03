@@ -4,6 +4,7 @@ import { fetchAllReviews, computeReviewHash } from './review-fetcher'
 import {
   analyzeSentiment,
   buildAnalysisPromptParts,
+  ensureNoVerbatimReviewText,
   type PlotContext,
   type AnalysisPromptParts,
 } from './claude'
@@ -417,11 +418,27 @@ export async function prepareSentimentGraphInput(
  */
 export async function storeSentimentGraphResult(
   input: SentimentGraphInput,
-  graphData: SentimentGraphData,
+  generated: SentimentGraphData,
   callerPath: BeatLockCallerPath,
   options: { forceOverwrite?: boolean } = {}
 ): Promise<void> {
   const { film, filteredReviewCount, reviewHash } = input
+
+  // Nothing the model wrote may carry a run of a reviewer's words. The batch
+  // path does not carry review text with it, so read the film's stored
+  // reviews here; this is the one store chokepoint for the classic pipeline.
+  const sourceReviews = await prisma.review.findMany({
+    where: { filmId: film.id },
+    select: { reviewText: true },
+  })
+  // A graph that repeats review wording gets one rewording request; if that
+  // does not clear it, this throws and nothing is stored.
+  const graphData = await ensureNoVerbatimReviewText(
+    generated,
+    sourceReviews.map((r) => r.reviewText),
+    { filmTitle: film.title, filmId: film.id }
+  )
+
   const existing = await prisma.sentimentGraph.findUnique({ where: { filmId: film.id } })
 
   const otherFields = {

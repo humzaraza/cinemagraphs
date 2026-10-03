@@ -77,7 +77,12 @@ import readline from 'node:readline/promises'
 import Anthropic from '@anthropic-ai/sdk'
 import type { Film } from '../src/generated/prisma/client'
 import { prisma } from '../src/lib/prisma'
-import { SENTIMENT_MODEL, SENTIMENT_MAX_TOKENS, buildAnalysisPromptParts } from '../src/lib/claude'
+import {
+  SENTIMENT_MODEL,
+  SENTIMENT_MAX_TOKENS,
+  buildAnalysisPromptParts,
+  ensureNoVerbatimReviewText,
+} from '../src/lib/claude'
 import {
   MEAN_SCORE_TOLERANCE,
   assertMeanWithinTolerance,
@@ -595,19 +600,19 @@ async function resolveWriteMode(
 
 async function applyResult(
   filmId: string,
-  graph: ParsedGraph,
+  generated: ParsedGraph,
   mode: 'safe' | 'force'
 ): Promise<{ beatCount: number; writeStatus: string; gapAfter: number }> {
-  if (graph.dataPoints.length < BEAT_COUNT_MIN || graph.dataPoints.length > BEAT_COUNT_MAX) {
+  if (generated.dataPoints.length < BEAT_COUNT_MIN || generated.dataPoints.length > BEAT_COUNT_MAX) {
     throw new CategorizedError(
       'beat_count',
-      `Beat count out of expected bounds: got ${graph.dataPoints.length}, expected ${BEAT_COUNT_MIN}-${BEAT_COUNT_MAX}`
+      `Beat count out of expected bounds: got ${generated.dataPoints.length}, expected ${BEAT_COUNT_MIN}-${BEAT_COUNT_MAX}`
     )
   }
 
   const film = await prisma.film.findUnique({
     where: { id: filmId },
-    select: { id: true, imdbRating: true, rtCriticsScore: true, metacriticScore: true },
+    select: { id: true, title: true, imdbRating: true, rtCriticsScore: true, metacriticScore: true },
   })
   if (!film) throw new CategorizedError('write_error', `Film vanished between submit and apply: ${filmId}`)
 
@@ -620,6 +625,18 @@ async function applyResult(
     where: { filmId },
     select: { sourcePlatform: true, reviewText: true, contentHash: true },
   })
+  // Same guard as the app: no run of a reviewer's words in displayed text.
+  // One rewording request if it does; rejected if that does not clear it.
+  let graph: ParsedGraph
+  try {
+    graph = await ensureNoVerbatimReviewText(
+      generated,
+      reviews.map((r) => r.reviewText),
+      { filmTitle: film.title, filmId }
+    )
+  } catch (err) {
+    throw new CategorizedError('validation', err instanceof Error ? err.message : String(err))
+  }
   const qualityReviews = reviews.filter((r) => isQualityReview(r.reviewText))
   const sourcesUsed = [...new Set(qualityReviews.map((r) => r.sourcePlatform.toLowerCase()))]
 

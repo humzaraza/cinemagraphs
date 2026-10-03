@@ -10,6 +10,7 @@ import {
   overallScoreFromBeats,
   requireFilmRuntime,
   requireReleasedFilm,
+  ensureNoVerbatimReviewText,
 } from './claude'
 import { pipelineLogger } from './logger'
 import type { SentimentDataPoint, PeakLowMoment } from './types'
@@ -180,7 +181,7 @@ Use the full 1.0–10.0 scale. Not every film is a flat 7–8. If reviewers prai
 
 ## reviewEvidence
 
-A 1–2 sentence paraphrased synthesis of what reviewers said about this portion of the film. NOT a direct quote. Be specific — lean on phrasings reviewers actually used.
+A 1–2 sentence synthesis of what reviewers said about this portion of the film, written entirely in your own words. Be specific about what they praised or criticised, but never quote a review and never reuse a reviewer's phrasing: no sequence of words lifted from a review, even a short one. The same rule applies to "summary" and "biggestSentimentSwing". A response that copies review wording is rejected.
 
 ## Output
 
@@ -390,12 +391,22 @@ export async function generateHybridSentimentGraph(filmId: string): Promise<Hybr
     user = parts.user
   }
 
-  const { graph, inputTokens, outputTokens } = await callClaudeAndParse({
+  const { graph: generated, inputTokens, outputTokens } = await callClaudeAndParse({
     system,
     user,
     filmId,
     filmTitle: film.title,
   })
+
+  // Nothing the model wrote may carry a run of a reviewer's words. Checked
+  // against every stored review for the film, not only the ones in the prompt.
+  // A graph that repeats review wording gets one rewording request; if that
+  // does not clear it, this throws and nothing is returned.
+  const graph = await ensureNoVerbatimReviewText(
+    generated,
+    storedReviews.map((r) => r.reviewText),
+    { filmTitle: film.title, filmId }
+  )
 
   pipelineLogger.info(
     {
