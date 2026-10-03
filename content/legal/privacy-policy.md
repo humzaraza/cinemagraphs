@@ -1,12 +1,12 @@
 # PRIVACY POLICY
 
-**Last updated May 15, 2026**
+**Last updated October 3, 2026**
 
 This Privacy Notice for Cinemagraphs Corp ("we," "us," or "our"), describes how and why we might access, collect, store, use, and/or share ("process") your personal information when you use our services ("Services"), including when you:
 
 - Visit our website at https://cinemagraphs.ca or any website of ours that links to this Privacy Notice
 - Download and use our mobile application (Cinemagraphs), or any other application of ours that links to this Privacy Notice
-- Use Cinemagraphs. Cinemagraphs is a film sentiment analysis platform that visualizes critic reception as beat-by-beat emotional arc graphs across a film's runtime, rather than as a single aggregate score. The service is available as a web application at cinemagraphs.ca and as a mobile app for iOS and Android.
+- Use Cinemagraphs. Cinemagraphs is a film sentiment analysis platform that visualizes how a film was received, built from published reviews, as beat-by-beat emotional arc graphs across the film's runtime, rather than as a single aggregate score. The service is available as a web application at cinemagraphs.ca and as a mobile app for iOS and Android.
 - Engage with us in other related ways, including any marketing or events
 
 Questions or concerns? Reading this Privacy Notice will help you understand your privacy rights and choices. We are responsible for making decisions about how your personal information is processed. If you do not agree with our policies and practices, please do not use our Services. If you still have any questions or concerns, please contact us at cinemagraphs.corp@gmail.com.
@@ -207,7 +207,7 @@ You can manage cookies through your browser settings. If you choose to remove or
 
 *In Short: We use artificial intelligence to analyze publicly available film reviews. We do not use AI to process your personal information.*
 
-As part of our Services, we use artificial intelligence and machine learning technologies ("AI Products") to analyze publicly available film reviews from sources such as critic publications and aggregator platforms. The output of this analysis is what powers the beat-by-beat emotional arc graphs and other film sentiment features on the Services.
+As part of our Services, we use artificial intelligence and machine learning technologies ("AI Products") to analyze publicly available film reviews from sources such as audience review platforms and news publications. The output of this analysis is what powers the beat-by-beat emotional arc graphs and other film sentiment features on the Services.
 
 ### Use of AI Technologies
 
@@ -217,7 +217,7 @@ We provide the AI Products through Anthropic, our third-party AI service provide
 
 Our AI Products are designed for the following functions:
 
-- Sentiment and tone analysis of film critic reviews
+- Sentiment and tone analysis of published film reviews
 - Identification of beat-level emotional shifts across a film's runtime
 - Aggregation of qualitative reviewer language into a structured arc
 

@@ -53,7 +53,7 @@ const faqs = [
   },
   {
     q: 'Why is a scene I loved rated low?',
-    a: 'Each stretch of the film is scored on what reviewers said about it, not on whether the scene is happy or sad. A devastating scene that critics call masterful scores high. A stretch reviewers found slow, shallow, or confused scores low, however the characters feel in it. If a scene you loved sits low, that is where the reviews disagree with you.',
+    a: 'Each stretch of the film is scored on what reviewers said about it, not on whether the scene is happy or sad. A devastating scene that reviewers call masterful scores high. A stretch reviewers found slow, shallow, or confused scores low, however the characters feel in it. If a scene you loved sits low, that is where the reviews disagree with you.',
   },
   {
     q: 'Can I contribute my own review?',
@@ -134,10 +134,10 @@ export default function AboutPage() {
           <div>
             <span className="text-xs text-cinema-gold uppercase tracking-wider font-semibold">01</span>
             <h3 className="font-[family-name:var(--font-playfair)] text-xl md:text-2xl font-bold text-cinema-cream mt-2 mb-4">
-              External critic and audience reviews
+              External reviews
             </h3>
             <p className="text-sm text-cinema-muted leading-relaxed">
-              The gold line on every graph represents sentiment derived from professional critics and audience reviews across multiple platforms. We analyze what reviewers praised or criticized at different points in the film and map that onto the timeline. This is the primary data source and appears on every film.
+              The gold line on every graph represents sentiment derived from published reviews. Most of them come from audiences on TMDB and IMDb, alongside critic reviews from The Guardian. We analyze what reviewers praised or criticized at different points in the film and map that onto the timeline. This is the primary data source and appears on every film.
             </p>
           </div>
           <div className="bg-cinema-darker rounded-xl border border-cinema-border p-5">
