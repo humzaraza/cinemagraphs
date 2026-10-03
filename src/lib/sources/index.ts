@@ -1,6 +1,3 @@
 export { fetchTMDBReviews } from './tmdb'
 export { fetchIMDbReviews } from './imdb'
 export { fetchGuardianReviews } from './guardian'
-export { fetchCriticReviews } from './critic'
-export { fetchLetterboxdReviews } from './letterboxd'
-export { fetchRedditReviews } from './reddit'

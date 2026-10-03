@@ -61,7 +61,7 @@ import { PrismaNeon } from '@prisma/adapter-neon'
 import { fetchWikipediaPlot } from '../src/lib/sources/wikipedia'
 import type { ParsedGraph } from '../src/lib/hybrid-sentiment'
 // Dependency-free (no env reads), so a static import is safe here.
-import { requireFilmRuntime } from '../src/lib/sentiment-guards'
+import { requireFilmRuntime, requireReleasedFilm } from '../src/lib/sentiment-guards'
 
 // Bindings populated inside main() via dynamic import, AFTER dotenv.config()
 // above has run. DO NOT convert to static imports — see NOTE in the header.
@@ -289,11 +289,14 @@ type BuildOutcome =
     }
 
 async function buildRequestForFilm(film: Film): Promise<BuildOutcome> {
-  if (film.releaseDate && film.releaseDate > new Date()) {
+  // No release date or a future one: no graph. Same guard as the app.
+  try {
+    requireReleasedFilm(film)
+  } catch (err) {
     return {
       kind: 'skipped',
       status: 'skipped_prerelease',
-      reason: `Cannot generate sentiment for pre-release film ${film.title}, releases ${film.releaseDate.toISOString()}`,
+      reason: err instanceof Error ? err.message : String(err),
     }
   }
 

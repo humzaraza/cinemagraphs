@@ -257,7 +257,7 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
     if (format === '4x5') {
       const x = useOpposite ? 100 : width - 60
       body.push(
-        `<text x="${x}" y="20" fill="${LABEL_COLOR}" font-family="DM Sans" font-size="13" font-weight="400" text-anchor="middle">Critics</text>`,
+        `<text x="${x}" y="20" fill="${LABEL_COLOR}" font-family="DM Sans" font-size="13" font-weight="400" text-anchor="middle">Reviews</text>`,
       )
       body.push(
         `<text x="${x}" y="56" fill="${VALUE_COLOR}" font-family="DM Sans" font-size="38" font-weight="500" text-anchor="middle">${valueText}</text>`,
@@ -266,7 +266,7 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
       const x = useOpposite ? width - 54 : 54
       const anchor = useOpposite ? 'end' : 'start'
       body.push(
-        `<text x="${x}" y="40" fill="${LABEL_COLOR}" font-family="DM Sans" font-size="18" font-weight="400" text-anchor="${anchor}">Critics</text>`,
+        `<text x="${x}" y="40" fill="${LABEL_COLOR}" font-family="DM Sans" font-size="18" font-weight="400" text-anchor="${anchor}">Reviews</text>`,
       )
       body.push(
         `<text x="${x}" y="92" fill="${VALUE_COLOR}" font-family="DM Sans" font-size="56" font-weight="500" text-anchor="${anchor}">${valueText}</text>`,

@@ -66,6 +66,26 @@ export function assertMeanWithinTolerance(
   }
 }
 
+/** Return the film's release date, or throw. A graph is built from reviews
+ *  of the film, and a film with no release date or a future one has none:
+ *  whatever a search turns up belongs to other films with similar titles.
+ *  Both cases are refused; there is no "generate anyway". */
+export function requireReleasedFilm(
+  film: Pick<Film, 'id' | 'title' | 'releaseDate'>,
+  now: Date = new Date()
+): Date {
+  const { releaseDate } = film
+  if (!(releaseDate instanceof Date) || Number.isNaN(releaseDate.getTime())) {
+    throw new Error(`Film "${film.title}" (${film.id}) has no release date; no graph can be built`)
+  }
+  if (releaseDate > now) {
+    throw new Error(
+      `Film "${film.title}" (${film.id}) is not released until ${releaseDate.toISOString().slice(0, 10)}; no graph can be built`
+    )
+  }
+  return releaseDate
+}
+
 /** Return the film's runtime in minutes, or throw. Runtime is stored as 0 (not
  *  null) for many rows, so a null check is not enough: the test is `> 0`.
  *  There is deliberately no default; a graph spanning an invented runtime is

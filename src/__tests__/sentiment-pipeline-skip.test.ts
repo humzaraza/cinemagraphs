@@ -155,6 +155,24 @@ describe('prepareSentimentGraphInput', () => {
     expect(mockReviewFindMany).not.toHaveBeenCalled()
   })
 
+  it('returns skipped_no_release_date and skips all fetches when releaseDate is null', async () => {
+    mockFilmFindUnique.mockResolvedValueOnce({
+      ...baseFilm,
+      releaseDate: null,
+      sentimentGraph: null,
+    })
+
+    const { prepareSentimentGraphInput } = await import('@/lib/sentiment-pipeline')
+    const result = await prepareSentimentGraphInput('film-1')
+
+    expect(result.status).toBe('skipped_no_release_date')
+    // Refused before any downstream work: no OMDB, no reviews, no plot.
+    expect(mockFetchAnchorScores).not.toHaveBeenCalled()
+    expect(mockFetchAllReviews).not.toHaveBeenCalled()
+    expect(mockFetchWikipediaPlot).not.toHaveBeenCalled()
+    expect(mockReviewFindMany).not.toHaveBeenCalled()
+  })
+
   it('returns skipped_insufficient_reviews when below the quality threshold', async () => {
     mockFilmFindUnique.mockResolvedValueOnce({
       ...baseFilm,

@@ -17,7 +17,6 @@ import { prisma } from '../src/lib/prisma'
 import {
   fetchTMDBReviews,
   fetchIMDbReviews,
-  fetchCriticReviews,
   fetchGuardianReviews,
 } from '../src/lib/sources'
 
@@ -141,22 +140,6 @@ async function main() {
       },
     },
     {
-      name: 'Roger Ebert (critic blog)',
-      async run() {
-        try {
-          const result = await fetchCriticReviews(fullFilm)
-          return {
-            count: result.reviews.length,
-            ok: result.ok,
-            reason: result.reason,
-            sample: result.reviews[0]?.reviewText.slice(0, 100),
-          }
-        } catch (err) {
-          return { count: 0, error: err instanceof Error ? err.message : String(err) }
-        }
-      },
-    },
-    {
       name: 'Guardian search',
       async run() {
         try {
@@ -187,25 +170,7 @@ async function main() {
     }
   }
 
-  // 4. Also check raw Roger Ebert URL since slug rules differ
-  console.log('\n--- ROGER EBERT URL PROBE ---')
-  const ebertUrls = [
-    'https://www.rogerebert.com/reviews/matilda-1996',
-    'https://www.rogerebert.com/reviews/matilda',
-  ]
-  for (const url of ebertUrls) {
-    try {
-      const res = await fetch(url, {
-        headers: { 'User-Agent': 'Cinemagraphs/1.0 (movie sentiment analysis)' },
-        signal: AbortSignal.timeout(5000),
-      })
-      console.log(`  ${url} → ${res.status}`)
-    } catch (err) {
-      console.log(`  ${url} → ERROR: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
-
-  // 5. Confirm env vars that gate each fetcher
+  // 4. Confirm env vars that gate each fetcher
   console.log('\n--- ENV GATE CHECK ---')
   console.log(`TMDB_API_KEY:    ${process.env.TMDB_API_KEY ? 'set' : 'MISSING'}`)
   console.log(`RAPIDAPI_KEY:    ${process.env.RAPIDAPI_KEY ? 'set' : 'MISSING'}`)

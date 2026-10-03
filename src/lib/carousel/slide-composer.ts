@@ -855,13 +855,13 @@ function composeHookSlide(film: FilmData, spec: FormatSpec): BuiltSvg {
     `<text x="60" y="${fmt(metaBaseline)}" fill="${COLORS.creamMuted}" font-family="DM Sans" font-size="${metaSize}" font-weight="400" text-anchor="start">${escapeXml(metaText)}</text>`,
   )
 
-  // Big score — "CRITICS" label + big number, shared baseline at bottom 180.
+  // Big score: "REVIEWS" label + big number, shared baseline at bottom 180.
   const scoreLabelSize = 16
   const scoreNumSize = 120
   const scoreBaseline = spec.canvasH - 180 - scoreNumSize * 0.1
   const labelLs = scoreLabelSize * 0.15
   // Approximate label width so the score number follows with a 20px gap.
-  const labelText = 'CRITICS'
+  const labelText = 'REVIEWS'
   const labelWidth =
     labelText.length * scoreLabelSize * CHAR_FACTOR_SANS +
     (labelText.length - 1) * labelLs

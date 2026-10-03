@@ -350,7 +350,7 @@ describe('renderGraph', () => {
       expect(out.png.length).toBeGreaterThan(0)
     })
 
-    it('produces SVG without "Critics" label or score value when minimal: true', () => {
+    it('produces SVG without "Reviews" label or score value when minimal: true', () => {
       const out = renderGraph({
         dataPoints: SAMPLE,
         totalRuntime: 60,
@@ -360,11 +360,11 @@ describe('renderGraph', () => {
         format: '4x5',
         minimal: true,
       })
-      expect(out.svg).not.toContain('Critics')
+      expect(out.svg).not.toContain('Reviews')
       expect(out.svg).not.toContain('8.3')
     })
 
-    it('still contains "Critics" and score when minimal is false', () => {
+    it('still contains "Reviews" and score when minimal is false', () => {
       const out = renderGraph({
         dataPoints: SAMPLE,
         totalRuntime: 60,
@@ -374,11 +374,11 @@ describe('renderGraph', () => {
         format: '4x5',
         minimal: false,
       })
-      expect(out.svg).toContain('Critics')
+      expect(out.svg).toContain('Reviews')
       expect(out.svg).toContain('8.3')
     })
 
-    it('still contains "Critics" and score when minimal is undefined', () => {
+    it('still contains "Reviews" and score when minimal is undefined', () => {
       const out = renderGraph({
         dataPoints: SAMPLE,
         totalRuntime: 60,
@@ -387,7 +387,7 @@ describe('renderGraph', () => {
         height: 540,
         format: '4x5',
       })
-      expect(out.svg).toContain('Critics')
+      expect(out.svg).toContain('Reviews')
       expect(out.svg).toContain('8.3')
     })
 
