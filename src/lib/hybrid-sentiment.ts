@@ -11,6 +11,7 @@ import {
   requireFilmRuntime,
   requireReleasedFilm,
 } from './claude'
+import { assertNoVerbatimReviewText } from './sentiment-guards'
 import { pipelineLogger } from './logger'
 import type { SentimentDataPoint, PeakLowMoment } from './types'
 import type { Film, Review } from '@/generated/prisma/client'
@@ -180,7 +181,7 @@ Use the full 1.0–10.0 scale. Not every film is a flat 7–8. If reviewers prai
 
 ## reviewEvidence
 
-A 1–2 sentence paraphrased synthesis of what reviewers said about this portion of the film. NOT a direct quote. Be specific — lean on phrasings reviewers actually used.
+A 1–2 sentence synthesis of what reviewers said about this portion of the film, written entirely in your own words. Be specific about what they praised or criticised, but never quote a review and never reuse a reviewer's phrasing: no sequence of words lifted from a review, even a short one. The same rule applies to "summary" and "biggestSentimentSwing". A response that copies review wording is rejected.
 
 ## Output
 
@@ -396,6 +397,14 @@ export async function generateHybridSentimentGraph(filmId: string): Promise<Hybr
     filmId,
     filmTitle: film.title,
   })
+
+  // Nothing the model wrote may carry a run of a reviewer's words. Checked
+  // against every stored review for the film, not only the ones in the prompt.
+  assertNoVerbatimReviewText(
+    graph,
+    storedReviews.map((r) => r.reviewText),
+    { filmTitle: film.title }
+  )
 
   pipelineLogger.info(
     {

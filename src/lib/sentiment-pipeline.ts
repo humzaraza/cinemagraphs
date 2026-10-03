@@ -8,6 +8,7 @@ import {
   type AnalysisPromptParts,
 } from './claude'
 import type { AnchorScores } from './omdb'
+import { assertNoVerbatimReviewText } from './sentiment-guards'
 import type { SentimentDataPoint, SentimentGraphData } from '@/lib/types'
 import type { Film, Review } from '@/generated/prisma/client'
 import { pipelineLogger } from './logger'
@@ -422,6 +423,20 @@ export async function storeSentimentGraphResult(
   options: { forceOverwrite?: boolean } = {}
 ): Promise<void> {
   const { film, filteredReviewCount, reviewHash } = input
+
+  // Nothing the model wrote may carry a run of a reviewer's words. The batch
+  // path does not carry review text with it, so read the film's stored
+  // reviews here; this is the one store chokepoint for the classic pipeline.
+  const sourceReviews = await prisma.review.findMany({
+    where: { filmId: film.id },
+    select: { reviewText: true },
+  })
+  assertNoVerbatimReviewText(
+    graphData,
+    sourceReviews.map((r) => r.reviewText),
+    { filmTitle: film.title }
+  )
+
   const existing = await prisma.sentimentGraph.findUnique({ where: { filmId: film.id } })
 
   const otherFields = {

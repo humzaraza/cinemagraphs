@@ -283,6 +283,105 @@ describe('requireFilmRuntime', () => {
   })
 })
 
+describe('verbatim review text guard', () => {
+  const review =
+    'I went in expecting very little, but the final heist sequence is staged with such clockwork precision that I forgot to breathe. The middle hour drags badly.'
+
+  it('finds a run of eight consecutive words shared with a review', async () => {
+    const { buildReviewRunIndex, findVerbatimRun } = await import('@/lib/sentiment-guards')
+    const index = buildReviewRunIndex([review])
+    // Eight words lifted: "is staged with such clockwork precision that i"
+    const copied = 'Reviewers said the heist is staged with such clockwork precision that I was stunned.'
+    expect(findVerbatimRun(copied, index)).toBe('is staged with such clockwork precision that i')
+  })
+
+  it('ignores case and punctuation when matching', async () => {
+    const { buildReviewRunIndex, findVerbatimRun } = await import('@/lib/sentiment-guards')
+    const index = buildReviewRunIndex([review])
+    const copied = 'The Final Heist Sequence, is staged; with SUCH clockwork precision!'
+    expect(findVerbatimRun(copied, index)).not.toBeNull()
+  })
+
+  it('allows seven shared words and a genuine paraphrase', async () => {
+    const { buildReviewRunIndex, findVerbatimRun } = await import('@/lib/sentiment-guards')
+    const index = buildReviewRunIndex([review])
+    // Seven in a row from the review, then diverges.
+    expect(findVerbatimRun('They felt it is staged with such clockwork precision overall.', index)).toBeNull()
+    expect(
+      findVerbatimRun('Reviewers singled out the closing robbery as meticulously choreographed and tense.', index)
+    ).toBeNull()
+  })
+
+  it('does not count the film title toward a run', async () => {
+    const { buildReviewRunIndex, findVerbatimRun } = await import('@/lib/sentiment-guards')
+    const title = 'The Lord of the Rings: The Fellowship of the Ring'
+    const index = buildReviewRunIndex([`${title} is a triumph of patient worldbuilding.`])
+    const honest = `Reviewers felt ${title} earned its length.`
+    expect(findVerbatimRun(honest, index)).not.toBeNull() // the title alone is ten words
+    expect(findVerbatimRun(honest, index, { ignorePhrase: title })).toBeNull()
+  })
+
+  it('assertNoVerbatimReviewText checks reviewEvidence, summary, and the swing line', async () => {
+    const { assertNoVerbatimReviewText } = await import('@/lib/sentiment-guards')
+    const clean = {
+      dataPoints: [{ label: 'Heist', reviewEvidence: 'Reviewers praised the closing robbery as tightly choreographed.' }],
+      summary: 'A slow middle redeemed by its ending.',
+      biggestSentimentSwing: 'Sentiment climbs sharply into the finale.',
+    }
+    expect(() => assertNoVerbatimReviewText(clean, [review])).not.toThrow()
+
+    const lifted = 'the final heist sequence is staged with such clockwork precision'
+    expect(() =>
+      assertNoVerbatimReviewText({ ...clean, dataPoints: [{ label: 'Heist', reviewEvidence: lifted }] }, [review])
+    ).toThrow(/Verbatim review text in dataPoints\[0\]\.reviewEvidence \("Heist"\)/)
+    expect(() => assertNoVerbatimReviewText({ ...clean, summary: lifted }, [review])).toThrow(/in summary/)
+    expect(() => assertNoVerbatimReviewText({ ...clean, biggestSentimentSwing: lifted }, [review])).toThrow(
+      /in biggestSentimentSwing/
+    )
+  })
+
+  it('passes when there are no source reviews to compare against', async () => {
+    const { assertNoVerbatimReviewText } = await import('@/lib/sentiment-guards')
+    expect(() =>
+      assertNoVerbatimReviewText({ dataPoints: [{ label: 'A', reviewEvidence: 'anything at all goes here today' }] }, [])
+    ).not.toThrow()
+  })
+
+  it('prompts tell the model to use its own words and no longer invite reviewer phrasing', async () => {
+    const { SENTIMENT_SYSTEM_PROMPT } = await import('@/lib/claude')
+    const { buildHybridPrompt } = await import('@/lib/hybrid-sentiment')
+    const hybrid = buildHybridPrompt({ film: film(), year: 2010, runtime: 95, plotText: 'x', reviews: [], beatCount: 10 })
+    for (const text of [SENTIMENT_SYSTEM_PROMPT, hybrid]) {
+      expect(text).toMatch(/entirely in your own words/)
+      expect(text).not.toMatch(/lean on phrasings/i)
+    }
+  })
+})
+
+describe('generateHybridSentimentGraph rejects copied review wording', () => {
+  it('throws when reviewEvidence lifts eight words from a stored review', async () => {
+    vi.clearAllMocks()
+    mocks.isQualityReview.mockReturnValue(true)
+    mocks.prisma.film.findUnique.mockResolvedValue(film())
+    const source = 'The courtroom finale lands with a force that the meandering first hour never once hinted at.'
+    mocks.prisma.review.findMany.mockResolvedValue([
+      { id: 'r1', filmId: 'film-1', sourcePlatform: 'TMDB', reviewText: source, sourceRating: 8, author: 'A' },
+      { id: 'r2', filmId: 'film-1', sourcePlatform: 'TMDB', reviewText: 'b'.repeat(400), sourceRating: 7, author: 'B' },
+      { id: 'r3', filmId: 'film-1', sourcePlatform: 'IMDB', reviewText: 'c'.repeat(400), sourceRating: 6, author: 'C' },
+    ])
+    mocks.fetchWikipediaPlot.mockResolvedValue('A plot.')
+    const g = graphObject(twelveSevens, 7)
+    g.dataPoints[4].reviewEvidence = 'Reviewers said the courtroom finale lands with a force that the meandering opening lacked.'
+    mocks.messagesCreate.mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify(g) }],
+      usage: { input_tokens: 10, output_tokens: 5 },
+    })
+
+    const { generateHybridSentimentGraph } = await import('@/lib/hybrid-sentiment')
+    await expect(generateHybridSentimentGraph('film-1')).rejects.toThrow(/Verbatim review text in dataPoints\[4\]/)
+  })
+})
+
 describe('requireReleasedFilm', () => {
   it('returns the release date for a released film', async () => {
     const { requireReleasedFilm } = await import('@/lib/claude')

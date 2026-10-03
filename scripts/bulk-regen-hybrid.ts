@@ -61,7 +61,7 @@ import { PrismaNeon } from '@prisma/adapter-neon'
 import { fetchWikipediaPlot } from '../src/lib/sources/wikipedia'
 import type { ParsedGraph } from '../src/lib/hybrid-sentiment'
 // Dependency-free (no env reads), so a static import is safe here.
-import { requireFilmRuntime, requireReleasedFilm } from '../src/lib/sentiment-guards'
+import { assertNoVerbatimReviewText, requireFilmRuntime, requireReleasedFilm } from '../src/lib/sentiment-guards'
 
 // Bindings populated inside main() via dynamic import, AFTER dotenv.config()
 // above has run. DO NOT convert to static imports — see NOTE in the header.
@@ -408,7 +408,7 @@ async function applySuccessfulResult(
 
   const film = await prisma.film.findUnique({
     where: { id: filmId },
-    select: { id: true, imdbRating: true, rtCriticsScore: true, metacriticScore: true },
+    select: { id: true, title: true, imdbRating: true, rtCriticsScore: true, metacriticScore: true },
   })
   if (!film) throw new Error(`Film vanished between submit and apply: ${filmId}`)
 
@@ -421,6 +421,12 @@ async function applySuccessfulResult(
     where: { filmId },
     select: { sourcePlatform: true, reviewText: true },
   })
+  // Same guard as the app: no run of a reviewer's words in displayed text.
+  assertNoVerbatimReviewText(
+    { dataPoints: graph.dataPoints, summary: graph.summary, biggestSentimentSwing: graph.biggestSentimentSwing },
+    reviews.map((r) => r.reviewText),
+    { filmTitle: film.title }
+  )
   const qualityReviews = reviews.filter((r) => isQualityReview(r.reviewText))
   const sourcesUsed = [...new Set(qualityReviews.map((r) => r.sourcePlatform.toLowerCase()))]
 

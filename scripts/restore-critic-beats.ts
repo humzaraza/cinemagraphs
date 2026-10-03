@@ -34,7 +34,7 @@ import './_neon-ws'
 import Anthropic from '@anthropic-ai/sdk'
 import { prisma } from '../src/lib/prisma'
 import { SENTIMENT_MODEL, SENTIMENT_MAX_TOKENS } from '../src/lib/claude'
-import { requireFilmRuntime, overallScoreFromBeats } from '../src/lib/sentiment-guards'
+import { assertNoVerbatimReviewText, requireFilmRuntime, overallScoreFromBeats } from '../src/lib/sentiment-guards'
 import { isQualityReview } from '../src/lib/sentiment-pipeline'
 import { fetchWikipediaPlot } from '../src/lib/sources/wikipedia'
 import { safeWriteSentimentGraph } from '../src/lib/sentiment-beat-lock'
@@ -130,7 +130,7 @@ Use the full 1.0 to 10.0 scale. Score each beat on what REVIEWERS said about tha
 
 Confidence: "high" when several reviews discuss that part, "medium" when some do, "low" when it is inferred from general sentiment.
 
-reviewEvidence: a 1 to 2 sentence paraphrased synthesis of what reviewers said about that stretch. No direct quotes.
+reviewEvidence: a 1 to 2 sentence synthesis of what reviewers said about that stretch, written entirely in your own words. Never quote a review and never reuse a reviewer's phrasing; a response that copies review wording is rejected.
 
 ## Reviews
 
@@ -265,6 +265,12 @@ async function main() {
         .map((b) => b.text)
         .join('')
       const rescored = parseRescore(text, beats)
+      // Same guard as the app: no run of a reviewer's words in displayed text.
+      assertNoVerbatimReviewText(
+        { dataPoints: rescored },
+        storedReviews.map((rv) => rv.reviewText),
+        { filmTitle: film.title }
+      )
 
       // Same skeleton, fresh critic scores.
       const criticBeats: SentimentDataPoint[] = beats.map((b, i) => ({

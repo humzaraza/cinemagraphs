@@ -81,6 +81,7 @@ import { SENTIMENT_MODEL, SENTIMENT_MAX_TOKENS, buildAnalysisPromptParts } from 
 import {
   MEAN_SCORE_TOLERANCE,
   assertMeanWithinTolerance,
+  assertNoVerbatimReviewText,
   meanBeatScore,
   requireFilmRuntime,
   requireReleasedFilm,
@@ -607,7 +608,7 @@ async function applyResult(
 
   const film = await prisma.film.findUnique({
     where: { id: filmId },
-    select: { id: true, imdbRating: true, rtCriticsScore: true, metacriticScore: true },
+    select: { id: true, title: true, imdbRating: true, rtCriticsScore: true, metacriticScore: true },
   })
   if (!film) throw new CategorizedError('write_error', `Film vanished between submit and apply: ${filmId}`)
 
@@ -620,6 +621,16 @@ async function applyResult(
     where: { filmId },
     select: { sourcePlatform: true, reviewText: true, contentHash: true },
   })
+  // Same guard as the app: no run of a reviewer's words in displayed text.
+  try {
+    assertNoVerbatimReviewText(
+      { dataPoints: graph.dataPoints, summary: graph.summary, biggestSentimentSwing: graph.biggestSentimentSwing },
+      reviews.map((r) => r.reviewText),
+      { filmTitle: film.title }
+    )
+  } catch (err) {
+    throw new CategorizedError('validation', err instanceof Error ? err.message : String(err))
+  }
   const qualityReviews = reviews.filter((r) => isQualityReview(r.reviewText))
   const sourcesUsed = [...new Set(qualityReviews.map((r) => r.sourcePlatform.toLowerCase()))]
 
