@@ -4,11 +4,11 @@ import { fetchAllReviews, computeReviewHash } from './review-fetcher'
 import {
   analyzeSentiment,
   buildAnalysisPromptParts,
+  ensureNoVerbatimReviewText,
   type PlotContext,
   type AnalysisPromptParts,
 } from './claude'
 import type { AnchorScores } from './omdb'
-import { assertNoVerbatimReviewText } from './sentiment-guards'
 import type { SentimentDataPoint, SentimentGraphData } from '@/lib/types'
 import type { Film, Review } from '@/generated/prisma/client'
 import { pipelineLogger } from './logger'
@@ -418,7 +418,7 @@ export async function prepareSentimentGraphInput(
  */
 export async function storeSentimentGraphResult(
   input: SentimentGraphInput,
-  graphData: SentimentGraphData,
+  generated: SentimentGraphData,
   callerPath: BeatLockCallerPath,
   options: { forceOverwrite?: boolean } = {}
 ): Promise<void> {
@@ -431,10 +431,12 @@ export async function storeSentimentGraphResult(
     where: { filmId: film.id },
     select: { reviewText: true },
   })
-  assertNoVerbatimReviewText(
-    graphData,
+  // A graph that repeats review wording gets one rewording request; if that
+  // does not clear it, this throws and nothing is stored.
+  const graphData = await ensureNoVerbatimReviewText(
+    generated,
     sourceReviews.map((r) => r.reviewText),
-    { filmTitle: film.title }
+    { filmTitle: film.title, filmId: film.id }
   )
 
   const existing = await prisma.sentimentGraph.findUnique({ where: { filmId: film.id } })

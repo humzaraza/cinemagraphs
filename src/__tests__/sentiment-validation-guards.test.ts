@@ -358,27 +358,158 @@ describe('verbatim review text guard', () => {
   })
 })
 
-describe('generateHybridSentimentGraph rejects copied review wording', () => {
-  it('throws when reviewEvidence lifts eight words from a stored review', async () => {
+describe('ensureNoVerbatimReviewText: one rewording, then reject', () => {
+  const source = 'The courtroom finale lands with a force that the meandering first hour never once hinted at.'
+  const copied = 'Reviewers said the courtroom finale lands with a force that the meandering opening lacked.'
+  const clean = 'Reviewers found the trial ending far more powerful than the slow opening.'
+
+  function graphWith(evidence: string) {
+    return {
+      dataPoints: [
+        { label: 'Opening', score: 6, reviewEvidence: 'Reviewers found the setup slow.' },
+        { label: 'Trial', score: 8, reviewEvidence: evidence },
+      ],
+      summary: 'A slow start redeemed by its ending.',
+      biggestSentimentSwing: 'Sentiment climbs sharply at the trial.',
+    }
+  }
+
+  function rewriteResponse(rewrites: Array<{ id: number; text: string }>) {
+    return { content: [{ type: 'text', text: JSON.stringify({ rewrites }) }], usage: { input_tokens: 1, output_tokens: 1 } }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('makes no model call when nothing is copied', async () => {
+    const { ensureNoVerbatimReviewText } = await import('@/lib/claude')
+    const g = graphWith(clean)
+    await expect(ensureNoVerbatimReviewText(g, [source])).resolves.toBe(g)
+    expect(mocks.messagesCreate).not.toHaveBeenCalled()
+  })
+
+  it('rewords the flagged passage and leaves scores, labels, and other text untouched', async () => {
+    mocks.messagesCreate.mockResolvedValueOnce(rewriteResponse([{ id: 1, text: clean }]))
+    const { ensureNoVerbatimReviewText } = await import('@/lib/claude')
+    const result = await ensureNoVerbatimReviewText(graphWith(copied), [source])
+
+    expect(mocks.messagesCreate).toHaveBeenCalledTimes(1)
+    expect(result.dataPoints[1].reviewEvidence).toBe(clean)
+    expect(result.dataPoints[1].score).toBe(8)
+    expect(result.dataPoints[1].label).toBe('Trial')
+    expect(result.dataPoints[0]).toEqual({ label: 'Opening', score: 6, reviewEvidence: 'Reviewers found the setup slow.' })
+    expect(result.summary).toBe('A slow start redeemed by its ending.')
+  })
+
+  it('sends a schema-constrained request that contains the passage but none of the reviews', async () => {
+    mocks.messagesCreate.mockResolvedValueOnce(rewriteResponse([{ id: 1, text: clean }]))
+    const { ensureNoVerbatimReviewText } = await import('@/lib/claude')
+    await ensureNoVerbatimReviewText(graphWith(copied), [source])
+
+    const request = mocks.messagesCreate.mock.calls[0][0]
+    // JSON is enforced by the API, not asked for in prose.
+    expect(request.output_config.format.type).toBe('json_schema')
+    expect(request.output_config.format.schema.required).toEqual(['rewrites'])
+    // One user turn, no system prompt, no assistant prefill.
+    expect(request.system).toBeUndefined()
+    expect(request.messages).toHaveLength(1)
+    expect(request.messages[0].role).toBe('user')
+    const prompt = request.messages[0].content as string
+    expect(prompt).toContain(copied)
+    expect(prompt).toContain('phrase to avoid: the courtroom finale lands with a force that')
+    // The review itself is never sent: only the flagged run of eight words.
+    expect(prompt).not.toContain('never once hinted at')
+  })
+
+  it('rejects when the rewording still carries review wording', async () => {
+    mocks.messagesCreate.mockResolvedValueOnce(
+      rewriteResponse([{ id: 1, text: 'Critics felt the courtroom finale lands with a force that the meandering start lacked.' }])
+    )
+    const { ensureNoVerbatimReviewText } = await import('@/lib/claude')
+    await expect(ensureNoVerbatimReviewText(graphWith(copied), [source])).rejects.toThrow(
+      /Verbatim review text in dataPoints\[1\].*still present after one rewording/
+    )
+    expect(mocks.messagesCreate).toHaveBeenCalledTimes(1) // exactly one retry, never a loop
+  })
+
+  it('rejects when the rewording response is not the expected JSON', async () => {
+    mocks.messagesCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: 'Sure! Here is a reworded version of the passage...' }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    })
+    const { ensureNoVerbatimReviewText } = await import('@/lib/claude')
+    await expect(ensureNoVerbatimReviewText(graphWith(copied), [source])).rejects.toThrow(
+      /Verbatim review text.*the rewording request failed/
+    )
+  })
+
+  it('rejects when the rewording omits the flagged passage', async () => {
+    mocks.messagesCreate.mockResolvedValueOnce(rewriteResponse([]))
+    const { ensureNoVerbatimReviewText } = await import('@/lib/claude')
+    await expect(ensureNoVerbatimReviewText(graphWith(copied), [source])).rejects.toThrow(/still present after one rewording/)
+  })
+
+  it('rewords summary and swing lines too', async () => {
+    mocks.messagesCreate.mockResolvedValueOnce(rewriteResponse([{ id: 1, text: 'The ending hits much harder than the start suggests.' }]))
+    const { ensureNoVerbatimReviewText } = await import('@/lib/claude')
+    const g = { ...graphWith(clean), summary: copied }
+    const result = await ensureNoVerbatimReviewText(g, [source])
+    expect(result.summary).toBe('The ending hits much harder than the start suggests.')
+  })
+})
+
+describe('generateHybridSentimentGraph and copied review wording', () => {
+  const source = 'The courtroom finale lands with a force that the meandering first hour never once hinted at.'
+  const copied = 'Reviewers said the courtroom finale lands with a force that the meandering opening lacked.'
+
+  beforeEach(() => {
     vi.clearAllMocks()
     mocks.isQualityReview.mockReturnValue(true)
     mocks.prisma.film.findUnique.mockResolvedValue(film())
-    const source = 'The courtroom finale lands with a force that the meandering first hour never once hinted at.'
     mocks.prisma.review.findMany.mockResolvedValue([
       { id: 'r1', filmId: 'film-1', sourcePlatform: 'TMDB', reviewText: source, sourceRating: 8, author: 'A' },
       { id: 'r2', filmId: 'film-1', sourcePlatform: 'TMDB', reviewText: 'b'.repeat(400), sourceRating: 7, author: 'B' },
       { id: 'r3', filmId: 'film-1', sourcePlatform: 'IMDB', reviewText: 'c'.repeat(400), sourceRating: 6, author: 'C' },
     ])
     mocks.fetchWikipediaPlot.mockResolvedValue('A plot.')
+  })
+
+  function generation() {
     const g = graphObject(twelveSevens, 7)
-    g.dataPoints[4].reviewEvidence = 'Reviewers said the courtroom finale lands with a force that the meandering opening lacked.'
-    mocks.messagesCreate.mockResolvedValue({
-      content: [{ type: 'text', text: JSON.stringify(g) }],
-      usage: { input_tokens: 10, output_tokens: 5 },
-    })
+    g.dataPoints[4].reviewEvidence = copied
+    return { content: [{ type: 'text', text: JSON.stringify(g) }], usage: { input_tokens: 10, output_tokens: 5 } }
+  }
+
+  it('returns the graph with the passage reworded when the one retry succeeds', async () => {
+    const reworded = 'Reviewers found the trial ending far more powerful than the slow opening.'
+    mocks.messagesCreate
+      .mockResolvedValueOnce(generation())
+      .mockResolvedValueOnce({
+        content: [{ type: 'text', text: JSON.stringify({ rewrites: [{ id: 1, text: reworded }] }) }],
+        usage: { input_tokens: 1, output_tokens: 1 },
+      })
 
     const { generateHybridSentimentGraph } = await import('@/lib/hybrid-sentiment')
-    await expect(generateHybridSentimentGraph('film-1')).rejects.toThrow(/Verbatim review text in dataPoints\[4\]/)
+    const result = await generateHybridSentimentGraph('film-1')
+    expect(mocks.messagesCreate).toHaveBeenCalledTimes(2)
+    expect(result.beats[4].reviewEvidence).toBe(reworded)
+    expect(result.beats[4].score).toBe(7)
+    expect(result.overallScore).toBe(7)
+  })
+
+  it('throws when the retry does not clear the copied wording', async () => {
+    mocks.messagesCreate
+      .mockResolvedValueOnce(generation())
+      .mockResolvedValueOnce({
+        content: [{ type: 'text', text: JSON.stringify({ rewrites: [{ id: 1, text: copied }] }) }],
+        usage: { input_tokens: 1, output_tokens: 1 },
+      })
+
+    const { generateHybridSentimentGraph } = await import('@/lib/hybrid-sentiment')
+    await expect(generateHybridSentimentGraph('film-1')).rejects.toThrow(
+      /Verbatim review text in dataPoints\[4\].*still present after one rewording/
+    )
   })
 })
 

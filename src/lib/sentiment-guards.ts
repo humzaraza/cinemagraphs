@@ -163,23 +163,45 @@ export function displayedGraphTexts(graph: DisplayedGraphText): Array<{ where: s
   return out
 }
 
+export interface VerbatimViolation {
+  where: string
+  text: string
+  /** The shared run of words, normalised (lowercase, no punctuation). */
+  run: string
+}
+
+/** Every displayed text on the graph that shares a run of VERBATIM_RUN_WORDS
+ *  consecutive words with a source review. Empty when the graph is clean. */
+export function findVerbatimViolations(
+  graph: DisplayedGraphText,
+  reviewTexts: ReadonlyArray<string>,
+  options: { filmTitle?: string } = {}
+): VerbatimViolation[] {
+  const index = buildReviewRunIndex(reviewTexts)
+  if (index.size === 0) return []
+  const out: VerbatimViolation[] = []
+  for (const { where, text } of displayedGraphTexts(graph)) {
+    const run = findVerbatimRun(text, index, { ignorePhrase: options.filmTitle })
+    if (run) out.push({ where, text, run })
+  }
+  return out
+}
+
+export function verbatimErrorMessage(v: VerbatimViolation): string {
+  return `Verbatim review text in ${v.where}: shares ${VERBATIM_RUN_WORDS} consecutive words with a source review ("${v.run}")`
+}
+
 /** Reject a graph whose displayed text shares a run of VERBATIM_RUN_WORDS
- *  consecutive words with any source review. Throws; nothing is repaired. */
+ *  consecutive words with any source review. Throws; nothing is repaired.
+ *  Generation paths call ensureNoVerbatimReviewText (claude.ts) instead,
+ *  which gives the model one chance to reword before this verdict is final. */
 export function assertNoVerbatimReviewText(
   graph: DisplayedGraphText,
   reviewTexts: ReadonlyArray<string>,
   options: { filmTitle?: string } = {}
 ): void {
-  const index = buildReviewRunIndex(reviewTexts)
-  if (index.size === 0) return
-  for (const { where, text } of displayedGraphTexts(graph)) {
-    const run = findVerbatimRun(text, index, { ignorePhrase: options.filmTitle })
-    if (run) {
-      throw new Error(
-        `Verbatim review text in ${where}: shares ${VERBATIM_RUN_WORDS} consecutive words with a source review ("${run}")`
-      )
-    }
-  }
+  const violations = findVerbatimViolations(graph, reviewTexts, options)
+  if (violations.length > 0) throw new Error(verbatimErrorMessage(violations[0]))
 }
 
 /** Return the film's release date, or throw. A graph is built from reviews

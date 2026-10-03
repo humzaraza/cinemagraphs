@@ -10,8 +10,8 @@ import {
   overallScoreFromBeats,
   requireFilmRuntime,
   requireReleasedFilm,
+  ensureNoVerbatimReviewText,
 } from './claude'
-import { assertNoVerbatimReviewText } from './sentiment-guards'
 import { pipelineLogger } from './logger'
 import type { SentimentDataPoint, PeakLowMoment } from './types'
 import type { Film, Review } from '@/generated/prisma/client'
@@ -391,7 +391,7 @@ export async function generateHybridSentimentGraph(filmId: string): Promise<Hybr
     user = parts.user
   }
 
-  const { graph, inputTokens, outputTokens } = await callClaudeAndParse({
+  const { graph: generated, inputTokens, outputTokens } = await callClaudeAndParse({
     system,
     user,
     filmId,
@@ -400,10 +400,12 @@ export async function generateHybridSentimentGraph(filmId: string): Promise<Hybr
 
   // Nothing the model wrote may carry a run of a reviewer's words. Checked
   // against every stored review for the film, not only the ones in the prompt.
-  assertNoVerbatimReviewText(
-    graph,
+  // A graph that repeats review wording gets one rewording request; if that
+  // does not clear it, this throws and nothing is returned.
+  const graph = await ensureNoVerbatimReviewText(
+    generated,
     storedReviews.map((r) => r.reviewText),
-    { filmTitle: film.title }
+    { filmTitle: film.title, filmId }
   )
 
   pipelineLogger.info(

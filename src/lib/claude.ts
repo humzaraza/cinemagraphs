@@ -81,6 +81,12 @@ export {
   requireFilmRuntime,
   requireReleasedFilm,
 } from './sentiment-guards'
+import {
+  findVerbatimViolations,
+  verbatimErrorMessage,
+  type DisplayedGraphText,
+  type VerbatimViolation,
+} from './sentiment-guards'
 
 export interface PlotContext {
   text: string
@@ -411,6 +417,140 @@ export async function analyzeSentiment(
     'Claude analysis failed after 2 attempts'
   )
   throw new Error(`Claude analysis failed after 2 attempts: ${lastError?.message}`)
+}
+
+// ── Copied review wording: one rewording attempt, then reject ───────────────
+//
+// When a generated graph carries a run of a reviewer's words, re-sending the
+// original prompt is pointless: at temperature 0 it returns the same output.
+// Appending a corrective note to that prompt is worse: it turned 27 of 29
+// backfill retries into prose. So the retry is a separate, small request:
+//
+//   - The model sees only its own flagged passages and the phrase to avoid.
+//     No reviews, no film data, nothing to re-derive or discuss.
+//   - The response shape is enforced by the API through a JSON schema
+//     (output_config.format), not requested in prose.
+//   - Scores, labels, and timestamps cannot change: they are never sent.
+//
+// The reworded graph is checked again with the same rule. If any passage
+// still shares a run with a review, the graph is rejected.
+
+const REWRITE_MAX_TOKENS = 2000
+
+const REWRITE_SCHEMA = {
+  type: 'object',
+  properties: {
+    rewrites: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          text: { type: 'string' },
+        },
+        required: ['id', 'text'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['rewrites'],
+  additionalProperties: false,
+} as const
+
+export function buildRewritePrompt(violations: ReadonlyArray<VerbatimViolation>): string {
+  const passages = violations
+    .map((v, i) => `[${i + 1}]\npassage: ${v.text}\nphrase to avoid: ${v.run}`)
+    .join('\n\n')
+  return `Each passage below is a short summary an analyst wrote about part of a film. Each one repeats a phrase from a published review, shown as "phrase to avoid" (lowercased, punctuation removed).
+
+Rewrite every passage so it makes the same point in different words. Keep the meaning, the specifics, and roughly the length. Do not use the phrase to avoid, or the same words in the same order with small changes. Do not add claims the passage does not make. Do not use em dashes or quotation marks.
+
+${passages}
+
+Return one rewrite per passage, using the passage number as its id.`
+}
+
+function parseRewrites(text: string, expected: number): Map<number, string> {
+  const parsed = JSON.parse(text) as { rewrites?: unknown }
+  if (!Array.isArray(parsed.rewrites)) throw new Error('rewrite response has no rewrites array')
+  const out = new Map<number, string>()
+  for (const item of parsed.rewrites) {
+    const r = item as { id?: unknown; text?: unknown }
+    if (typeof r.id !== 'number' || typeof r.text !== 'string' || r.text.trim() === '') continue
+    if (r.id >= 1 && r.id <= expected) out.set(r.id, r.text.trim())
+  }
+  return out
+}
+
+type GraphWithDisplayedText = DisplayedGraphText & {
+  dataPoints: ReadonlyArray<{ label?: unknown; reviewEvidence?: unknown }>
+}
+
+function applyRewrite<T extends GraphWithDisplayedText>(graph: T, where: string, text: string): T {
+  if (where === 'summary') return { ...graph, summary: text }
+  if (where === 'biggestSentimentSwing') return { ...graph, biggestSentimentSwing: text }
+  const match = /^dataPoints\[(\d+)\]\.reviewEvidence/.exec(where)
+  if (!match) return graph
+  const index = Number(match[1])
+  const dataPoints = graph.dataPoints.map((dp, i) => (i === index ? { ...dp, reviewEvidence: text } : dp))
+  return { ...graph, dataPoints }
+}
+
+/**
+ * Return the graph unchanged when none of its displayed text shares a run of
+ * words with a source review. Otherwise ask the model once to reword the
+ * flagged passages, re-check, and return the reworded graph. Throws when the
+ * rewording fails or the result still carries review wording, so nothing
+ * copied is ever written.
+ */
+export async function ensureNoVerbatimReviewText<T extends GraphWithDisplayedText>(
+  graph: T,
+  reviewTexts: ReadonlyArray<string>,
+  options: { filmTitle?: string; filmId?: string } = {}
+): Promise<T> {
+  const violations = findVerbatimViolations(graph, reviewTexts, options)
+  if (violations.length === 0) return graph
+
+  pipelineLogger.warn(
+    { filmId: options.filmId, passages: violations.map((v) => v.where) },
+    'Generated text repeats review wording; requesting one rewording'
+  )
+
+  let rewrites: Map<number, string>
+  try {
+    const message = await anthropic.messages.create({
+      model: SENTIMENT_MODEL,
+      max_tokens: REWRITE_MAX_TOKENS,
+      output_config: { format: { type: 'json_schema', schema: REWRITE_SCHEMA } },
+      messages: [{ role: 'user', content: buildRewritePrompt(violations) }],
+    })
+    const text = message.content
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('')
+    rewrites = parseRewrites(text, violations.length)
+  } catch (err) {
+    throw new Error(
+      `${verbatimErrorMessage(violations[0])}; the rewording request failed: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+
+  let reworded = graph
+  violations.forEach((v, i) => {
+    const text = rewrites.get(i + 1)
+    if (text) reworded = applyRewrite(reworded, v.where, text)
+  })
+
+  const remaining = findVerbatimViolations(reworded, reviewTexts, options)
+  if (remaining.length > 0) {
+    throw new Error(`${verbatimErrorMessage(remaining[0])}; still present after one rewording`)
+  }
+
+  pipelineLogger.info(
+    { filmId: options.filmId, reworded: violations.length },
+    'Reworded passages no longer repeat review wording'
+  )
+  return reworded
 }
 
 // ── Batch API support ───────────────────────────────────────────────────────

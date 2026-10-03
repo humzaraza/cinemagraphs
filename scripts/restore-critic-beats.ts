@@ -33,8 +33,8 @@ import './_neon-ws'
 
 import Anthropic from '@anthropic-ai/sdk'
 import { prisma } from '../src/lib/prisma'
-import { SENTIMENT_MODEL, SENTIMENT_MAX_TOKENS } from '../src/lib/claude'
-import { assertNoVerbatimReviewText, requireFilmRuntime, overallScoreFromBeats } from '../src/lib/sentiment-guards'
+import { SENTIMENT_MODEL, SENTIMENT_MAX_TOKENS, ensureNoVerbatimReviewText } from '../src/lib/claude'
+import { requireFilmRuntime, overallScoreFromBeats } from '../src/lib/sentiment-guards'
 import { isQualityReview } from '../src/lib/sentiment-pipeline'
 import { fetchWikipediaPlot } from '../src/lib/sources/wikipedia'
 import { safeWriteSentimentGraph } from '../src/lib/sentiment-beat-lock'
@@ -264,13 +264,15 @@ async function main() {
         .filter((b): b is Extract<typeof b, { type: 'text' }> => b.type === 'text')
         .map((b) => b.text)
         .join('')
-      const rescored = parseRescore(text, beats)
-      // Same guard as the app: no run of a reviewer's words in displayed text.
-      assertNoVerbatimReviewText(
-        { dataPoints: rescored },
-        storedReviews.map((rv) => rv.reviewText),
-        { filmTitle: film.title }
-      )
+      // Same guard as the app: no run of a reviewer's words in displayed
+      // text. One rewording request if there is; rejected if that fails.
+      const rescored = (
+        await ensureNoVerbatimReviewText(
+          { dataPoints: parseRescore(text, beats) },
+          storedReviews.map((rv) => rv.reviewText),
+          { filmTitle: film.title, filmId: film.id }
+        )
+      ).dataPoints
 
       // Same skeleton, fresh critic scores.
       const criticBeats: SentimentDataPoint[] = beats.map((b, i) => ({
