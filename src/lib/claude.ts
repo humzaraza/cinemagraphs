@@ -482,6 +482,32 @@ function parseRewrites(text: string, expected: number): Map<number, string> {
   return out
 }
 
+/**
+ * The rewording request on its own: one schema-constrained call that returns
+ * a rewrite per flagged passage, keyed by 1-based position in `violations`.
+ * A passage the model skipped is simply absent from the map. Throws when the
+ * request fails or the response is not the expected JSON. Used by
+ * ensureNoVerbatimReviewText and by scripts/reword-copied-passages.ts.
+ */
+export async function requestRewordings(
+  violations: ReadonlyArray<VerbatimViolation>
+): Promise<{ rewrites: Map<number, string>; usage: { inputTokens: number; outputTokens: number } }> {
+  const message = await anthropic.messages.create({
+    model: SENTIMENT_MODEL,
+    max_tokens: REWRITE_MAX_TOKENS,
+    output_config: { format: { type: 'json_schema', schema: REWRITE_SCHEMA } },
+    messages: [{ role: 'user', content: buildRewritePrompt(violations) }],
+  })
+  const text = message.content
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join('')
+  return {
+    rewrites: parseRewrites(text, violations.length),
+    usage: { inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens },
+  }
+}
+
 type GraphWithDisplayedText = DisplayedGraphText & {
   dataPoints: ReadonlyArray<{ label?: unknown; reviewEvidence?: unknown }>
 }
@@ -518,17 +544,7 @@ export async function ensureNoVerbatimReviewText<T extends GraphWithDisplayedTex
 
   let rewrites: Map<number, string>
   try {
-    const message = await anthropic.messages.create({
-      model: SENTIMENT_MODEL,
-      max_tokens: REWRITE_MAX_TOKENS,
-      output_config: { format: { type: 'json_schema', schema: REWRITE_SCHEMA } },
-      messages: [{ role: 'user', content: buildRewritePrompt(violations) }],
-    })
-    const text = message.content
-      .filter((block) => block.type === 'text')
-      .map((block) => block.text)
-      .join('')
-    rewrites = parseRewrites(text, violations.length)
+    rewrites = (await requestRewordings(violations)).rewrites
   } catch (err) {
     throw new Error(
       `${verbatimErrorMessage(violations[0])}; the rewording request failed: ${err instanceof Error ? err.message : String(err)}`
