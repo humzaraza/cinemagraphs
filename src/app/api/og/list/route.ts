@@ -16,6 +16,7 @@ const TEAL = '#2DD4A8'
 const RED = '#E05555'
 const IVORY = '#F5F0E8'
 const TMDB_API_KEY = process.env.TMDB_API_KEY!
+const AXIS_LABEL_HALO = '0 0 2px rgba(13,13,26,1), 0 0 5px rgba(13,13,26,0.95)'
 const SCORE_HALO =
   '0 0 2px rgba(13,13,26,1), 0 0 5px rgba(13,13,26,1), 0 0 12px rgba(13,13,26,0.9), 0 0 24px rgba(13,13,26,0.85)'
 
@@ -147,6 +148,15 @@ export async function buildSparklinePng(
   // SVG with axis lines — labels rendered by satori instead
   const svgParts: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${sw}" height="${sh}" viewBox="0 0 ${sw} ${sh}">`,
+    // Soft dark halo behind the axes, line and dots so the graph stays
+    // readable where the row overlay has faded out over a bright backdrop.
+    `<defs><filter id="halo" x="-10%" y="-25%" width="120%" height="150%">` +
+      `<feGaussianBlur in="SourceAlpha" stdDeviation="2.2" result="blur"/>` +
+      `<feFlood flood-color="${BG}" flood-opacity="0.95"/>` +
+      `<feComposite in2="blur" operator="in" result="shadow"/>` +
+      `<feMerge><feMergeNode in="shadow"/><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/></feMerge>` +
+      `</filter></defs>`,
+    `<g filter="url(#halo)">`,
     // Left y-axis line
     `<line x1="${paddingX}" y1="${paddingY}" x2="${paddingX}" y2="${paddingY + innerH}" stroke="${axisColor}" stroke-width="1"/>`,
     // Bottom x-axis line
@@ -167,7 +177,7 @@ export async function buildSparklinePng(
     )
   }
 
-  svgParts.push('</svg>')
+  svgParts.push('</g></svg>')
   const svgStr = svgParts.join('\n')
 
   // Render SVG to PNG via sharp
@@ -576,13 +586,13 @@ export async function GET(request: NextRequest) {
                     },
                   },
                   React.createElement('span', {
-                    style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textAlign: 'right' as const },
+                    style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textShadow: AXIS_LABEL_HALO, textAlign: 'right' as const },
                   }, sparkData.yMax.toFixed(1)),
                   React.createElement('span', {
-                    style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textAlign: 'right' as const },
+                    style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textShadow: AXIS_LABEL_HALO, textAlign: 'right' as const },
                   }, sparkData.midScore.toFixed(1)),
                   React.createElement('span', {
-                    style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textAlign: 'right' as const },
+                    style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textShadow: AXIS_LABEL_HALO, textAlign: 'right' as const },
                   }, sparkData.yMin.toFixed(1))
                 ),
                 // Sparkline image
@@ -612,10 +622,10 @@ export async function GET(request: NextRequest) {
                       },
                     },
                     React.createElement('span', {
-                      style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)' },
+                      style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textShadow: AXIS_LABEL_HALO },
                     }, '0m'),
                     React.createElement('span', {
-                      style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)' },
+                      style: { fontFamily: 'DM Sans', fontSize: 11, color: 'rgba(245,240,232,0.7)', textShadow: AXIS_LABEL_HALO },
                     }, runtimeLabel)
                   )
                 : null
