@@ -17,6 +17,23 @@ const RED = '#E05555'
 const IVORY = '#F5F0E8'
 const TMDB_API_KEY = process.env.TMDB_API_KEY!
 
+// Same tiers as the on-page graph legend: 8+ Great, 6-8 Good, <6 Poor.
+function tierColor(score: number): string {
+  if (score >= 8) return TEAL
+  if (score >= 6) return GOLD
+  return RED
+}
+
+// One y-range for every row of a poster. Scaling each row to its own data
+// made a film that wobbles between 8 and 9 look as volatile as one that
+// crashes from 9 to 2.
+export function sharedYDomain(scores: number[]): { yMin: number; yMax: number } {
+  return {
+    yMin: Math.max(1, Math.floor(Math.min(...scores)) - 1),
+    yMax: Math.min(10, Math.ceil(Math.max(...scores)) + 1),
+  }
+}
+
 // ── Font cache ──────────────────────────────────────────
 
 const fontCache: Record<string, ArrayBuffer> = {}
@@ -93,7 +110,8 @@ interface SparklineResult {
 export async function buildSparklinePng(
   dataPoints: SentimentDataPoint[],
   sw: number,
-  sh: number
+  sh: number,
+  yDomain?: { yMin: number; yMax: number }
 ): Promise<SparklineResult | null> {
   if (dataPoints.length < 2) return null
 
@@ -102,12 +120,8 @@ export async function buildSparklinePng(
   const innerW = sw - paddingX * 2
   const innerH = sh - paddingY * 2
 
-  // Dynamic y-axis scaling
-  const scores = dataPoints.map((dp) => dp.score)
-  const lowestScore = Math.min(...scores)
-  const highestScore = Math.max(...scores)
-  const yMin = Math.max(1, Math.floor(lowestScore) - 1)
-  const yMax = Math.min(10, Math.ceil(highestScore) + 1)
+  // Y-axis scaling: the caller's shared domain, else this film's own range
+  const { yMin, yMax } = yDomain ?? sharedYDomain(dataPoints.map((dp) => dp.score))
   const yRange = yMax - yMin
   const midScore = (yMin + yMax) / 2
 
@@ -139,14 +153,15 @@ export async function buildSparklinePng(
     `<line x1="${paddingX}" y1="${midY.toFixed(1)}" x2="${paddingX + innerW}" y2="${midY.toFixed(1)}" stroke="${midColor}" stroke-width="1" stroke-dasharray="4 3"/>`,
     // Data line
     `<path d="${path}" fill="none" stroke="${GOLD}" stroke-width="2.5" stroke-linecap="round"/>`,
-    // Peak dot
-    `<circle cx="${points[peakIdx].x.toFixed(1)}" cy="${points[peakIdx].y.toFixed(1)}" r="3.5" fill="${TEAL}"/>`,
+    // Peak dot. Peak and low dots take the point's own tier colour, so
+    // colour always means the score tier, never the marker role.
+    `<circle cx="${points[peakIdx].x.toFixed(1)}" cy="${points[peakIdx].y.toFixed(1)}" r="4.5" fill="${tierColor(points[peakIdx].score)}"/>`,
   ]
 
   // Low dot only if below 7.5
   if (points[lowIdx].score < 7.5) {
     svgParts.push(
-      `<circle cx="${points[lowIdx].x.toFixed(1)}" cy="${points[lowIdx].y.toFixed(1)}" r="3.5" fill="${RED}"/>`
+      `<circle cx="${points[lowIdx].x.toFixed(1)}" cy="${points[lowIdx].y.toFixed(1)}" r="4.5" fill="${tierColor(points[lowIdx].score)}"/>`
     )
   }
 
@@ -320,6 +335,12 @@ export async function GET(request: NextRequest) {
   const sparklineCache = new Map<string, SparklineResult>()
   const sparkW = sparkZoneW
   const sparkH = Math.round(rowH * 0.5)
+  const allScores = ordered.flatMap((film) => {
+    const raw = film.sentimentGraph?.dataPoints
+    const dps = (Array.isArray(raw) ? raw : []) as unknown as SentimentDataPoint[]
+    return dps.length >= 2 ? dps.map((dp) => dp.score) : []
+  })
+  const yDomain = allScores.length > 0 ? sharedYDomain(allScores) : undefined
   await Promise.all(
     ordered.map(async (film) => {
       const raw = film.sentimentGraph?.dataPoints
@@ -333,7 +354,7 @@ export async function GET(request: NextRequest) {
       })
       const dataPoints = (Array.isArray(raw) ? raw : []) as unknown as SentimentDataPoint[]
       if (dataPoints.length >= 2) {
-        const result = await buildSparklinePng(dataPoints, sparkW, sparkH)
+        const result = await buildSparklinePng(dataPoints, sparkW, sparkH, yDomain)
         if (result) sparklineCache.set(film.id, result)
       }
     })
