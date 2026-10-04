@@ -16,6 +16,8 @@ const TEAL = '#2DD4A8'
 const RED = '#E05555'
 const IVORY = '#F5F0E8'
 const TMDB_API_KEY = process.env.TMDB_API_KEY!
+const SCORE_HALO =
+  '0 0 2px rgba(13,13,26,1), 0 0 5px rgba(13,13,26,1), 0 0 12px rgba(13,13,26,0.9), 0 0 24px rgba(13,13,26,0.85)'
 
 // Same tiers as the on-page graph legend: 8+ Great, 6-8 Good, <6 Poor.
 function tierColor(score: number): string {
@@ -632,6 +634,9 @@ export async function GET(request: NextRequest) {
               fontWeight: score != null ? 700 : 400,
               fontSize: score != null ? scoreFontSize : scoreFontSize - 4,
               color: score != null ? GOLD : 'rgba(255,255,255,0.2)',
+              // Dark halo so the gold number stays readable where the row's
+              // overlay has faded out over a bright backdrop.
+              textShadow: SCORE_HALO,
               textAlign: 'right' as const,
               paddingRight: 10,
             },
