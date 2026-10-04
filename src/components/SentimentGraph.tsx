@@ -64,6 +64,43 @@ function scoreColor(score: number): string {
   return '#ef4444'
 }
 
+// Peak / lowest markers. An outlined ring in the point's own tier colour plus
+// a neutral text label, never a fixed colour: a film's lowest moment can still
+// be an 8, and colour on this graph always means the score tier.
+function MomentRing({
+  cx,
+  cy,
+  score,
+  label,
+  placement,
+}: {
+  cx?: number
+  cy?: number
+  score: number
+  label: string
+  placement: 'above' | 'below'
+}) {
+  if (cx == null || cy == null) return null
+  // A peak near 10 has no room above it inside the plot; drop the label under.
+  const above = placement === 'above' && cy - 19 >= 10
+  return (
+    <g pointerEvents="none">
+      <circle cx={cx} cy={cy} r={13} fill="none" stroke={scoreColor(score)} strokeWidth={2} />
+      <text
+        x={cx}
+        y={above ? cy - 19 : cy + 27}
+        textAnchor="middle"
+        fontSize={10}
+        fontWeight={600}
+        letterSpacing={0.5}
+        fill="var(--cinema-cream)"
+      >
+        {label}
+      </text>
+    </g>
+  )
+}
+
 function confidenceRadius(confidence: string): number {
   if (confidence === 'high') return 8
   if (confidence === 'medium') return 6
@@ -818,10 +855,10 @@ export default function SentimentGraph({
               <ReferenceDot
                 x={peakMoment.time}
                 y={peakMoment.score}
-                r={8}
-                fill="var(--cinema-teal)"
-                stroke="var(--cinema-cream)"
-                strokeWidth={2}
+                r={13}
+                shape={(props: any) => (
+                  <MomentRing cx={props.cx} cy={props.cy} score={peakMoment.score} label="Peak" placement="above" />
+                )}
               />
             )}
 
@@ -834,10 +871,10 @@ export default function SentimentGraph({
               <ReferenceDot
                 x={lowestMoment.time}
                 y={lowestMoment.score}
-                r={8}
-                fill="#ef4444"
-                stroke="var(--cinema-cream)"
-                strokeWidth={2}
+                r={13}
+                shape={(props: any) => (
+                  <MomentRing cx={props.cx} cy={props.cy} score={lowestMoment.score} label="Low" placement="below" />
+                )}
               />
             )}
 
@@ -1073,6 +1110,12 @@ export default function SentimentGraph({
               <span className="w-3 h-3 rounded-full bg-red-500" />
               <span>&lt;6 Poor</span>
             </div>
+            {showCritics && (peakMoment || lowestMoment) && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full border-2 border-cinema-muted" />
+                <span>Peak / Low</span>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-1 text-cinema-muted/60">
             {(reviewCount != null || (audienceData?.userReviewCount ?? 0) > 0) && (
@@ -1095,14 +1138,18 @@ export default function SentimentGraph({
         {/* Peak moment card */}
         {peakMoment && (
           <div
-            className="bg-cinema-darker rounded-lg border border-cinema-teal/20 p-4 transition-all duration-300"
+            className="bg-cinema-darker rounded-lg border p-4 transition-all duration-300"
             style={{
+              borderColor: `color-mix(in srgb, ${scoreColor(peakMoment.score)} 20%, transparent)`,
               filter: spoilersRevealed ? 'none' : 'blur(6px)',
               opacity: spoilersRevealed ? 1 : 0.6,
             }}
           >
             <div className="flex items-center gap-2 mb-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-cinema-teal" />
+              <span
+                className="w-2.5 h-2.5 rounded-full border-2"
+                style={{ borderColor: scoreColor(peakMoment.score) }}
+              />
               <span className="text-xs text-cinema-muted uppercase tracking-wider">Peak Moment</span>
             </div>
             <p
@@ -1112,7 +1159,10 @@ export default function SentimentGraph({
               {peakMoment.labelFull ?? peakMoment.label}
             </p>
             <div className="flex items-baseline gap-2">
-              <span className="font-[family-name:var(--font-bebas)] text-2xl text-cinema-teal">
+              <span
+                className="font-[family-name:var(--font-bebas)] text-2xl"
+                style={{ color: scoreColor(peakMoment.score) }}
+              >
                 {peakMoment.score.toFixed(1)}
               </span>
               <span className="text-xs text-cinema-muted">at {formatTime(peakMoment.time)}</span>
@@ -1123,14 +1173,18 @@ export default function SentimentGraph({
         {/* Lowest moment card */}
         {lowestMoment && (
           <div
-            className="bg-cinema-darker rounded-lg border border-red-500/20 p-4 transition-all duration-300"
+            className="bg-cinema-darker rounded-lg border p-4 transition-all duration-300"
             style={{
+              borderColor: `color-mix(in srgb, ${scoreColor(lowestMoment.score)} 20%, transparent)`,
               filter: spoilersRevealed ? 'none' : 'blur(6px)',
               opacity: spoilersRevealed ? 1 : 0.6,
             }}
           >
             <div className="flex items-center gap-2 mb-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
+              <span
+                className="w-2.5 h-2.5 rounded-full border-2"
+                style={{ borderColor: scoreColor(lowestMoment.score) }}
+              />
               <span className="text-xs text-cinema-muted uppercase tracking-wider">Lowest Moment</span>
             </div>
             <p
@@ -1140,7 +1194,10 @@ export default function SentimentGraph({
               {lowestMoment.labelFull ?? lowestMoment.label}
             </p>
             <div className="flex items-baseline gap-2">
-              <span className="font-[family-name:var(--font-bebas)] text-2xl text-red-500">
+              <span
+                className="font-[family-name:var(--font-bebas)] text-2xl"
+                style={{ color: scoreColor(lowestMoment.score) }}
+              >
                 {lowestMoment.score.toFixed(1)}
               </span>
               <span className="text-xs text-cinema-muted">at {formatTime(lowestMoment.time)}</span>

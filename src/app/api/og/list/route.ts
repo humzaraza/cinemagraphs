@@ -17,6 +17,14 @@ const RED = '#E05555'
 const IVORY = '#F5F0E8'
 const TMDB_API_KEY = process.env.TMDB_API_KEY!
 
+// Same tiers as the on-page graph legend: 8+ Great, 6-8 Good, <6 Poor.
+function tierColor(score: number): string {
+  if (score >= 8) return TEAL
+  if (score >= 6) return GOLD
+  return RED
+}
+const RING_FILL = BG
+
 // ── Font cache ──────────────────────────────────────────
 
 const fontCache: Record<string, ArrayBuffer> = {}
@@ -139,14 +147,15 @@ export async function buildSparklinePng(
     `<line x1="${paddingX}" y1="${midY.toFixed(1)}" x2="${paddingX + innerW}" y2="${midY.toFixed(1)}" stroke="${midColor}" stroke-width="1" stroke-dasharray="4 3"/>`,
     // Data line
     `<path d="${path}" fill="none" stroke="${GOLD}" stroke-width="2.5" stroke-linecap="round"/>`,
-    // Peak dot
-    `<circle cx="${points[peakIdx].x.toFixed(1)}" cy="${points[peakIdx].y.toFixed(1)}" r="3.5" fill="${TEAL}"/>`,
+    // Peak ring. Peak and low are outlined rings in the point's own tier
+    // colour, so colour always means the score tier, never the marker role.
+    `<circle cx="${points[peakIdx].x.toFixed(1)}" cy="${points[peakIdx].y.toFixed(1)}" r="3.5" fill="${RING_FILL}" stroke="${tierColor(points[peakIdx].score)}" stroke-width="1.5"/>`,
   ]
 
-  // Low dot only if below 7.5
+  // Low ring only if below 7.5
   if (points[lowIdx].score < 7.5) {
     svgParts.push(
-      `<circle cx="${points[lowIdx].x.toFixed(1)}" cy="${points[lowIdx].y.toFixed(1)}" r="3.5" fill="${RED}"/>`
+      `<circle cx="${points[lowIdx].x.toFixed(1)}" cy="${points[lowIdx].y.toFixed(1)}" r="3.5" fill="${RING_FILL}" stroke="${tierColor(points[lowIdx].score)}" stroke-width="1.5"/>`
     )
   }
 
