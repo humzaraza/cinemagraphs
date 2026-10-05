@@ -14,6 +14,8 @@ Establish merge status only with a two-dot content diff: `git --no-pager diff or
 
 When a prompt asks for the raw output of a command, paste the complete output into the reply itself. A reference to tool output visible only in the CC session is not a substitute.
 
+After every merge to main, confirm the Vercel production deploy for the merge commit succeeded before reporting the work as done. Read it from the commit, not from memory of the PR's preview check: `gh api repos/humzaraza/cinemagraphs/commits/<sha>/status`, and the Production entry from `gh api "repos/humzaraza/cinemagraphs/deployments?sha=<full sha>"` with its `/deployments/<id>/statuses`. If the deploy is still building, wait for it. If it failed, say so with the deployment URL.
+
 ## Production Data & Planning
 
 Planning and scouting read code, schema, and tests, never production data.
