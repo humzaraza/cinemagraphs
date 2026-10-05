@@ -78,6 +78,7 @@ const GLOW_LINE = 'rgba(200,169,81,0.2)'
 const DOT_OUTLINE = 'rgba(0,0,0,0.6)'
 const LABEL_COLOR = 'rgba(232,228,220,0.5)'
 const VALUE_COLOR = '#C8A951'
+const HALO_COLOR = '#0D0D1A'
 
 export type Margins = { left: number; right: number; top: number; bottom: number }
 
@@ -169,18 +170,29 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
     )
   }
 
+  // Soft dark halo behind the whole graph (curve, dots, score text) so it
+  // stays readable when the slide composites it over a bright film still.
+  defs.push(
+    `<filter id="graphHalo" filterUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}">` +
+      `<feGaussianBlur in="SourceAlpha" stdDeviation="${minimal ? 2 : 4}" result="blur"/>` +
+      `<feFlood flood-color="${HALO_COLOR}" flood-opacity="0.9"/>` +
+      `<feComposite in2="blur" operator="in" result="shadow"/>` +
+      `<feMerge><feMergeNode in="shadow"/><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/></feMerge>` +
+      `</filter>`,
+  )
+
   // ── body ──────────────────────────────────────────────────
   // Highlighted slides render the curve in two layers: a thin faded backdrop
   // (no glow) plus a bold masked layer that pops the highlighted region.
   // Non-highlighted slides (takeaway mini) keep the original medium weight.
-  const fadedCurveBody =
-    `<path d="${areaD}" fill="url(#areaGrad)"/>` +
-    `<path d="${lineD}" stroke="${MAIN_LINE}" stroke-width="2" fill="none"/>`
+  // The area fill is kept out of the halo group: its alpha would cast the
+  // halo across the whole region under the curve.
+  const areaBody = `<path d="${areaD}" fill="url(#areaGrad)"/>`
+  const fadedCurveBody = `<path d="${lineD}" stroke="${MAIN_LINE}" stroke-width="2" fill="none"/>`
   const highlightedCurveBody =
     `<path d="${lineD}" stroke="${MAIN_LINE}" stroke-width="14" stroke-linecap="round" fill="none" opacity="0.2"/>` +
     `<path d="${lineD}" stroke="${MAIN_LINE}" stroke-width="7" fill="none"/>`
   const defaultCurveBody =
-    `<path d="${areaD}" fill="url(#areaGrad)"/>` +
     `<path d="${lineD}" stroke="${GLOW_LINE}" stroke-width="9" stroke-linecap="round" fill="none"/>` +
     `<path d="${lineD}" stroke="${MAIN_LINE}" stroke-width="4" fill="none"/>`
 
@@ -277,7 +289,8 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
     `<defs>${defs.join('')}</defs>` +
-    body.join('') +
+    (highlighted ? `<g opacity="0.22">${areaBody}</g>` : areaBody) +
+    `<g filter="url(#graphHalo)">${body.join('')}</g>` +
     `</svg>`
 
   return { svg, dotPositions }

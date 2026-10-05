@@ -319,7 +319,7 @@ describe('renderGraph', () => {
       expect(out.svg).not.toContain('stroke-width="4"')
     })
 
-    it('highlighted dot has a stroked peak ring at r=12 with 30% opacity (no gaussian-blur filter)', () => {
+    it('highlighted dot has a stroked peak ring at r=12 with 30% opacity (no glow filter of its own)', () => {
       const out = renderGraph({
         dataPoints: SAMPLE,
         totalRuntime: 60,
@@ -331,7 +331,24 @@ describe('renderGraph', () => {
       })
       expect(out.svg).toMatch(/<circle[^>]*r="12"[^>]*fill="none"[^>]*opacity="0\.3"/)
       expect(out.svg).not.toContain('peakGlow')
-      expect(out.svg).not.toContain('feGaussianBlur')
+      // The only blur is the shared legibility halo behind the whole graph.
+      expect(out.svg.match(/<filter /g)).toHaveLength(1)
+      expect(out.svg).toContain('<filter id="graphHalo"')
+      expect(out.svg).not.toMatch(/<circle[^>]*filter=/)
+    })
+
+    it('keeps the area fill outside the halo group so the halo only hugs the line, dots and text', () => {
+      const out = renderGraph({
+        dataPoints: SAMPLE,
+        totalRuntime: 60,
+        criticsScore: 8.1,
+        width: 960,
+        height: 540,
+        format: '4x5',
+      })
+      const haloStart = out.svg.indexOf('<g filter="url(#graphHalo)">')
+      expect(haloStart).toBeGreaterThan(-1)
+      expect(out.svg.indexOf('fill="url(#areaGrad)"')).toBeLessThan(haloStart)
     })
   })
 
