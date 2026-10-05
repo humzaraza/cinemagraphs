@@ -955,8 +955,17 @@ function composeMiddleSlide(
   const labelX = spec.graphZone.x + pos.x
   const labelY = spec.graphZone.y + pos.y
 
+  // Same soft dark halo as the graph, so the beat score reads on a bright still.
+  defs.push(
+    `<filter id="beatLabelHalo" filterUnits="userSpaceOnUse" x="0" y="0" width="${spec.canvasW}" height="${spec.canvasH}">` +
+      `<feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur"/>` +
+      `<feFlood flood-color="${COLORS.bg}" flood-opacity="0.9"/>` +
+      `<feComposite in2="blur" operator="in" result="shadow"/>` +
+      `<feMerge><feMergeNode in="shadow"/><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/></feMerge>` +
+      `</filter>`,
+  )
   body.push(
-    `<text x="${fmt(labelX)}" y="${fmt(labelY)}" fill="${labelColor}" font-family="DM Sans" font-size="${labelSize}" font-weight="500" text-anchor="${pos.anchor}">${scoreText}</text>`,
+    `<text x="${fmt(labelX)}" y="${fmt(labelY)}" fill="${labelColor}" font-family="DM Sans" font-size="${labelSize}" font-weight="500" text-anchor="${pos.anchor}" filter="url(#beatLabelHalo)">${scoreText}</text>`,
   )
 
   // Body copy (plain monochrome in C1).
