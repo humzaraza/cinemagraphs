@@ -198,7 +198,7 @@ function buildSvg(input: RenderGraphInput): { svg: string; dotPositions: DotPosi
 
   const body: string[] = []
   if (highlighted) {
-    body.push(`<g opacity="0.22">${fadedCurveBody}</g>`)
+    body.push(`<g opacity="0.35">${fadedCurveBody}</g>`)
     body.push(`<g mask="url(#hlMask-${format})">${highlightedCurveBody}</g>`)
   } else {
     body.push(defaultCurveBody)
