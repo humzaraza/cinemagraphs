@@ -32,7 +32,7 @@ export async function fetchTMDBReviews(film: Film): Promise<FetchResult> {
             sourceUrl: r.url || null,
             author: r.author || null,
             reviewText: r.content,
-            sourceRating: r.author_details?.rating ? r.author_details.rating / 2 : null,
+            sourceRating: r.author_details?.rating ? r.author_details.rating : null,
           })
         }
       }
