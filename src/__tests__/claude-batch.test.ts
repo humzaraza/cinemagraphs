@@ -106,6 +106,9 @@ describe('analyzeSentimentBatch', () => {
       expect(req.params.model).toBe(SENTIMENT_MODEL)
       expect(req.params.max_tokens).toBe(SENTIMENT_MAX_TOKENS)
 
+      // Same temperature as the single call, so batch and sync graphs agree.
+      expect(req.params.temperature).toBe(0)
+
       // cache_control on the system block is the whole point of Phase 3.
       expect(Array.isArray(req.params.system)).toBe(true)
       expect(req.params.system).toHaveLength(1)
