@@ -130,7 +130,7 @@ async function analyzeFilm(film: any) {
     sourcePlatform: 'TMDB',
     author: r.author || null,
     reviewText: r.content.slice(0, 1500),
-    sourceRating: r.author_details?.rating ? r.author_details.rating / 2 : null,
+    sourceRating: r.author_details?.rating ? r.author_details.rating : null,
   }))
 
   // Filter for quality: ≥50 words + English
