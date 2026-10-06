@@ -22,7 +22,8 @@ const anthropic = new Anthropic({
 
 export const MIN_QUALITY_REVIEWS = 3
 const HYBRID_PLOT_CHAR_CAP = 6000
-const HYBRID_REVIEW_CAP = 30
+// Exported so the store paths can record how many reviews the prompt saw.
+export const HYBRID_REVIEW_CAP = 30
 const HYBRID_REVIEW_CHAR_CAP = 1500
 
 export interface HybridResult {

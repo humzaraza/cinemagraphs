@@ -14,6 +14,11 @@ const anthropic = new Anthropic({
 // batch paths can never drift apart.
 export const SENTIMENT_MODEL = 'claude-sonnet-4-6'
 export const SENTIMENT_MAX_TOKENS = 4000
+// Recorded on each SentimentGraph row so a graph can be traced back to the
+// prompt that produced it. Bump when the prompt text changes.
+export const SENTIMENT_PROMPT_VERSION = '2026-10-03'
+// How many reviews the classic (review-only) prompt includes.
+export const CLASSIC_REVIEW_CAP = 40
 
 // ── Pricing (USD per 1M tokens) for claude-sonnet-4-6 ──
 // Synchronous price; Batch API charges 50% of this.
@@ -237,7 +242,7 @@ export function buildAnalysisPromptParts(
 
   // Review block
   const reviewBlock = reviews
-    .slice(0, 40)
+    .slice(0, CLASSIC_REVIEW_CAP)
     .map(
       (r, i) =>
         `[Review ${i + 1} — ${r.sourcePlatform}${r.sourceRating ? ` (${r.sourceRating}/10)` : ''}${r.author ? ` by ${r.author}` : ''}]\n${r.reviewText.slice(0, 1500)}`

@@ -237,6 +237,39 @@ export interface SafeWriteOtherFields {
   generatedAt?: Date
   version?: number
   reviewHash?: string | null
+  // Generation metadata. Set on every generation write (null when the caller
+  // did not supply a value); left unchanged by the blender and by a merge
+  // that preserved a stored beat the incoming set did not match.
+  generationMode?: string | null
+  plotSource?: string | null
+  modelName?: string | null
+  promptVersion?: string | null
+  reviewsInPrompt?: number | null
+}
+
+const GENERATION_METADATA_KEYS = [
+  'generationMode',
+  'plotSource',
+  'modelName',
+  'promptVersion',
+  'reviewsInPrompt',
+] as const
+
+/**
+ * Split the five generation metadata fields off `otherFields`. With
+ * `preserve` they are dropped from the write so the row keeps its current
+ * values; otherwise each is written as the supplied value, or null when the
+ * caller did not supply it.
+ */
+function withGenerationMetadata(
+  otherFields: Record<string, unknown>,
+  preserve: boolean
+): Record<string, unknown> {
+  const fields: Record<string, unknown> = { ...otherFields }
+  for (const key of GENERATION_METADATA_KEYS) delete fields[key]
+  if (preserve) return fields
+  for (const key of GENERATION_METADATA_KEYS) fields[key] = otherFields[key] ?? null
+  return fields
 }
 
 export interface SafeWriteResult {
@@ -508,7 +541,16 @@ async function safeWriteInTransaction(params: {
       )
     }
 
-    await writeRow(tx, { filmId, existing, dataPoints: mergedInOrder, otherFields: fields, callerPath })
+    // A preserved beat means the row is not purely the incoming generation,
+    // so the generation metadata stays as it was.
+    await writeRow(tx, {
+      filmId,
+      existing,
+      dataPoints: mergedInOrder,
+      otherFields: fields,
+      callerPath,
+      preserveGenerationMetadata: hasPreserves,
+    })
 
     return {
       status: hasDrops ? 'written_with_drops' : 'written',
@@ -582,9 +624,10 @@ async function forceOverwriteInTransaction(params: {
     // A force overwrite is always a generation write, so the beats are the
     // new blend base as well.
     const criticDataPoints = dataPoints as unknown as Prisma.InputJsonValue
+    const writeFields = withGenerationMetadata(otherFields, false)
     if (existing) {
       const updateData = {
-        ...otherFields,
+        ...writeFields,
         dataPoints: dataPoints as unknown as Prisma.InputJsonValue,
         criticDataPoints,
         arcShape,
@@ -595,7 +638,7 @@ async function forceOverwriteInTransaction(params: {
       })
     } else {
       const createData = {
-        ...otherFields,
+        ...writeFields,
         filmId,
         dataPoints: dataPoints as unknown as Prisma.InputJsonValue,
         criticDataPoints,
@@ -618,9 +661,19 @@ async function writeRow(
     dataPoints: SentimentDataPoint[]
     otherFields: SafeWriteOtherFields
     callerPath: BeatLockCallerPath
+    // Merge path only: a stored beat was kept without a matching incoming one.
+    preserveGenerationMetadata?: boolean
   }
 ) {
   const { filmId, existing, dataPoints, otherFields, callerPath } = args
+  // The blender never regenerates beats, so it never touches the generation
+  // metadata; neither does a merge that kept an unmatched stored beat.
+  const preserveGenerationMetadata =
+    callerPath === 'review-blender' || args.preserveGenerationMetadata === true
+  const writeFields = withGenerationMetadata(
+    otherFields as Record<string, unknown>,
+    preserveGenerationMetadata
+  )
   // Classify from the EXACT dataPoints being written (post-merge in the merge
   // path) and the incoming headline score, so arcShape never desyncs from the
   // beats it describes. This is the single chokepoint every writer funnels
@@ -633,7 +686,7 @@ async function writeRow(
     callerPath === 'review-blender' ? {} : { criticDataPoints: dataPoints as unknown as Prisma.InputJsonValue }
   if (existing) {
     const updateData = {
-      ...otherFields,
+      ...writeFields,
       dataPoints: dataPoints as unknown as Prisma.InputJsonValue,
       ...criticDataPoints,
       arcShape,
@@ -644,7 +697,7 @@ async function writeRow(
     })
   } else {
     const createData = {
-      ...otherFields,
+      ...writeFields,
       filmId,
       dataPoints: dataPoints as unknown as Prisma.InputJsonValue,
       ...criticDataPoints,

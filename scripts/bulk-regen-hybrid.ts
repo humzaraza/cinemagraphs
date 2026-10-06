@@ -70,6 +70,9 @@ let safeWriteSentimentGraph!: typeof import('../src/lib/sentiment-beat-lock')['s
 let isQualityReview!: typeof import('../src/lib/sentiment-pipeline')['isQualityReview']
 let SENTIMENT_MODEL!: typeof import('../src/lib/claude')['SENTIMENT_MODEL']
 let SENTIMENT_MAX_TOKENS!: typeof import('../src/lib/claude')['SENTIMENT_MAX_TOKENS']
+let SENTIMENT_PROMPT_VERSION!: typeof import('../src/lib/claude')['SENTIMENT_PROMPT_VERSION']
+let CLASSIC_REVIEW_CAP!: typeof import('../src/lib/claude')['CLASSIC_REVIEW_CAP']
+let HYBRID_REVIEW_CAP!: typeof import('../src/lib/hybrid-sentiment')['HYBRID_REVIEW_CAP']
 let buildAnalysisPromptParts!: typeof import('../src/lib/claude')['buildAnalysisPromptParts']
 let ensureNoVerbatimReviewText!: typeof import('../src/lib/claude')['ensureNoVerbatimReviewText']
 let MIN_QUALITY_REVIEWS!: typeof import('../src/lib/hybrid-sentiment')['MIN_QUALITY_REVIEWS']
@@ -109,15 +112,21 @@ interface CheckpointEntry {
   retryCount?: number
   error?: string
   beatCount?: number
-  generationMode?: 'hybrid' | 'review_only_fallback'
+  generationMode?: GenerationMode
   inputTokens?: number
   outputTokens?: number
 }
+
+type GenerationMode = 'hybrid' | 'review_only_fallback'
 
 interface CheckpointBatch {
   id: string
   submittedAt: string
   filmIds: string[]
+  // Which prompt shape each request used, so a resumed run can still record
+  // the generation metadata on the row. Absent on checkpoints written before
+  // this field existed; those rows store null for the mode-derived fields.
+  modes?: Record<string, GenerationMode>
 }
 
 interface Checkpoint {
@@ -399,7 +408,8 @@ function buildAnchoredFromString(film: {
 async function applySuccessfulResult(
   filmId: string,
   generated: ParsedGraph,
-  mode: 'safe' | 'force'
+  mode: 'safe' | 'force',
+  generationMode: GenerationMode | undefined
 ): Promise<{ beatCount: number }> {
   if (generated.dataPoints.length < 8 || generated.dataPoints.length > 22) {
     throw new Error(
@@ -445,6 +455,24 @@ async function applySuccessfulResult(
     varianceSource: 'external_only',
     generatedAt: new Date(),
     version: (existing?.version ?? 0) + 1,
+    // Same values the app's hybrid store writes. A resumed run whose
+    // checkpoint predates the modes map has no mode, so those fields are null.
+    generationMode: generationMode ?? null,
+    plotSource:
+      generationMode === undefined
+        ? null
+        : generationMode === 'hybrid'
+          ? 'wikipedia'
+          : 'reviews_only',
+    modelName: SENTIMENT_MODEL,
+    promptVersion: SENTIMENT_PROMPT_VERSION,
+    reviewsInPrompt:
+      generationMode === undefined
+        ? null
+        : Math.min(
+            qualityReviews.length,
+            generationMode === 'hybrid' ? HYBRID_REVIEW_CAP : CLASSIC_REVIEW_CAP
+          ),
   }
 
   if (mode === 'force') {
@@ -508,6 +536,9 @@ async function main() {
   isQualityReview = pipelineMod.isQualityReview
   SENTIMENT_MODEL = claudeMod.SENTIMENT_MODEL
   SENTIMENT_MAX_TOKENS = claudeMod.SENTIMENT_MAX_TOKENS
+  SENTIMENT_PROMPT_VERSION = claudeMod.SENTIMENT_PROMPT_VERSION
+  CLASSIC_REVIEW_CAP = claudeMod.CLASSIC_REVIEW_CAP
+  HYBRID_REVIEW_CAP = hybridMod.HYBRID_REVIEW_CAP
   buildAnalysisPromptParts = claudeMod.buildAnalysisPromptParts
   ensureNoVerbatimReviewText = claudeMod.ensureNoVerbatimReviewText
   MIN_QUALITY_REVIEWS = hybridMod.MIN_QUALITY_REVIEWS
@@ -549,7 +580,7 @@ async function main() {
   console.log(`Pending: ${pending.length} | Will build requests for: ${toProcess.length}`)
 
   const requests: Anthropic.Messages.Batches.BatchCreateParams.Request[] = []
-  const modes: Record<string, 'hybrid' | 'review_only_fallback'> = {}
+  const modes: Record<string, GenerationMode> = {}
   const preSubSkipped: { filmId: string; title: string; status: CheckpointStatus; reason: string }[] = []
 
   let built = 0
@@ -636,6 +667,7 @@ async function main() {
     id: submitted.id,
     submittedAt: submitted.created_at,
     filmIds: requests.map((r) => r.custom_id),
+    modes,
   }
   saveCheckpoint(checkpoint)
 
@@ -678,11 +710,13 @@ async function processResults(
         const cleaned = responseText.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '').trim()
         const parsed = JSON.parse(cleaned) as unknown
         const graph = validateGraph(parsed)
-        const { beatCount } = await applySuccessfulResult(filmId, graph, writeMode)
+        const generationMode = checkpoint.batch?.modes?.[filmId]
+        const { beatCount } = await applySuccessfulResult(filmId, graph, writeMode, generationMode)
         checkpoint.films[filmId] = {
           status: 'success',
           timestamp: new Date().toISOString(),
           beatCount,
+          generationMode,
           inputTokens: message.usage.input_tokens,
           outputTokens: message.usage.output_tokens,
         }

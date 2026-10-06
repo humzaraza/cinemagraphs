@@ -732,6 +732,158 @@ describe('forceOverwriteSentimentGraph', () => {
   })
 })
 
+describe('generation metadata write rules', () => {
+  const GENERATION_KEYS = ['generationMode', 'plotSource', 'modelName', 'promptVersion', 'reviewsInPrompt']
+
+  const supplied = {
+    generationMode: 'classic',
+    plotSource: 'wikipedia',
+    modelName: 'test-model',
+    promptVersion: 'test-prompt',
+    reviewsInPrompt: 12,
+  }
+
+  function capturedWriteData(): Record<string, unknown> {
+    const updateCall = mocks.tx.sentimentGraph.update.mock.calls[0]
+    if (updateCall) return updateCall[0].data as Record<string, unknown>
+    const createCall = mocks.tx.sentimentGraph.create.mock.calls[0]
+    if (createCall) return createCall[0].data as Record<string, unknown>
+    throw new Error('No sentimentGraph write happened')
+  }
+
+  beforeEach(() => {
+    resetMocks()
+    delete process.env.SENTIMENT_BEAT_LOCK_ENABLED
+  })
+
+  it('8a. a blender write leaves the five fields unchanged on the row, even if passed', async () => {
+    const existingBeats = [beat('Opening', 0, 5), beat('Climax', 60, 9)]
+    mocks.tx.sentimentGraph.findUnique.mockResolvedValueOnce({
+      id: 'g1',
+      filmId: 'film-1',
+      dataPoints: existingBeats,
+    })
+
+    const { safeWriteSentimentGraph } = await import('@/lib/sentiment-beat-lock')
+    await safeWriteSentimentGraph({
+      filmId: 'film-1',
+      incomingDataPoints: [beat('Opening', 0, 6), beat('Climax', 60, 8)],
+      otherFields: { overallScore: 7, varianceSource: 'blended', ...supplied },
+      callerPath: 'review-blender',
+    })
+
+    const data = capturedWriteData()
+    for (const key of GENERATION_KEYS) expect(data).not.toHaveProperty(key)
+    expect(data.varianceSource).toBe('blended')
+  })
+
+  it('8b. a merge that preserved an unmatched stored beat leaves the five fields unchanged', async () => {
+    const existingBeats = [beat('Opening', 0, 5), beat('Midpoint', 30, 6), beat('Climax', 60, 9)]
+    mocks.tx.sentimentGraph.findUnique.mockResolvedValueOnce({
+      id: 'g1',
+      filmId: 'film-1',
+      dataPoints: existingBeats,
+    })
+
+    const { safeWriteSentimentGraph } = await import('@/lib/sentiment-beat-lock')
+    // Midpoint is missing from incoming, so it is preserved from the row.
+    const result = await safeWriteSentimentGraph({
+      filmId: 'film-1',
+      incomingDataPoints: [beat('Opening', 0, 6), beat('Climax', 60, 8.5)],
+      otherFields: { overallScore: 6.8, ...supplied },
+      callerPath: 'admin-analyze',
+    })
+
+    expect(result.preservedExistingLabels).toEqual(['Midpoint'])
+    const data = capturedWriteData()
+    for (const key of GENERATION_KEYS) expect(data).not.toHaveProperty(key)
+    expect(data.overallScore).toBeDefined()
+  })
+
+  it('8c. a merge where every stored beat matched sets the five fields to the supplied values', async () => {
+    const existingBeats = [beat('Opening', 0, 5), beat('Climax', 60, 9)]
+    mocks.tx.sentimentGraph.findUnique.mockResolvedValueOnce({
+      id: 'g1',
+      filmId: 'film-1',
+      dataPoints: existingBeats,
+    })
+
+    const { safeWriteSentimentGraph } = await import('@/lib/sentiment-beat-lock')
+    const result = await safeWriteSentimentGraph({
+      filmId: 'film-1',
+      incomingDataPoints: [beat('Opening', 0, 6), beat('Climax', 60, 8)],
+      otherFields: { overallScore: 7, ...supplied },
+      callerPath: 'admin-analyze',
+    })
+
+    expect(result.preservedExistingLabels).toEqual([])
+    expect(capturedWriteData()).toMatchObject(supplied)
+  })
+
+  it('8c. a first write with no fields supplied sets all five to null', async () => {
+    mocks.tx.sentimentGraph.findUnique.mockResolvedValueOnce(null)
+
+    const { safeWriteSentimentGraph } = await import('@/lib/sentiment-beat-lock')
+    await safeWriteSentimentGraph({
+      filmId: 'film-1',
+      incomingDataPoints: [beat('Opening', 0, 6), beat('Climax', 60, 8)],
+      otherFields: { overallScore: 7 },
+      callerPath: 'cron-analyze',
+    })
+
+    expect(mocks.tx.sentimentGraph.create).toHaveBeenCalledTimes(1)
+    const data = capturedWriteData()
+    for (const key of GENERATION_KEYS) {
+      expect(data).toHaveProperty(key)
+      expect(data[key]).toBeNull()
+    }
+  })
+
+  it('8c. replace_unrated (no user beat ratings) sets the five fields to the supplied values', async () => {
+    mocks.tx.$queryRaw.mockResolvedValue([{ rated: 0 }])
+    mocks.tx.sentimentGraph.findUnique.mockResolvedValueOnce({
+      id: 'g1',
+      filmId: 'film-1',
+      dataPoints: [beat('Old Label', 0, 5), beat('Older Label', 60, 9)],
+    })
+
+    const { safeWriteSentimentGraph } = await import('@/lib/sentiment-beat-lock')
+    await safeWriteSentimentGraph({
+      filmId: 'film-1',
+      incomingDataPoints: [beat('Opening', 0, 6), beat('Climax', 60, 8)],
+      otherFields: { overallScore: 7, ...supplied },
+      callerPath: 'admin-analyze',
+    })
+
+    expect(capturedWriteData()).toMatchObject(supplied)
+  })
+
+  it('8c. forceOverwriteSentimentGraph sets each field to the supplied value or null', async () => {
+    mocks.tx.sentimentGraph.findUnique.mockResolvedValueOnce({
+      id: 'g1',
+      filmId: 'film-1',
+      dataPoints: [beat('Whatever', 0, 3)],
+    })
+
+    const { forceOverwriteSentimentGraph } = await import('@/lib/sentiment-beat-lock')
+    await forceOverwriteSentimentGraph({
+      filmId: 'film-1',
+      dataPoints: [beat('Opening', 0, 6), beat('Climax', 60, 8)],
+      // Only two of the five supplied; the rest must be written as null.
+      otherFields: { overallScore: 7, generationMode: 'hybrid', modelName: 'test-model' },
+      callerPath: 'script-bulk-regen-hybrid',
+    })
+
+    expect(mocks.tx.sentimentGraph.update).toHaveBeenCalledTimes(1)
+    const data = capturedWriteData()
+    expect(data.generationMode).toBe('hybrid')
+    expect(data.modelName).toBe('test-model')
+    expect(data.plotSource).toBeNull()
+    expect(data.promptVersion).toBeNull()
+    expect(data.reviewsInPrompt).toBeNull()
+  })
+})
+
 describe('isBeatLockEnabled', () => {
   afterEach(() => {
     delete process.env.SENTIMENT_BEAT_LOCK_ENABLED
