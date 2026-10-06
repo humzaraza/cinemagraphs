@@ -602,6 +602,7 @@ export async function analyzeSentimentBatch(jobs: BatchJob[]): Promise<BatchSubm
       params: {
         model: SENTIMENT_MODEL,
         max_tokens: SENTIMENT_MAX_TOKENS,
+        temperature: 0,
         system: [
           {
             type: 'text',
