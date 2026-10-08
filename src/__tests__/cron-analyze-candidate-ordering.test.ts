@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   prisma: {
     film: {
       findMany: vi.fn(),
+      findUnique: vi.fn(),
     },
     siteSettings: {
       findUnique: vi.fn(),
@@ -208,5 +209,70 @@ describe('analyze cron: two-phase candidate ordering', () => {
     )
     expect(decideArgs[0].lastRegenAt).toBeNull() // graphless
     expect(decideArgs[1].lastRegenAt).not.toBeNull() // graphed
+  })
+})
+
+describe('analyze cron: resumed batch carries plotSource to the store', () => {
+  const film = {
+    id: 'film-1',
+    title: 'Test Film',
+    imdbRating: null,
+    rtCriticsScore: null,
+    rtAudienceScore: null,
+    metacriticScore: null,
+  }
+
+  function pendingState(job: Record<string, unknown>) {
+    return {
+      key: 'pending_sentiment_batch',
+      value: {
+        batchId: 'batch-1',
+        submittedAt: new Date().toISOString(),
+        jobs: [{ filmId: 'film-1', reviewHash: 'hash-1', filteredReviewCount: 7, sources: ['tmdb'], ...job }],
+      },
+    }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.prisma.siteSettings.upsert.mockResolvedValue(undefined)
+    mocks.prisma.siteSettings.deleteMany.mockResolvedValue(undefined)
+    mocks.prisma.film.findUnique.mockResolvedValue(film)
+    mocks.invalidateHomepageCache.mockResolvedValue(undefined)
+    mocks.invalidateFilmCache.mockResolvedValue(undefined)
+    mocks.getBatchStatus.mockResolvedValue({
+      processingStatus: 'ended',
+      requestCounts: { processing: 0, succeeded: 1 },
+    })
+    mocks.fetchBatchResults.mockResolvedValue([
+      { customId: 'film-1', outcome: 'succeeded', data: { dataPoints: [] } },
+    ])
+    mocks.storeSentimentGraphResult.mockResolvedValue(undefined)
+    delete process.env.CRON_SECRET
+  })
+
+  it('passes the stored job plotSource through to storeSentimentGraphResult', async () => {
+    mocks.prisma.siteSettings.findUnique.mockResolvedValue(pendingState({ plotSource: 'wikipedia' }))
+
+    const res = await GET(new Request('http://localhost/api/cron/analyze'))
+    expect(res.status).toBe(200)
+
+    expect(mocks.storeSentimentGraphResult).toHaveBeenCalledTimes(1)
+    const input = mocks.storeSentimentGraphResult.mock.calls[0][0]
+    expect(input.plotSource).toBe('wikipedia')
+    expect(input.filteredReviewCount).toBe(7)
+    expect(input.reviewHash).toBe('hash-1')
+  })
+
+  it('a stored job without plotSource passes undefined and does not throw', async () => {
+    mocks.prisma.siteSettings.findUnique.mockResolvedValue(pendingState({}))
+
+    const res = await GET(new Request('http://localhost/api/cron/analyze'))
+    expect(res.status).toBe(200)
+
+    expect(mocks.storeSentimentGraphResult).toHaveBeenCalledTimes(1)
+    const input = mocks.storeSentimentGraphResult.mock.calls[0][0]
+    expect(input.plotSource).toBeUndefined()
+    expect(mocks.cronLogger.error).not.toHaveBeenCalled()
   })
 })
