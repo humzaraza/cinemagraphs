@@ -34,6 +34,9 @@ interface PendingBatchJob {
   /** Pre-lowercased source platform names — what `parseGraphResponse` will
    *  coerce onto the result. */
   sources: string[]
+  /** Plot source the prepared input resolved. Absent on jobs persisted
+   *  before this field existed; the stored row then records null. */
+  plotSource?: string
 }
 
 interface PendingBatchState {
@@ -132,6 +135,7 @@ async function processBatchResults(
         plotContext: { text: '', source: 'reviews_only' }, // unused
         reviewHash: job.reviewHash,
         promptParts: { system: '', user: '' }, // unused
+        plotSource: job.plotSource,
       }
 
       try {
@@ -479,6 +483,7 @@ export async function GET(request: Request) {
       reviewHash: input.reviewHash,
       filteredReviewCount: input.filteredReviewCount,
       sources: [...new Set(input.reviews.map((r) => r.sourcePlatform.toLowerCase()))],
+      plotSource: input.plotSource,
     }))
 
     const state: PendingBatchState = {

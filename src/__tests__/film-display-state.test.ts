@@ -22,6 +22,11 @@ function makeGraph(reviewCount: number): SentimentGraph {
     varianceSource: 'external_only',
     version: 1,
     reviewHash: null,
+    generationMode: null,
+    plotSource: null,
+    modelName: null,
+    promptVersion: null,
+    reviewsInPrompt: null,
     arcShape: [],
     lastFeaturedAt: null,
   } as SentimentGraph

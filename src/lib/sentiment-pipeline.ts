@@ -5,6 +5,9 @@ import {
   analyzeSentiment,
   buildAnalysisPromptParts,
   ensureNoVerbatimReviewText,
+  SENTIMENT_MODEL,
+  SENTIMENT_PROMPT_VERSION,
+  CLASSIC_REVIEW_CAP,
   type PlotContext,
   type AnalysisPromptParts,
 } from './claude'
@@ -21,6 +24,7 @@ import {
 import {
   generateHybridSentimentGraph,
   buildAnchorString,
+  HYBRID_REVIEW_CAP,
   type HybridResult,
 } from './hybrid-sentiment'
 import { isQualityReview } from './review-quality'
@@ -235,6 +239,9 @@ export interface SentimentGraphInput {
   plotContext: PlotContext
   reviewHash: string
   promptParts: AnalysisPromptParts
+  // Source fetchPlotContext resolved for this run. Absent when the input was
+  // rebuilt from a stored batch job, so the row stores null in that case.
+  plotSource?: string
 }
 
 export type PrepareSentimentInputResult =
@@ -406,6 +413,7 @@ export async function prepareSentimentGraphInput(
       plotContext,
       reviewHash,
       promptParts,
+      plotSource: plotContext.source,
     },
   }
 }
@@ -422,7 +430,7 @@ export async function storeSentimentGraphResult(
   callerPath: BeatLockCallerPath,
   options: { forceOverwrite?: boolean } = {}
 ): Promise<void> {
-  const { film, filteredReviewCount, reviewHash } = input
+  const { film, filteredReviewCount, reviewHash, plotSource } = input
 
   // Nothing the model wrote may carry a run of a reviewer's words. The batch
   // path does not carry review text with it, so read the film's stored
@@ -458,6 +466,11 @@ export async function storeSentimentGraphResult(
     generatedAt: new Date(),
     version: existing ? existing.version + 1 : undefined,
     reviewHash,
+    generationMode: 'classic',
+    plotSource: plotSource ?? null,
+    modelName: SENTIMENT_MODEL,
+    promptVersion: SENTIMENT_PROMPT_VERSION,
+    reviewsInPrompt: Math.min(filteredReviewCount, CLASSIC_REVIEW_CAP),
   }
 
   if (options.forceOverwrite) {
@@ -713,6 +726,14 @@ export async function generateHybridAndStore(
       generatedAt: new Date(),
       version: (existingGraph?.version ?? 0) + 1,
       reviewHash,
+      generationMode: hybrid.generationMode,
+      plotSource: hybrid.generationMode === 'hybrid' ? 'wikipedia' : 'reviews_only',
+      modelName: SENTIMENT_MODEL,
+      promptVersion: SENTIMENT_PROMPT_VERSION,
+      reviewsInPrompt: Math.min(
+        filteredReviewCount,
+        hybrid.generationMode === 'hybrid' ? HYBRID_REVIEW_CAP : CLASSIC_REVIEW_CAP
+      ),
     },
     callerPath: options.callerPath,
   })

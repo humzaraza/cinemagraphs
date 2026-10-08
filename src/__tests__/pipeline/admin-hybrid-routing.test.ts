@@ -67,6 +67,9 @@ vi.mock('@/lib/sentiment-beat-lock', () => ({
 vi.mock('@/lib/claude', () => ({
   analyzeSentiment: vi.fn(),
   buildAnalysisPromptParts: vi.fn(),
+  SENTIMENT_MODEL: 'test-model',
+  SENTIMENT_PROMPT_VERSION: 'test-prompt-version',
+  CLASSIC_REVIEW_CAP: 40,
 }))
 
 vi.mock('@/lib/sources/wikipedia', () => ({
@@ -221,6 +224,13 @@ describe('generateHybridAndStore', () => {
     expect(writeArgs.otherFields.reviewHash).toBe('new-hash')
     expect(writeArgs.otherFields.varianceSource).toBe('external_only')
     expect(writeArgs.otherFields.biggestSwing).toBe('A notable swing')
+    // Generation metadata: mode comes from the hybrid result, plot source
+    // follows the mode, reviewsInPrompt is the quality count under the cap.
+    expect(writeArgs.otherFields.generationMode).toBe('hybrid')
+    expect(writeArgs.otherFields.plotSource).toBe('wikipedia')
+    expect(writeArgs.otherFields.modelName).toBe('test-model')
+    expect(writeArgs.otherFields.promptVersion).toBe('test-prompt-version')
+    expect(writeArgs.otherFields.reviewsInPrompt).toBe(4)
     expect(result.status).toBe('generated')
     if (result.status === 'generated') {
       expect(result.beatCount).toBe(2)
@@ -261,6 +271,61 @@ describe('generateHybridAndStore', () => {
     expect(writeArgs.otherFields.previousScore).toBe(6.5)
     expect(writeArgs.otherFields.version).toBe(4)
     expect(mocks.forceOverwriteSentimentGraph).not.toHaveBeenCalled()
+  })
+
+  it('review-only fallback: passes generationMode from the hybrid result and caps reviewsInPrompt', async () => {
+    const { HYBRID_REVIEW_CAP } = await import('@/lib/hybrid-sentiment')
+    mocks.prisma.film.findUnique.mockResolvedValue({
+      ...fakeFilm(),
+      sentimentGraph: null,
+    })
+    // More quality reviews than the hybrid cap, fewer than the classic cap.
+    const reviewCount = HYBRID_REVIEW_CAP + 5
+    mocks.prisma.review.findMany.mockResolvedValue(
+      Array.from({ length: reviewCount }, (_, i) => qualityReview(i + 1))
+    )
+    mocks.computeReviewHash.mockReturnValue('new-hash')
+    mocks.generateHybridSentimentGraph.mockResolvedValue(
+      fakeHybridResult({ generationMode: 'review_only_fallback', wikipediaPlotAvailable: false })
+    )
+
+    const { generateHybridAndStore } = await import('@/lib/sentiment-pipeline')
+    const result = await generateHybridAndStore('film-1', {
+      force: false,
+      callerPath: 'admin-analyze',
+    })
+
+    const writeArgs = mocks.safeWriteSentimentGraph.mock.calls[0][0]
+    expect(writeArgs.otherFields.generationMode).toBe('review_only_fallback')
+    expect(writeArgs.otherFields.plotSource).toBe('reviews_only')
+    expect(writeArgs.otherFields.modelName).toBe('test-model')
+    expect(writeArgs.otherFields.promptVersion).toBe('test-prompt-version')
+    // Fallback uses the classic prompt, so the classic cap (40) applies.
+    expect(writeArgs.otherFields.reviewsInPrompt).toBe(reviewCount)
+    expect(result.status).toBe('generated')
+    if (result.status === 'generated') {
+      expect(result.generationMode).toBe('review_only_fallback')
+    }
+  })
+
+  it('hybrid: caps reviewsInPrompt at HYBRID_REVIEW_CAP', async () => {
+    const { HYBRID_REVIEW_CAP } = await import('@/lib/hybrid-sentiment')
+    mocks.prisma.film.findUnique.mockResolvedValue({
+      ...fakeFilm(),
+      sentimentGraph: null,
+    })
+    mocks.prisma.review.findMany.mockResolvedValue(
+      Array.from({ length: HYBRID_REVIEW_CAP + 5 }, (_, i) => qualityReview(i + 1))
+    )
+    mocks.computeReviewHash.mockReturnValue('new-hash')
+    mocks.generateHybridSentimentGraph.mockResolvedValue(fakeHybridResult())
+
+    const { generateHybridAndStore } = await import('@/lib/sentiment-pipeline')
+    await generateHybridAndStore('film-1', { force: false, callerPath: 'admin-analyze' })
+
+    const writeArgs = mocks.safeWriteSentimentGraph.mock.calls[0][0]
+    expect(writeArgs.otherFields.generationMode).toBe('hybrid')
+    expect(writeArgs.otherFields.reviewsInPrompt).toBe(HYBRID_REVIEW_CAP)
   })
 
   it('rejects films with fewer than MIN_QUALITY_REVIEWS_FOR_GENERATION quality reviews', async () => {

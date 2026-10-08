@@ -255,6 +255,13 @@ model SentimentGraph {
   varianceSource  String   @default("external_only")
   version         Int      @default(1)
   reviewHash      String?
+  // How this graph was generated. NULL on rows written before these
+  // columns existed, or after a write that did not regenerate the beats.
+  generationMode  String?
+  plotSource      String?
+  modelName       String?
+  promptVersion   String?
+  reviewsInPrompt Int?
   // Multi-tag arc-shape classification (slow burn, hidden peak, perfect
   // ending, steady great, nosedive). Derived from dataPoints + overallScore
   // by src/lib/arc-classifier.ts at write time; a film can carry several tags.

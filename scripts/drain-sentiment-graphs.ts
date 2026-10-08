@@ -59,6 +59,9 @@ interface PendingJob {
   reviewHash: string
   filteredReviewCount: number
   sources: string[]
+  // Plot source the prepared input resolved. Absent on jobs persisted before
+  // this field existed; the stored row then records null.
+  plotSource?: string
 }
 
 interface PendingState {
@@ -181,6 +184,7 @@ async function pollAndProcess(state: PendingState): Promise<void> {
         plotContext: { text: '', source: 'reviews_only' },
         reviewHash: job.reviewHash,
         promptParts: { system: '', user: '' },
+        plotSource: job.plotSource,
       }
       try {
         await storeSentimentGraphResult(input, result.data, 'script-batch-analyze')
@@ -321,6 +325,7 @@ async function main() {
     reviewHash: input.reviewHash,
     filteredReviewCount: input.filteredReviewCount,
     sources: [...new Set(input.reviews.map((r) => r.sourcePlatform.toLowerCase()))],
+    plotSource: input.plotSource,
   }))
   const state: PendingState = { batchId: submit.batchId, submittedAt: submit.submittedAt, jobs }
   await writePending(state)

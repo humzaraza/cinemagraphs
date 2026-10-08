@@ -54,7 +54,7 @@ vi.mock('@/lib/logger', () => {
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
-function makeInput(): SentimentGraphInput {
+function makeInput(overrides: Partial<SentimentGraphInput> = {}): SentimentGraphInput {
   const film = {
     id: 'film-1',
     title: 'Test Film',
@@ -73,6 +73,7 @@ function makeInput(): SentimentGraphInput {
     plotContext: { text: '', source: 'reviews_only' },
     reviewHash: 'hash-xyz',
     promptParts: { system: '', user: '' },
+    ...overrides,
   }
 }
 
@@ -181,6 +182,67 @@ describe('storeSentimentGraphResult routing', () => {
       where: { id: 'film-1' },
       data: { lastReviewCount: 5 },
     })
+  })
+})
+
+describe('storeSentimentGraphResult generation metadata', () => {
+  beforeEach(() => {
+    mockSentimentGraphFindUnique.mockReset()
+    mockFilmUpdate.mockReset()
+    mockSafeWrite.mockReset()
+    mockForceOverwrite.mockReset()
+
+    mockSentimentGraphFindUnique.mockResolvedValue(null)
+    mockFilmUpdate.mockResolvedValue({})
+    mockSafeWrite.mockResolvedValue({
+      status: 'written',
+      acceptedBeatCount: 1,
+      droppedIncomingLabels: [],
+      preservedExistingLabels: [],
+    })
+    mockForceOverwrite.mockResolvedValue(undefined)
+  })
+
+  it('passes all five fields with generationMode classic and the plot source from the prepared input', async () => {
+    const { SENTIMENT_MODEL, SENTIMENT_PROMPT_VERSION } = await import('@/lib/claude')
+    const { storeSentimentGraphResult } = await import('@/lib/sentiment-pipeline')
+    await storeSentimentGraphResult(
+      makeInput({ plotSource: 'wikipedia', filteredReviewCount: 12 }),
+      makeGraphData(),
+      'cron-analyze'
+    )
+
+    const { otherFields } = mockSafeWrite.mock.calls[0][0]
+    expect(otherFields.generationMode).toBe('classic')
+    expect(otherFields.plotSource).toBe('wikipedia')
+    expect(otherFields.modelName).toBe(SENTIMENT_MODEL)
+    expect(otherFields.promptVersion).toBe(SENTIMENT_PROMPT_VERSION)
+    expect(otherFields.reviewsInPrompt).toBe(12)
+  })
+
+  it('stores plotSource null when the input was rebuilt from a stored batch job', async () => {
+    const { storeSentimentGraphResult } = await import('@/lib/sentiment-pipeline')
+    // A resumed batch job has no plotSource on the input; the store must not throw.
+    await storeSentimentGraphResult(makeInput(), makeGraphData(), 'cron-analyze')
+
+    const { otherFields } = mockSafeWrite.mock.calls[0][0]
+    expect(otherFields.generationMode).toBe('classic')
+    expect(otherFields.plotSource).toBeNull()
+  })
+
+  it('caps reviewsInPrompt at CLASSIC_REVIEW_CAP when there are more quality reviews than the cap', async () => {
+    const { CLASSIC_REVIEW_CAP } = await import('@/lib/claude')
+    const { storeSentimentGraphResult } = await import('@/lib/sentiment-pipeline')
+    await storeSentimentGraphResult(
+      makeInput({ plotSource: 'tmdb', filteredReviewCount: CLASSIC_REVIEW_CAP + 25 }),
+      makeGraphData(),
+      'admin-analyze',
+      { forceOverwrite: true }
+    )
+
+    const { otherFields } = mockForceOverwrite.mock.calls[0][0]
+    expect(otherFields.reviewsInPrompt).toBe(CLASSIC_REVIEW_CAP)
+    expect(otherFields.generationMode).toBe('classic')
   })
 })
 
